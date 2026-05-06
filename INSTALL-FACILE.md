@@ -16,7 +16,7 @@ Le script va télécharger le code depuis GitHub. Pour ça il a besoin d'un toke
 3. **Expiration** : `90 days`
 4. **Repository access** : `Only select repositories` → choisis **PALMA**
 5. **Repository permissions** :
-   - **Contents** : `Read-only`
+   - **Contents** : `Read and write` _(le mode read+write sert pour pousser depuis ton PC ET pour télécharger sur le VPS — un seul token suffit)_
    - (Metadata Read-only se met automatiquement)
 6. Clique **Generate token** en bas
 7. **COPIE-LE** dans un bloc-notes — il commence par `github_pat_` — il ne sera affiché qu'une seule fois
