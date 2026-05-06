@@ -347,7 +347,7 @@ done
 step "Création de l'administrateur initial"
 
 ADMIN_OUTPUT=$(docker compose -f "$INSTALL_DIR/app/$COMPOSE_FILE" \
-  --env-file "$ENV_FILE" exec -T app node docker/seed-admin.mjs 2>&1 || true)
+  --env-file "$ENV_FILE" exec -T app node docker/seed-admin.cjs 2>&1 || true)
 echo "$ADMIN_OUTPUT" | grep -E "email|password" || echo "$ADMIN_OUTPUT" | tail -10
 
 # =====================================================================
@@ -480,7 +480,7 @@ ${C_GREEN}╔══════════════════════�
   Fichier env   : ${ENV_FILE} ${C_DIM}(mode 600)${C_RESET}
   Compose       : ${COMPOSE_FILE}
 
-  ${C_YELLOW}Identifiants admin : voir ci-dessus dans la sortie de seed-admin.mjs${C_RESET}
+  ${C_YELLOW}Identifiants admin : voir ci-dessus dans la sortie de seed-admin.cjs${C_RESET}
 
   ${C_DIM}Commandes utiles :${C_RESET}
     cd ${INSTALL_DIR}/app

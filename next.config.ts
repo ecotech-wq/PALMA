@@ -5,8 +5,20 @@ const nextConfig: NextConfig = {
   // → image Docker minimale, pas besoin de tout node_modules en prod.
   output: "standalone",
 
-  // Le dossier public/uploads est servi par Next.js (chemin relatif).
-  // Sharp est utilisé côté serveur pour redimensionner les uploads.
+  // Empêche Next.js de bundler ces packages dans les chunks ;
+  // ils sont gardés dans .next/standalone/node_modules/ pour qu'ils soient
+  // accessibles via `require()` depuis nos scripts d'admin (seed-admin.cjs)
+  // et la CLI Prisma utilisée par l'entrypoint.
+  serverExternalPackages: [
+    "bcryptjs",
+    "@prisma/client",
+    "@prisma/adapter-pg",
+    "pg",
+    "pg-types",
+    "pg-protocol",
+    "prisma",
+  ],
+
   experimental: {
     // Permet aux Server Actions de recevoir des fichiers volumineux (photos)
     serverActions: {
@@ -14,8 +26,6 @@ const nextConfig: NextConfig = {
     },
   },
 
-  // Désactive l'optimisation Next/Image en mode WebP/AVIF si on veut servir
-  // les uploads tels quels (déjà compressés en WebP par Sharp à l'upload).
   images: {
     formats: ["image/webp"],
   },

@@ -20,8 +20,8 @@
 # production builds
 /build
 /backups
-*.sql
 *.sql.gz
+# (les .sql de prisma/migrations/ doivent être commités → on ne les ignore PAS)
 
 # misc
 .DS_Store

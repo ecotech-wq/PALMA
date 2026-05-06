@@ -65,8 +65,17 @@ COPY --from=builder --chown=nextjs:nodejs /app/src/generated ./src/generated
 # Schéma + migrations pour pouvoir lancer `prisma migrate deploy` au démarrage
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts
+
+# CLI Prisma + client + adaptateur PG (utilisés par l'entrypoint)
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+
+# Symlink pour que `npx prisma` fonctionne en runtime
+# (le standalone n'inclut pas node_modules/.bin par défaut)
+RUN mkdir -p /app/node_modules/.bin && \
+    ln -sf ../prisma/build/index.js /app/node_modules/.bin/prisma && \
+    chmod +x /app/node_modules/prisma/build/index.js && \
+    chown -h nextjs:nodejs /app/node_modules/.bin/prisma
 
 # Dossier d'uploads persistant (sera monté en volume par docker-compose)
 RUN mkdir -p /app/public/uploads/materiel /app/public/uploads/ouvriers \

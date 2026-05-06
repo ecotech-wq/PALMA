@@ -96,7 +96,7 @@ Une fois que `app` est `healthy` :
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.production exec app \
-  node docker/seed-admin.mjs
+  node docker/seed-admin.cjs
 ```
 
 La sortie t'affiche l'email et le mot de passe (généré aléatoirement si tu n'en
