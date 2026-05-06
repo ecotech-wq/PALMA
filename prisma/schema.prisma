@@ -1,0 +1,391 @@
+// Outil de Gestion de Chantier - Schéma de base de données
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =====================================================
+// AUTHENTIFICATION & UTILISATEURS
+// =====================================================
+
+enum Role {
+  ADMIN
+  CHEF
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(CHEF)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  chantiersGeres Chantier[] @relation("ChefChantier")
+}
+
+// =====================================================
+// CHANTIERS, ÉQUIPES, OUVRIERS
+// =====================================================
+
+enum StatutChantier {
+  PLANIFIE
+  EN_COURS
+  PAUSE
+  TERMINE
+  ANNULE
+}
+
+model Chantier {
+  id              String         @id @default(cuid())
+  nom             String
+  adresse         String?
+  description     String?
+  dateDebut       DateTime?
+  dateFin         DateTime?
+  statut          StatutChantier @default(PLANIFIE)
+  budgetEspeces   Decimal        @default(0) @db.Decimal(12, 2)
+  budgetVirement  Decimal        @default(0) @db.Decimal(12, 2)
+  chefId          String?
+  chef            User?          @relation("ChefChantier", fields: [chefId], references: [id], onDelete: SetNull)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  equipes         Equipe[]
+  pointages       Pointage[]
+  sortiesMateriel SortieMateriel[]
+  locations       LocationPret[]
+  commandes       Commande[]
+  taches          Tache[]
+}
+
+model Equipe {
+  id          String   @id @default(cuid())
+  nom         String
+  chantierId  String?
+  chantier    Chantier? @relation(fields: [chantierId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ouvriers        Ouvrier[]
+  sortiesMateriel SortieMateriel[]
+  taches          Tache[]
+}
+
+enum TypeContrat {
+  FIXE
+  JOUR
+  SEMAINE
+  MOIS
+  FORFAIT
+}
+
+enum ModePaie {
+  JOUR
+  SEMAINE
+  MOIS
+}
+
+model Ouvrier {
+  id           String      @id @default(cuid())
+  nom          String
+  prenom       String?
+  telephone    String?
+  photo        String?
+  typeContrat  TypeContrat
+  tarifBase    Decimal     @db.Decimal(10, 2)
+  modePaie     ModePaie    @default(MOIS)
+  actif        Boolean     @default(true)
+  equipeId     String?
+  equipe       Equipe?     @relation(fields: [equipeId], references: [id], onDelete: SetNull)
+  notes        String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  pointages        Pointage[]
+  avances          Avance[]
+  paiements        Paiement[]
+  outilsPersonnels OutilPersonnel[]
+}
+
+model Pointage {
+  id              String   @id @default(cuid())
+  ouvrierId       String
+  ouvrier         Ouvrier  @relation(fields: [ouvrierId], references: [id], onDelete: Cascade)
+  date            DateTime @db.Date
+  joursTravailles Decimal  @default(1) @db.Decimal(4, 2)
+  chantierId      String?
+  chantier        Chantier? @relation(fields: [chantierId], references: [id], onDelete: SetNull)
+  note            String?
+  createdAt       DateTime @default(now())
+
+  @@unique([ouvrierId, date])
+  @@index([date])
+  @@index([chantierId])
+}
+
+enum ModePaiement {
+  ESPECES
+  VIREMENT
+}
+
+model Avance {
+  id         String       @id @default(cuid())
+  ouvrierId  String
+  ouvrier    Ouvrier      @relation(fields: [ouvrierId], references: [id], onDelete: Cascade)
+  montant    Decimal      @db.Decimal(10, 2)
+  date       DateTime     @db.Date
+  mode       ModePaiement @default(ESPECES)
+  reglee     Boolean      @default(false)
+  paiementId String?
+  paiement   Paiement?    @relation(fields: [paiementId], references: [id], onDelete: SetNull)
+  note       String?
+  createdAt  DateTime     @default(now())
+
+  @@index([ouvrierId])
+  @@index([reglee])
+}
+
+enum StatutPaiement {
+  CALCULE
+  PAYE
+  ANNULE
+}
+
+model Paiement {
+  id              String         @id @default(cuid())
+  ouvrierId       String
+  ouvrier         Ouvrier        @relation(fields: [ouvrierId], references: [id], onDelete: Cascade)
+  periodeDebut    DateTime       @db.Date
+  periodeFin      DateTime       @db.Date
+  joursTravailles Decimal        @db.Decimal(6, 2)
+  montantBrut     Decimal        @db.Decimal(10, 2)
+  avancesDeduites Decimal        @default(0) @db.Decimal(10, 2)
+  retenueOutil    Decimal        @default(0) @db.Decimal(10, 2)
+  montantNet      Decimal        @db.Decimal(10, 2)
+  mode            ModePaiement   @default(ESPECES)
+  date            DateTime       @db.Date
+  statut          StatutPaiement @default(CALCULE)
+  note            String?
+  createdAt       DateTime       @default(now())
+
+  avances        Avance[]
+  retenuesOutils RetenueOutil[]
+
+  @@index([ouvrierId, periodeDebut])
+}
+
+model OutilPersonnel {
+  id         String   @id @default(cuid())
+  ouvrierId  String
+  ouvrier    Ouvrier  @relation(fields: [ouvrierId], references: [id], onDelete: Cascade)
+  nom        String
+  prixTotal  Decimal  @db.Decimal(10, 2)
+  mensualite Decimal  @db.Decimal(10, 2)
+  restantDu  Decimal  @db.Decimal(10, 2)
+  dateAchat  DateTime @db.Date
+  solde      Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  retenues RetenueOutil[]
+
+  @@index([ouvrierId, solde])
+}
+
+model RetenueOutil {
+  id               String         @id @default(cuid())
+  outilPersonnelId String
+  outilPersonnel   OutilPersonnel @relation(fields: [outilPersonnelId], references: [id], onDelete: Cascade)
+  paiementId       String
+  paiement         Paiement       @relation(fields: [paiementId], references: [id], onDelete: Cascade)
+  montant          Decimal        @db.Decimal(10, 2)
+  createdAt        DateTime       @default(now())
+}
+
+// =====================================================
+// MATÉRIEL, ACCESSOIRES, SORTIES, LOCATIONS
+// =====================================================
+
+enum StatutMateriel {
+  DISPO
+  SORTI
+  EN_LOCATION
+  HS
+  PERDU
+}
+
+enum PossesseurMateriel {
+  ENTREPRISE
+  LOCATION
+  PRET
+}
+
+model Materiel {
+  id          String             @id @default(cuid())
+  nomCommun   String
+  marque      String?
+  modele      String?
+  numeroSerie String?
+  photo       String?
+  statut      StatutMateriel     @default(DISPO)
+  possesseur  PossesseurMateriel @default(ENTREPRISE)
+  prixAchat   Decimal?           @db.Decimal(10, 2)
+  dateAchat   DateTime?          @db.Date
+  notes       String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  accessoires Accessoire[]
+  sorties     SortieMateriel[]
+  locations   LocationPret[]
+
+  @@index([statut])
+  @@index([possesseur])
+}
+
+model Accessoire {
+  id         String   @id @default(cuid())
+  materielId String
+  materiel   Materiel @relation(fields: [materielId], references: [id], onDelete: Cascade)
+  type       String
+  nom        String
+  quantite   Int      @default(1)
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+enum EtatRetour {
+  BON
+  USE
+  CASSE
+  MANQUANT
+}
+
+model SortieMateriel {
+  id         String      @id @default(cuid())
+  materielId String
+  materiel   Materiel    @relation(fields: [materielId], references: [id], onDelete: Cascade)
+  equipeId   String?
+  equipe     Equipe?     @relation(fields: [equipeId], references: [id], onDelete: SetNull)
+  chantierId String?
+  chantier   Chantier?   @relation(fields: [chantierId], references: [id], onDelete: SetNull)
+  dateSortie DateTime    @default(now())
+  dateRetour DateTime?
+  etatRetour EtatRetour?
+  note       String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([materielId, dateRetour])
+  @@index([equipeId])
+}
+
+enum TypeLocationPret {
+  LOCATION
+  PRET
+}
+
+model LocationPret {
+  id             String           @id @default(cuid())
+  materielId     String?
+  materiel       Materiel?        @relation(fields: [materielId], references: [id], onDelete: SetNull)
+  designation    String
+  type           TypeLocationPret
+  fournisseurNom String
+  chantierId     String?
+  chantier       Chantier?        @relation(fields: [chantierId], references: [id], onDelete: SetNull)
+  dateDebut      DateTime         @db.Date
+  dateFinPrevue  DateTime         @db.Date
+  dateRetourReel DateTime?        @db.Date
+  coutJour       Decimal          @default(0) @db.Decimal(10, 2)
+  coutTotal      Decimal          @default(0) @db.Decimal(10, 2)
+  cloture        Boolean          @default(false)
+  note           String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([cloture, dateFinPrevue])
+}
+
+// =====================================================
+// COMMANDES
+// =====================================================
+
+enum StatutCommande {
+  COMMANDEE
+  EN_LIVRAISON
+  LIVREE
+  ANNULEE
+}
+
+model Commande {
+  id                  String         @id @default(cuid())
+  chantierId          String
+  chantier            Chantier       @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  fournisseur         String
+  reference           String?
+  coutTotal           Decimal        @default(0) @db.Decimal(12, 2)
+  dateCommande        DateTime       @db.Date
+  dateLivraisonPrevue DateTime?      @db.Date
+  dateLivraisonReelle DateTime?      @db.Date
+  statut              StatutCommande @default(COMMANDEE)
+  mode                ModePaiement   @default(VIREMENT)
+  note                String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  lignes LigneCommande[]
+
+  @@index([chantierId])
+  @@index([statut])
+}
+
+model LigneCommande {
+  id           String   @id @default(cuid())
+  commandeId   String
+  commande     Commande @relation(fields: [commandeId], references: [id], onDelete: Cascade)
+  designation  String
+  quantite     Decimal  @default(1) @db.Decimal(10, 2)
+  prixUnitaire Decimal  @db.Decimal(10, 2)
+  total        Decimal  @db.Decimal(12, 2)
+}
+
+// =====================================================
+// PLANNING / TÂCHES
+// =====================================================
+
+enum StatutTache {
+  A_FAIRE
+  EN_COURS
+  TERMINEE
+  BLOQUEE
+}
+
+model Tache {
+  id          String      @id @default(cuid())
+  chantierId  String
+  chantier    Chantier    @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  equipeId    String?
+  equipe      Equipe?     @relation(fields: [equipeId], references: [id], onDelete: SetNull)
+  nom         String
+  description String?
+  dateDebut   DateTime    @db.Date
+  dateFin     DateTime    @db.Date
+  avancement  Int         @default(0)
+  statut      StatutTache @default(A_FAIRE)
+  dependances Tache[]     @relation("TacheDependance")
+  dependants  Tache[]     @relation("TacheDependance")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([chantierId])
+  @@index([dateDebut, dateFin])
+}

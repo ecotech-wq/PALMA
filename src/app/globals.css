@@ -1,26 +1,155 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Light mode (default) */
+  --color-app-bg: #fafaf9;
+  --color-app-fg: #1c1917;
+  --color-card-bg: #ffffff;
+  --color-card-fg: #0f172a;
+  --color-muted-bg: #f1f5f9;
+  --color-muted-fg: #64748b;
+  --color-subtle-bg: #f8fafc;
+  --color-border: #e2e8f0;
+  --color-border-soft: #f1f5f9;
+
+  /* Charte Autonhome - teal */
+  --brand-primary: #135858;
+  --brand-primary-50: #effaf8;
+  --brand-primary-100: #d3f0eb;
+  --brand-primary-200: #a8e0d8;
+  --brand-primary-300: #6cc8bc;
+  --brand-primary-400: #2a9c8e;
+  --brand-primary-500: #135858;
+  --brand-primary-600: #114e4e;
+  --brand-primary-700: #0e3f3f;
+  --brand-primary-800: #0a2f2f;
+  --brand-primary-900: #062020;
+
+  /* Accent cuivre */
+  --brand-accent: #b5733b;
+  --brand-accent-50: #fcf6ee;
+  --brand-accent-100: #f7e6d0;
+  --brand-accent-200: #efcca0;
+  --brand-accent-300: #e2a76a;
+  --brand-accent-400: #d28c47;
+  --brand-accent-500: #b5733b;
+  --brand-accent-600: #985d2f;
+  --brand-accent-700: #794627;
+  --brand-accent-800: #5a3520;
+  --brand-accent-900: #3e2418;
+}
+
+.dark {
+  /* Dark mode */
+  --color-app-bg: #0b1212;
+  --color-app-fg: #e6e8e8;
+  --color-card-bg: #111a1a;
+  --color-card-fg: #e6e8e8;
+  --color-muted-bg: #1a2424;
+  --color-muted-fg: #94a3b8;
+  --color-subtle-bg: #0f1818;
+  --color-border: #1f2c2c;
+  --color-border-soft: #182222;
+
+  /* Brand teals : on remonte la luminosité pour le contraste sur fond sombre */
+  --brand-primary-50: #062020;
+  --brand-primary-100: #0a2f2f;
+  --brand-primary-200: #0e3f3f;
+  --brand-primary-300: #114e4e;
+  --brand-primary-400: #1a7676;
+  --brand-primary-500: #2a9c8e;
+  --brand-primary-600: #4cb5a5;
+  --brand-primary-700: #76cdbe;
+  --brand-primary-800: #a8e0d8;
+  --brand-primary-900: #d3f0eb;
+
+  /* Accent cuivre : un peu plus chaud sur fond sombre */
+  --brand-accent-50: #3e2418;
+  --brand-accent-100: #5a3520;
+  --brand-accent-200: #794627;
+  --brand-accent-300: #985d2f;
+  --brand-accent-400: #b5733b;
+  --brand-accent-500: #d28c47;
+  --brand-accent-600: #e2a76a;
+  --brand-accent-700: #efcca0;
+  --brand-accent-800: #f7e6d0;
+  --brand-accent-900: #fcf6ee;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--color-app-bg);
+  --color-foreground: var(--color-app-fg);
+  --color-card: var(--color-card-bg);
+  --color-card-foreground: var(--color-card-fg);
+  --color-muted: var(--color-muted-bg);
+  --color-muted-foreground: var(--color-muted-fg);
+  --color-subtle: var(--color-subtle-bg);
+  --color-border-default: var(--color-border);
+  --color-border-soft: var(--color-border-soft);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-brand-50: var(--brand-primary-50);
+  --color-brand-100: var(--brand-primary-100);
+  --color-brand-200: var(--brand-primary-200);
+  --color-brand-300: var(--brand-primary-300);
+  --color-brand-400: var(--brand-primary-400);
+  --color-brand-500: var(--brand-primary-500);
+  --color-brand-600: var(--brand-primary-600);
+  --color-brand-700: var(--brand-primary-700);
+  --color-brand-800: var(--brand-primary-800);
+  --color-brand-900: var(--brand-primary-900);
+
+  --color-accent-50: var(--brand-accent-50);
+  --color-accent-100: var(--brand-accent-100);
+  --color-accent-200: var(--brand-accent-200);
+  --color-accent-300: var(--brand-accent-300);
+  --color-accent-400: var(--brand-accent-400);
+  --color-accent-500: var(--brand-accent-500);
+  --color-accent-600: var(--brand-accent-600);
+  --color-accent-700: var(--brand-accent-700);
+  --color-accent-800: var(--brand-accent-800);
+  --color-accent-900: var(--brand-accent-900);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--color-app-bg);
+  color: var(--color-app-fg);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-app-bg);
+  color: var(--color-app-fg);
+  font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+}
+
+/* Scrollbar discrète */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1aa;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Inputs date conservent leur calendrier natif lisible en dark */
+.dark input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.85);
 }

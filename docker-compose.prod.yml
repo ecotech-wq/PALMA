@@ -1,0 +1,113 @@
+# Stack production : PostgreSQL + App Next + Caddy (HTTPS auto via Let's Encrypt)
+# À déployer sur un VPS Hostinger avec un sous-domaine pointant vers son IP.
+#
+# Démarrage :
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Variables requises dans .env.production :
+#   APP_DOMAIN              ex: chantier.tondomaine.com
+#   POSTGRES_PASSWORD       mot de passe Postgres (fort)
+#   AUTH_SECRET             secret aléatoire 32 octets (openssl rand -base64 32)
+#   ACME_EMAIL              email pour Let's Encrypt (alertes expiration cert)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ogc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ogc
+      POSTGRES_USER: ogc
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Sauvegardes pg_dump déposées par le service backup
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ogc -d ogc"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ogc-net
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ogc-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://ogc:${POSTGRES_PASSWORD}@postgres:5432/ogc?schema=public
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_TRUST_HOST: "true"
+      NEXTAUTH_URL: https://${APP_DOMAIN}
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    volumes:
+      # Photos uploadées : persistées hors du conteneur
+      - uploads:/app/public/uploads
+    networks:
+      - ogc-net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: ogc-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - ogc-net
+
+  # Sauvegarde quotidienne automatique de Postgres → /backups
+  # Conservation des 30 derniers jours.
+  backup:
+    image: postgres:16-alpine
+    container_name: ogc-backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ogc
+      PGDATABASE: ogc
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./backups:/backups
+      - ./docker/backup.sh:/usr/local/bin/backup.sh:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      apk add --no-cache dcron tzdata > /dev/null 2>&1 || true
+      chmod +x /usr/local/bin/backup.sh
+      echo '0 3 * * * /usr/local/bin/backup.sh >> /backups/backup.log 2>&1' > /etc/crontabs/root
+      crond -f -l 8
+      "
+    networks:
+      - ogc-net
+
+volumes:
+  postgres_data:
+  uploads:
+  caddy_data:
+  caddy_config:
+
+networks:
+  ogc-net:
+    driver: bridge
