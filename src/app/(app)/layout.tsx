@@ -1,11 +1,18 @@
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
+import { db } from "@/lib/db";
 import { DesktopSidebar, MobileBottomNav, MobileTopBar } from "@/components/NavSidebar";
 import { ToastProvider } from "@/components/Toast";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  // Compteur de comptes en attente (badge dans la nav admin)
+  const isAdmin = session.user.role === "ADMIN";
+  const pendingUsersCount = isAdmin
+    ? await db.user.count({ where: { status: "PENDING" } })
+    : 0;
 
   async function handleSignOut() {
     "use server";
@@ -15,7 +22,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <ToastProvider>
       <div className="min-h-screen flex bg-slate-50 dark:bg-slate-950">
-        <DesktopSidebar userName={session.user.name} signOutAction={handleSignOut} />
+        <DesktopSidebar
+          userName={session.user.name}
+          userRole={session.user.role}
+          pendingUsersCount={pendingUsersCount}
+          signOutAction={handleSignOut}
+        />
         <div className="flex-1 flex flex-col min-w-0">
           <MobileTopBar userName={session.user.name} signOutAction={handleSignOut} />
           <main className="flex-1 overflow-y-auto pb-20 md:pb-0">

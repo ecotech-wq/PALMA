@@ -16,6 +16,8 @@ import {
   Banknote,
   Truck,
   LogOut,
+  ShieldCheck,
+  UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -42,9 +44,15 @@ const mobileItems = [
   { href: "/materiel", label: "Matériel", icon: Wrench },
 ];
 
-function BrandHeader({ subtitle }: { subtitle?: string }) {
+function BrandHeader({
+  subtitle,
+  href = "/dashboard",
+}: {
+  subtitle?: string;
+  href?: string;
+}) {
   return (
-    <Link href="/dashboard" className="flex items-center gap-3 min-w-0">
+    <Link href={href} className="flex items-center gap-3 min-w-0">
       <Image
         src="/brand/logo-icon.webp"
         alt="Autonhome"
@@ -53,9 +61,13 @@ function BrandHeader({ subtitle }: { subtitle?: string }) {
         className="rounded-md object-contain shrink-0 bg-white"
       />
       <div className="min-w-0">
-        <div className="font-bold text-brand-700 dark:text-brand-700 leading-tight">Autonhome</div>
+        <div className="font-bold text-brand-700 dark:text-brand-700 leading-tight">
+          Autonhome
+        </div>
         {subtitle && (
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{subtitle}</div>
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+            {subtitle}
+          </div>
         )}
       </div>
     </Link>
@@ -64,17 +76,43 @@ function BrandHeader({ subtitle }: { subtitle?: string }) {
 
 export function DesktopSidebar({
   userName,
+  userRole,
+  pendingUsersCount,
   signOutAction,
 }: {
   userName: string;
+  userRole: string;
+  pendingUsersCount: number;
   signOutAction: () => Promise<void>;
 }) {
   const pathname = usePathname();
+  const isAdmin = userRole === "ADMIN";
 
   return (
     <aside className="hidden md:flex w-60 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
       <div className="px-4 py-4 border-b border-slate-200 dark:border-slate-800">
-        <BrandHeader subtitle={userName} />
+        <Link
+          href="/profil"
+          className="flex items-center gap-3 min-w-0 hover:bg-slate-50 dark:hover:bg-slate-800 -mx-2 px-2 py-1 rounded-md transition"
+          title="Mon profil"
+        >
+          <Image
+            src="/brand/logo-icon.webp"
+            alt="Autonhome"
+            width={36}
+            height={36}
+            className="rounded-md object-contain shrink-0 bg-white"
+          />
+          <div className="min-w-0">
+            <div className="font-bold text-brand-700 dark:text-brand-700 leading-tight">
+              Autonhome
+            </div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+              <UserCircle size={11} />
+              {userName}
+            </div>
+          </div>
+        </Link>
       </div>
       <nav className="flex-1 overflow-y-auto py-3">
         {items.map(({ href, label, icon: Icon }) => {
@@ -95,6 +133,47 @@ export function DesktopSidebar({
             </Link>
           );
         })}
+
+        {isAdmin && (
+          <>
+            <div className="mt-4 mb-1 px-5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Administration
+            </div>
+            <Link
+              href="/admin/users"
+              className={cn(
+                "flex items-center gap-3 px-5 py-2.5 text-sm transition-colors",
+                pathname?.startsWith("/admin")
+                  ? "bg-brand-50 text-brand-700 dark:bg-brand-200/30 dark:text-brand-700 font-medium border-r-2 border-brand-500"
+                  : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+              )}
+            >
+              <ShieldCheck size={18} />
+              <span className="flex-1">Utilisateurs</span>
+              {pendingUsersCount > 0 && (
+                <span className="bg-yellow-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                  {pendingUsersCount}
+                </span>
+              )}
+            </Link>
+          </>
+        )}
+
+        <div className="mt-4 mb-1 px-5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          Compte
+        </div>
+        <Link
+          href="/profil"
+          className={cn(
+            "flex items-center gap-3 px-5 py-2.5 text-sm transition-colors",
+            pathname?.startsWith("/profil")
+              ? "bg-brand-50 text-brand-700 dark:bg-brand-200/30 dark:text-brand-700 font-medium border-r-2 border-brand-500"
+              : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+          )}
+        >
+          <UserCircle size={18} />
+          Mon profil
+        </Link>
       </nav>
       <div className="border-t border-slate-200 dark:border-slate-800 p-3 space-y-2">
         <div className="flex justify-center">
@@ -150,11 +229,15 @@ export function MobileTopBar({
 }) {
   return (
     <header className="md:hidden sticky top-0 z-30 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-between gap-2">
-      <BrandHeader subtitle={userName} />
+      <BrandHeader subtitle={userName} href="/profil" />
       <div className="flex items-center gap-1">
         <ThemeToggle compact />
         <form action={signOutAction}>
-          <button type="submit" className="text-slate-500 dark:text-slate-400 p-2" aria-label="Se déconnecter">
+          <button
+            type="submit"
+            className="text-slate-500 dark:text-slate-400 p-2"
+            aria-label="Se déconnecter"
+          >
             <LogOut size={18} />
           </button>
         </form>

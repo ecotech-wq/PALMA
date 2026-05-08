@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import type { NextAuthConfig } from "next-auth";
 
 export const authConfig = {
@@ -7,11 +8,27 @@ export const authConfig = {
   callbacks: {
     authorized: ({ auth, request }) => {
       const isLoggedIn = !!auth?.user;
-      const isOnLogin = request.nextUrl.pathname.startsWith("/login");
-      const isOnApi = request.nextUrl.pathname.startsWith("/api/auth");
+      const path = request.nextUrl.pathname;
 
-      if (isOnLogin || isOnApi) return true;
-      return isLoggedIn;
+      // Pages publiques (accessibles sans login)
+      const isPublic =
+        path.startsWith("/login") ||
+        path.startsWith("/register") ||
+        path.startsWith("/api/auth");
+
+      if (isPublic) return true;
+
+      if (!isLoggedIn) return false;
+
+      // Restriction admin : seul un user ADMIN peut accéder à /admin/*
+      if (path.startsWith("/admin")) {
+        const role = (auth?.user as { role?: string } | undefined)?.role;
+        if (role !== "ADMIN") {
+          return NextResponse.redirect(new URL("/dashboard", request.nextUrl));
+        }
+      }
+
+      return true;
     },
     jwt: ({ token, user }) => {
       if (user) {

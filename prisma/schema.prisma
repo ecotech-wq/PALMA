@@ -18,14 +18,21 @@ enum Role {
   CHEF
 }
 
+enum UserStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+}
+
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String     @id @default(cuid())
+  email        String     @unique
   passwordHash String
   name         String
-  role         Role     @default(CHEF)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  role         Role       @default(CHEF)
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   chantiersGeres Chantier[] @relation("ChefChantier")
 }

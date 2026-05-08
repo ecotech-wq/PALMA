@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -10,6 +10,13 @@ const credentialsSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
+
+class AccountPendingError extends CredentialsSignin {
+  code = "AccountPending";
+}
+class AccountRevokedError extends CredentialsSignin {
+  code = "AccountRevoked";
+}
 
 declare module "next-auth" {
   interface Session {
@@ -44,6 +51,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         const ok = await bcrypt.compare(parsed.data.password, user.passwordHash);
         if (!ok) return null;
+
+        // Compte en attente de validation par un admin
+        if (user.status === "PENDING") {
+          throw new AccountPendingError();
+        }
+        // Compte révoqué (l'admin a retiré l'accès)
+        if (user.status === "REVOKED") {
+          throw new AccountRevokedError();
+        }
 
         return {
           id: user.id,
