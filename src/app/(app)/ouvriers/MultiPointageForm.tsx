@@ -7,22 +7,35 @@ import { Field, Input, Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 
 type Chantier = { id: string; nom: string };
+type OuvrierOption = {
+  id: string;
+  nom: string;
+  prenom: string | null;
+  equipeNom?: string | null;
+  defaultChantierId?: string | null;
+};
 
 /**
  * Saisie multiple : applique le même pointage sur plusieurs jours d'affilée
  * pour un seul ouvrier. Pratique pour rattraper une semaine ou un mois entier
  * (forfait, ouvrier au mois, etc.) sans cocher 22 cases une par une.
  *
+ * Deux modes :
+ *  - `ouvrierId` figé (fiche ouvrier) → pas de sélecteur, juste les dates.
+ *  - `ouvriers` fourni (page /pointage) → sélecteur d'ouvrier en tête.
+ *
  * Par sécurité, les jours déjà pointés sont sautés sauf si on coche
  * "Écraser les pointages existants".
  */
 export function MultiPointageForm({
   ouvrierId,
+  ouvriers,
   chantiers,
   defaultChantierId,
   action,
 }: {
-  ouvrierId: string;
+  ouvrierId?: string;
+  ouvriers?: OuvrierOption[];
   chantiers: Chantier[];
   defaultChantierId: string | null;
   action: (formData: FormData) => Promise<void>;
@@ -40,6 +53,16 @@ export function MultiPointageForm({
   const [dateDebut, setDateDebut] = useState(defaultDebut);
   const [dateFin, setDateFin] = useState(today);
   const [inclureWeekend, setInclureWeekend] = useState(false);
+  const [selectedOuvrierId, setSelectedOuvrierId] = useState<string>(
+    ouvrierId ?? (ouvriers && ouvriers.length > 0 ? ouvriers[0].id : "")
+  );
+
+  // Lorsqu'on change d'ouvrier dans le sélecteur, on adapte le chantier par défaut
+  const currentDefaultChantier =
+    ouvrierId
+      ? defaultChantierId
+      : ouvriers?.find((o) => o.id === selectedOuvrierId)?.defaultChantierId ??
+        defaultChantierId;
 
   // Aperçu du nombre de jours
   const nbJours = (() => {
@@ -64,7 +87,28 @@ export function MultiPointageForm({
       successMessage="Pointages enregistrés"
       className="space-y-3"
     >
-      <input type="hidden" name="ouvrierId" value={ouvrierId} />
+      {ouvrierId ? (
+        <input type="hidden" name="ouvrierId" value={ouvrierId} />
+      ) : (
+        <Field label="Ouvrier" required>
+          <Select
+            name="ouvrierId"
+            value={selectedOuvrierId}
+            onChange={(e) => setSelectedOuvrierId(e.target.value)}
+            required
+          >
+            {ouvriers?.map((o) => {
+              const fullName = [o.prenom, o.nom].filter(Boolean).join(" ");
+              return (
+                <option key={o.id} value={o.id}>
+                  {fullName}
+                  {o.equipeNom ? ` — ${o.equipeNom}` : ""}
+                </option>
+              );
+            })}
+          </Select>
+        </Field>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <Field label="Du" required>
@@ -95,7 +139,11 @@ export function MultiPointageForm({
           </Select>
         </Field>
         <Field label="Chantier (optionnel)">
-          <Select name="chantierId" defaultValue={defaultChantierId ?? ""}>
+          <Select
+            key={`chantier-${currentDefaultChantier ?? "none"}`}
+            name="chantierId"
+            defaultValue={currentDefaultChantier ?? ""}
+          >
             <option value="">— Équipe en cours —</option>
             {chantiers.map((c) => (
               <option key={c.id} value={c.id}>
