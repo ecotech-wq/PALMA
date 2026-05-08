@@ -7,9 +7,8 @@ import {
   Wallet,
   CheckCircle2,
   AlertCircle,
-  ChevronLeft,
-  ChevronRight as ChevRight,
   Receipt,
+  CalendarRange,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/Button";
@@ -17,56 +16,124 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
+import { Input, Field } from "@/components/ui/Input";
 import { calcMontantBrut } from "@/lib/calc-paie";
 import { formatEuro, formatDate, cn } from "@/lib/utils";
 import { PaiePendingList } from "./PaiePendingList";
 
-const monthFmt = new Intl.DateTimeFormat("fr-FR", {
-  month: "long",
+const dateRangeFmt = new Intl.DateTimeFormat("fr-FR", {
+  day: "numeric",
+  month: "short",
   year: "numeric",
 });
+
+function isoDay(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** Construit toutes les plages prédéfinies pour le sélecteur de période */
+function buildPeriodPresets() {
+  const today = new Date();
+  const dow = today.getDay();
+  const offsetMon = dow === 0 ? 6 : dow - 1;
+
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - offsetMon);
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+
+  const last7Start = new Date(today);
+  last7Start.setDate(today.getDate() - 6);
+
+  const last30Start = new Date(today);
+  last30Start.setDate(today.getDate() - 29);
+
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+  const startPrevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const endPrevMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+
+  return [
+    { key: "today", label: "Aujourd'hui", from: isoDay(today), to: isoDay(today) },
+    {
+      key: "week",
+      label: "Cette semaine",
+      from: isoDay(startOfWeek),
+      to: isoDay(endOfWeek),
+    },
+    { key: "last7", label: "7 jours", from: isoDay(last7Start), to: isoDay(today) },
+    {
+      key: "month",
+      label: "Ce mois",
+      from: isoDay(startOfMonth),
+      to: isoDay(endOfMonth),
+    },
+    {
+      key: "prev_month",
+      label: "Mois dernier",
+      from: isoDay(startPrevMonth),
+      to: isoDay(endPrevMonth),
+    },
+    { key: "last30", label: "30 jours", from: isoDay(last30Start), to: isoDay(today) },
+  ];
+}
 
 export default async function PaieListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>;
+  searchParams: Promise<{ month?: string; from?: string; to?: string }>;
 }) {
-  const { month: monthParam } = await searchParams;
+  const { month: monthParam, from: fromParam, to: toParam } = await searchParams;
 
   const now = new Date();
-  let year = now.getFullYear();
-  let monthIdx = now.getMonth();
-  if (monthParam) {
+  // Période courante : par défaut le mois en cours
+  let from: string;
+  let to: string;
+  if (fromParam && toParam) {
+    from = fromParam;
+    to = toParam;
+  } else if (monthParam) {
+    // Compatibilité ancienne URL ?month=YYYY-MM
     const m = monthParam.match(/^(\d{4})-(\d{2})$/);
     if (m) {
-      year = parseInt(m[1], 10);
-      monthIdx = parseInt(m[2], 10) - 1;
+      const y = parseInt(m[1], 10);
+      const mIdx = parseInt(m[2], 10) - 1;
+      from = isoDay(new Date(y, mIdx, 1));
+      to = isoDay(new Date(y, mIdx + 1, 0));
+    } else {
+      from = isoDay(new Date(now.getFullYear(), now.getMonth(), 1));
+      to = isoDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
     }
+  } else {
+    from = isoDay(new Date(now.getFullYear(), now.getMonth(), 1));
+    to = isoDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
   }
-  const monthStart = new Date(Date.UTC(year, monthIdx, 1));
-  const monthEnd = new Date(Date.UTC(year, monthIdx + 1, 1));
-  const monthLabel = monthFmt.format(monthStart);
 
-  // Format ?month=YYYY-MM pour la nav précédent / suivant
-  const prevDate = new Date(Date.UTC(year, monthIdx - 1, 1));
-  const nextDate = new Date(Date.UTC(year, monthIdx + 1, 1));
-  const fmtMonthParam = (d: Date) =>
-    `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-  const isCurrent =
-    year === now.getFullYear() && monthIdx === now.getMonth();
+  // Bornes UTC pour les requêtes
+  const periodStart = new Date(from + "T00:00:00.000Z");
+  const periodEnd = new Date(to + "T00:00:00.000Z");
+  // Pour les requêtes "lt" : périodEnd + 1 jour
+  const periodEndExclusive = new Date(periodEnd);
+  periodEndExclusive.setUTCDate(periodEndExclusive.getUTCDate() + 1);
+
+  const periodLabel = `${dateRangeFmt.format(periodStart)} → ${dateRangeFmt.format(periodEnd)}`;
+  const isSingleDay = from === to;
+  const presets = buildPeriodPresets();
+  const activePresetKey = presets.find((p) => p.from === from && p.to === to)?.key;
 
   const [ouvriers, recentPaiements] = await Promise.all([
     db.ouvrier.findMany({
       where: { actif: true },
       include: {
         pointages: {
-          where: { date: { gte: monthStart, lt: monthEnd } },
+          where: { date: { gte: periodStart, lt: periodEndExclusive } },
           select: { joursTravailles: true },
         },
         paiements: {
           where: {
-            periodeDebut: { lt: monthEnd },
-            periodeFin: { gte: monthStart },
+            periodeDebut: { lt: periodEndExclusive },
+            periodeFin: { gte: periodStart },
             statut: { in: ["CALCULE", "PAYE"] },
           },
           orderBy: { date: "desc" },
@@ -170,19 +237,19 @@ export default async function PaieListPage({
     totalActifs > 0 ? Math.round((aCalculer.length / totalActifs) * 100) : 0;
 
   // Période YYYY-MM-DD pour les liens "Générer paiement"
-  const periodeDebutStr = monthStart.toISOString().slice(0, 10);
-  const periodeFinStr = new Date(Date.UTC(year, monthIdx + 1, 0))
-    .toISOString()
-    .slice(0, 10);
+  const periodeDebutStr = from;
+  const periodeFinStr = to;
 
   return (
     <div>
       <PageHeader
         title="Paie"
         description={
-          isCurrent
-            ? "Tableau de bord du mois en cours"
-            : "Tableau de bord paie"
+          activePresetKey === "today"
+            ? "Tableau de bord — Aujourd'hui"
+            : activePresetKey === "month"
+              ? "Tableau de bord du mois en cours"
+              : `Tableau de bord — ${periodLabel}`
         }
         action={
           <Link href="/paie/nouveau">
@@ -195,29 +262,72 @@ export default async function PaieListPage({
         }
       />
 
-      {/* Sélecteur de mois */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-2 mb-5 flex items-center gap-2">
-        <Link href={`/paie?month=${fmtMonthParam(prevDate)}`}>
-          <Button variant="ghost" size="icon">
-            <ChevronLeft size={18} />
-          </Button>
-        </Link>
-        <div className="flex-1 text-center font-semibold capitalize text-slate-900 dark:text-slate-100">
-          {monthLabel}
-        </div>
-        <Link href={`/paie?month=${fmtMonthParam(nextDate)}`}>
-          <Button variant="ghost" size="icon">
-            <ChevRight size={18} />
-          </Button>
-        </Link>
-        {!isCurrent && (
-          <Link href="/paie">
-            <Button variant="outline" size="sm">
-              Mois courant
+      {/* Sélecteur de période avec presets + plage personnalisée */}
+      <Card className="mb-5">
+        <CardBody className="!py-3 space-y-3">
+          {/* Chips presets */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-slate-500 dark:text-slate-400 mr-1 inline-flex items-center gap-1">
+              <CalendarRange size={13} /> Période :
+            </span>
+            {presets.map((p) => {
+              const isActive = activePresetKey === p.key;
+              return (
+                <Link
+                  key={p.key}
+                  href={`/paie?from=${p.from}&to=${p.to}`}
+                  className={cn(
+                    "text-xs px-2.5 py-1 rounded-md border transition",
+                    isActive
+                      ? "bg-brand-100 dark:bg-brand-900/40 border-brand-300 dark:border-brand-700 text-brand-700 dark:text-brand-300 font-medium"
+                      : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                  )}
+                >
+                  {p.label}
+                </Link>
+              );
+            })}
+          </div>
+
+          {/* Range personnalisé */}
+          <form
+            method="get"
+            className="flex flex-col sm:flex-row sm:items-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800"
+          >
+            <div className="flex-1">
+              <Field label="Du">
+                <Input type="date" name="from" defaultValue={from} />
+              </Field>
+            </div>
+            <div className="flex-1">
+              <Field label="Au">
+                <Input type="date" name="to" defaultValue={to} />
+              </Field>
+            </div>
+            <Button type="submit" size="sm" variant="secondary">
+              Appliquer
             </Button>
-          </Link>
-        )}
-      </div>
+            {activePresetKey !== "month" && (
+              <Link
+                href="/paie"
+                className="text-xs text-slate-500 dark:text-slate-400 hover:underline self-center"
+              >
+                Réinitialiser
+              </Link>
+            )}
+          </form>
+
+          {/* Indicateur de période active */}
+          <div className="text-[11px] text-slate-500 dark:text-slate-500 flex items-center gap-1.5">
+            <span className="font-medium">Plage active :</span>
+            <span className="text-slate-700 dark:text-slate-300">
+              {isSingleDay
+                ? dateRangeFmt.format(periodStart)
+                : periodLabel}
+            </span>
+          </div>
+        </CardBody>
+      </Card>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
@@ -259,7 +369,7 @@ export default async function PaieListPage({
           label="Sans pointage"
           value={sansPointage.length}
           subtitle={
-            sansPointage.length > 0 ? "Pas de pointage ce mois" : "Tous pointés"
+            sansPointage.length > 0 ? "Pas de pointage sur la période" : "Tous pointés"
           }
           color="gray"
         />
@@ -384,7 +494,7 @@ export default async function PaieListPage({
         <CardHeader className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <CheckCircle2 size={18} className="text-green-600" />
-            Payés ce mois ({payes.length})
+            Payés sur la période ({payes.length})
             {totalPayes > 0 && (
               <span className="text-sm font-normal text-slate-500 dark:text-slate-400">
                 — {formatEuro(totalPayes)}
@@ -395,7 +505,7 @@ export default async function PaieListPage({
         <CardBody className="!p-0">
           {payes.length === 0 ? (
             <div className="text-sm text-slate-500 dark:text-slate-400 italic py-3 px-4">
-              Aucun paiement réglé pour ce mois.
+              Aucun paiement réglé sur la période.
             </div>
           ) : (
             <ul className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -438,7 +548,7 @@ export default async function PaieListPage({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <AlertCircle size={18} className="text-slate-500" />
-              Sans pointage ce mois ({sansPointage.length})
+              Sans pointage sur la période ({sansPointage.length})
             </CardTitle>
           </CardHeader>
           <CardBody>
