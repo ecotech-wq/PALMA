@@ -14,6 +14,8 @@ export const authConfig = {
       const isPublic =
         path.startsWith("/login") ||
         path.startsWith("/register") ||
+        path.startsWith("/forgot-password") ||
+        path.startsWith("/reset-password") ||
         path.startsWith("/api/auth");
 
       if (isPublic) return true;

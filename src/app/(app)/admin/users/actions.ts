@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { createResetTokenForUser } from "@/lib/password-reset";
+import { sendEmail, isEmailConfigured } from "@/lib/email";
 
 async function ensureAdmin() {
   const session = await auth();
@@ -58,4 +60,59 @@ export async function changeUserRole(userId: string, role: string) {
     data: { role: parsed },
   });
   revalidatePath("/admin/users");
+}
+
+/**
+ * Génère un lien de réinitialisation de mot de passe pour un autre utilisateur.
+ * Si SMTP est configuré, envoie l'email automatiquement.
+ * Dans tous les cas, retourne le lien (pour que l'admin puisse le copier).
+ */
+export async function adminGenerateResetLink(userId: string): Promise<{
+  url: string;
+  expiresAt: Date;
+  emailSent: boolean;
+  userEmail: string;
+}> {
+  await ensureAdmin();
+  const user = await db.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("Utilisateur introuvable");
+
+  const { url, expiresAt } = await createResetTokenForUser(user.id);
+
+  let emailSent = false;
+  if (isEmailConfigured()) {
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: "Réinitialisation de ton mot de passe Autonhome",
+        text:
+          `Bonjour ${user.name},\n\n` +
+          `Un administrateur a déclenché une réinitialisation de ton mot de passe.\n` +
+          `Ouvre ce lien pour définir un nouveau mot de passe :\n\n` +
+          `${url}\n\n` +
+          `Lien valide jusqu'au ${expiresAt.toLocaleString("fr-FR")}.\n\n— Autonhome`,
+        html: `
+          <p>Bonjour ${escapeHtml(user.name)},</p>
+          <p>Un administrateur a déclenché une réinitialisation de ton mot de passe Autonhome.</p>
+          <p><a href="${url}" style="display:inline-block;background:#135858;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none">Définir un nouveau mot de passe</a></p>
+          <p style="color:#666;font-size:13px">Lien valide jusqu'au ${expiresAt.toLocaleString("fr-FR")}.</p>
+        `,
+      });
+      emailSent = true;
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("[admin reset] échec envoi email", e);
+    }
+  }
+
+  revalidatePath("/admin/users");
+  return { url, expiresAt, emailSent, userEmail: user.email };
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

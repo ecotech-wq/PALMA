@@ -34,7 +34,24 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  chantiersGeres Chantier[] @relation("ChefChantier")
+  chantiersGeres Chantier[]           @relation("ChefChantier")
+  passwordResets PasswordResetToken[]
+}
+
+// Token à usage unique pour réinitialiser un mot de passe.
+// `tokenHash` = hash SHA-256 du token (le token clair est dans l'URL envoyée).
+// On ne stocke jamais le token clair en base.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // =====================================================

@@ -10,6 +10,7 @@ import {
   revokeUser,
   deleteUser,
   changeUserRole,
+  adminGenerateResetLink,
 } from "./actions";
 
 const statusLabel: Record<string, string> = {
@@ -97,6 +98,7 @@ export default async function AdminUsersPage() {
                     onRevoke={revokeUser}
                     onDelete={deleteUser}
                     onChangeRole={changeUserRole}
+                    onResetPassword={adminGenerateResetLink}
                   />
                 </li>
               );

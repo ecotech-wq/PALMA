@@ -7,12 +7,17 @@ import { BrandLockup } from "@/components/BrandLockup";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; callbackUrl?: string; registered?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    callbackUrl?: string;
+    registered?: string;
+    reset?: string;
+  }>;
 }) {
   const session = await auth();
   if (session?.user) redirect("/dashboard");
 
-  const { error, callbackUrl, registered } = await searchParams;
+  const { error, callbackUrl, registered, reset } = await searchParams;
 
   async function login(formData: FormData) {
     "use server";
@@ -60,6 +65,12 @@ export default async function LoginPage({
             </div>
           )}
 
+          {reset === "1" && (
+            <div className="mb-4 rounded-md border border-green-200 bg-green-50 dark:bg-green-950 dark:border-green-900 px-3 py-2 text-sm text-green-800 dark:text-green-200">
+              Mot de passe modifié. Tu peux maintenant te connecter.
+            </div>
+          )}
+
           {errorMessage && (
             <div className="mb-4 rounded-md border border-red-200 bg-red-50 dark:bg-red-950 dark:border-red-900 px-3 py-2 text-sm text-red-700 dark:text-red-300">
               {errorMessage}
@@ -102,6 +113,15 @@ export default async function LoginPage({
             >
               Se connecter
             </button>
+
+            <div className="text-right text-xs">
+              <Link
+                href="/forgot-password"
+                className="text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-700 hover:underline"
+              >
+                Mot de passe oublié ?
+              </Link>
+            </div>
           </form>
 
           <div className="mt-5 pt-5 border-t border-slate-200 dark:border-slate-800 text-center text-sm">

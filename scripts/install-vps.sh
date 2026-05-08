@@ -264,6 +264,13 @@ services:
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
+      # SMTP (optionnel) : envoi d'emails de reset MdP
+      SMTP_HOST: \${SMTP_HOST:-}
+      SMTP_PORT: \${SMTP_PORT:-465}
+      SMTP_SECURE: \${SMTP_SECURE:-true}
+      SMTP_USER: \${SMTP_USER:-}
+      SMTP_PASS: \${SMTP_PASS:-}
+      SMTP_FROM: \${SMTP_FROM:-}
     ports:
       - "127.0.0.1:${APP_PORT}:3000"
     volumes:
