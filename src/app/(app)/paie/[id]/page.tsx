@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Check, X, Trash2, Save } from "lucide-react";
+import { Check, X, Trash2, Save, Undo2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Field, Input, Select } from "@/components/ui/Input";
 import {
   marquerPaye,
+  marquerEnAttente,
   annulerPaiement,
   updatePaiementMeta,
   deletePaiement,
@@ -41,9 +42,11 @@ export default async function PaiementDetailPage({
 
   const fullName = [paiement.ouvrier.prenom, paiement.ouvrier.nom].filter(Boolean).join(" ");
   const payerAction = marquerPaye.bind(null, id);
+  const enAttenteAction = marquerEnAttente.bind(null, id);
   const annulerAction = annulerPaiement.bind(null, id);
   const updateMetaAction = updatePaiementMeta.bind(null, id);
   const deleteAction = deletePaiement.bind(null, id);
+  const editable = paiement.statut !== "ANNULE";
 
   // Pré-remplit l'input date au format yyyy-MM-dd
   const dateValue = new Date(paiement.date).toISOString().slice(0, 10);
@@ -55,9 +58,10 @@ export default async function PaiementDetailPage({
         description={`Du ${formatDate(paiement.periodeDebut)} au ${formatDate(paiement.periodeFin)}`}
         backHref="/paie"
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             {paiement.statut === "CALCULE" && (
               <>
+                <Badge color="yellow">En attente</Badge>
                 <form action={payerAction}>
                   <Button type="submit" size="sm">
                     <Check size={14} />
@@ -65,14 +69,30 @@ export default async function PaiementDetailPage({
                   </Button>
                 </form>
                 <form action={annulerAction}>
-                  <Button type="submit" variant="danger" size="sm">
+                  <Button type="submit" variant="outline" size="sm">
                     <X size={14} />
                     <span className="hidden sm:inline">Annuler</span>
                   </Button>
                 </form>
               </>
             )}
-            {paiement.statut === "PAYE" && <Badge color="green">Payé</Badge>}
+            {paiement.statut === "PAYE" && (
+              <>
+                <Badge color="green">Payé</Badge>
+                <form action={enAttenteAction}>
+                  <Button type="submit" variant="outline" size="sm">
+                    <Undo2 size={14} />
+                    <span className="hidden sm:inline">Repasser en attente</span>
+                  </Button>
+                </form>
+                <form action={annulerAction}>
+                  <Button type="submit" variant="outline" size="sm">
+                    <X size={14} />
+                    <span className="hidden sm:inline">Annuler</span>
+                  </Button>
+                </form>
+              </>
+            )}
             {paiement.statut === "ANNULE" && <Badge color="red">Annulé</Badge>}
           </div>
         }
@@ -197,7 +217,7 @@ export default async function PaiementDetailPage({
             </CardBody>
           </Card>
 
-          {paiement.statut === "CALCULE" && (
+          {editable && (
             <Card>
               <CardHeader>
                 <CardTitle>Modifier le paiement</CardTitle>
@@ -223,8 +243,8 @@ export default async function PaiementDetailPage({
                     Enregistrer
                   </Button>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 italic">
-                    Pour recalculer le montant, annule ce paiement puis génère-le à
-                    nouveau (les avances et retenues seront restaurées).
+                    Pour recalculer le montant (jours travaillés, avances,
+                    retenues), supprime ce paiement et génère-le à nouveau.
                   </p>
                 </form>
               </CardBody>
@@ -232,38 +252,37 @@ export default async function PaiementDetailPage({
           )}
 
           {paiement.statut === "ANNULE" && (
-            <>
-              <Card className="bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900">
-                <CardBody className="text-sm text-red-800 dark:text-red-300">
-                  Ce paiement a été annulé. Les avances et retenues outils ont été
-                  restaurées.
-                </CardBody>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Supprimer définitivement</CardTitle>
-                </CardHeader>
-                <CardBody>
-                  <form action={deleteAction}>
-                    <Button
-                      type="submit"
-                      variant="danger"
-                      size="sm"
-                      className="w-full"
-                    >
-                      <Trash2 size={14} />
-                      Supprimer ce paiement
-                    </Button>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-2">
-                      L'historique sera retiré définitivement. Les avances et
-                      retenues, déjà restaurées par l'annulation, ne sont pas
-                      affectées.
-                    </p>
-                  </form>
-                </CardBody>
-              </Card>
-            </>
+            <Card className="bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900">
+              <CardBody className="text-sm text-red-800 dark:text-red-300">
+                Ce paiement a été annulé. Les avances et retenues outils ont été
+                restaurées et sont à nouveau en cours.
+              </CardBody>
+            </Card>
           )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Supprimer définitivement</CardTitle>
+            </CardHeader>
+            <CardBody>
+              <form action={deleteAction}>
+                <Button
+                  type="submit"
+                  variant="danger"
+                  size="sm"
+                  className="w-full"
+                >
+                  <Trash2 size={14} />
+                  Supprimer ce paiement
+                </Button>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-2">
+                  {paiement.statut === "ANNULE"
+                    ? "Suppression sèche : l'historique disparaît définitivement."
+                    : "Les avances réglées et les retenues outils seront automatiquement restaurées (comme une annulation), puis le paiement sera supprimé."}
+                </p>
+              </form>
+            </CardBody>
+          </Card>
         </div>
       </div>
     </div>

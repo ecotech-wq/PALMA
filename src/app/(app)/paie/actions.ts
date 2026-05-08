@@ -116,12 +116,39 @@ export async function marquerPaye(id: string) {
   revalidatePath(`/paie/${id}`);
 }
 
+/**
+ * Repasse un paiement payé en statut "Calculé" (= en attente).
+ * Pratique pour corriger un paiement marqué payé par erreur, ou pour
+ * pouvoir l'éditer plus librement avant de le re-valider.
+ */
+export async function marquerEnAttente(id: string) {
+  const existing = await db.paiement.findUnique({
+    where: { id },
+    select: { statut: true, ouvrierId: true },
+  });
+  if (!existing) throw new Error("Paiement introuvable");
+  if (existing.statut !== "PAYE") {
+    throw new Error("Seul un paiement marqué payé peut repasser en attente");
+  }
+  await db.paiement.update({
+    where: { id },
+    data: { statut: "CALCULE" },
+  });
+  revalidatePath("/paie");
+  revalidatePath(`/paie/${id}`);
+  revalidatePath(`/ouvriers/${existing.ouvrierId}`);
+}
+
 export async function annulerPaiement(id: string) {
   const p = await db.paiement.findUnique({
     where: { id },
     include: { avances: true, retenuesOutils: true },
   });
   if (!p) throw new Error("Paiement introuvable");
+  if (p.statut === "ANNULE") {
+    // Idempotent : déjà annulé
+    return;
+  }
 
   await db.$transaction(async (tx) => {
     // Restaurer les avances
@@ -176,8 +203,10 @@ export async function updatePaiementMeta(id: string, formData: FormData) {
     select: { statut: true, ouvrierId: true },
   });
   if (!existing) throw new Error("Paiement introuvable");
-  if (existing.statut !== "CALCULE") {
-    throw new Error("Seuls les paiements en attente peuvent être modifiés");
+  if (existing.statut === "ANNULE") {
+    throw new Error(
+      "Un paiement annulé ne peut plus être modifié. Génère-en un nouveau."
+    );
   }
 
   const dateObj = new Date(data.date);
@@ -194,22 +223,47 @@ export async function updatePaiementMeta(id: string, formData: FormData) {
 }
 
 // =====================================================
-// Suppression définitive — uniquement pour les paiements annulés
+// Suppression définitive (avec restauration des avances/retenues si besoin)
 // =====================================================
 
+/**
+ * Supprime définitivement un paiement, quel que soit son statut.
+ * Si le paiement n'est pas déjà annulé, les avances réglées et les
+ * retenues outils sont restaurées avant la suppression (comme pour une
+ * annulation), pour ne pas laisser de données orphelines.
+ */
 export async function deletePaiement(id: string) {
   const existing = await db.paiement.findUnique({
     where: { id },
-    select: { statut: true, ouvrierId: true },
+    include: { retenuesOutils: true },
   });
   if (!existing) throw new Error("Paiement introuvable");
-  if (existing.statut !== "ANNULE") {
-    throw new Error(
-      "Seul un paiement annulé peut être supprimé définitivement. Annulez-le d'abord."
-    );
-  }
 
-  await db.paiement.delete({ where: { id } });
+  await db.$transaction(async (tx) => {
+    // Si pas encore annulé, on restaure les avances + retenues outils
+    if (existing.statut !== "ANNULE") {
+      await tx.avance.updateMany({
+        where: { paiementId: id },
+        data: { reglee: false, paiementId: null },
+      });
+      for (const ret of existing.retenuesOutils) {
+        const outil = await tx.outilPersonnel.findUnique({
+          where: { id: ret.outilPersonnelId },
+        });
+        if (outil) {
+          await tx.outilPersonnel.update({
+            where: { id: ret.outilPersonnelId },
+            data: {
+              restantDu: Number(outil.restantDu) + Number(ret.montant),
+              solde: false,
+            },
+          });
+        }
+      }
+      await tx.retenueOutil.deleteMany({ where: { paiementId: id } });
+    }
+    await tx.paiement.delete({ where: { id } });
+  });
 
   revalidatePath("/paie");
   revalidatePath(`/ouvriers/${existing.ouvrierId}`);
