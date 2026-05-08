@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { Card, CardBody } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -5,7 +6,61 @@ import { Input, Field, Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { generatePaiement } from "../actions";
 import { calcPaie } from "@/lib/calc-paie";
-import { formatEuro, formatDate } from "@/lib/utils";
+import { formatEuro, formatDate, cn } from "@/lib/utils";
+
+function iso(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** Renvoie la liste des plages prédéfinies (presets) pour le formulaire */
+function buildPresets() {
+  const today = new Date();
+  const dow = today.getDay(); // 0 = dim
+  const offsetMon = dow === 0 ? 6 : dow - 1;
+
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - offsetMon);
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+
+  const last7Start = new Date(today);
+  last7Start.setDate(today.getDate() - 6);
+
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+  const startPrevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const endPrevMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+
+  return [
+    { key: "today", label: "Aujourd'hui", debut: iso(today), fin: iso(today) },
+    {
+      key: "yesterday",
+      label: "Hier",
+      debut: iso(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)),
+      fin: iso(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)),
+    },
+    {
+      key: "this_week",
+      label: "Cette semaine",
+      debut: iso(startOfWeek),
+      fin: iso(endOfWeek),
+    },
+    { key: "last_7", label: "7 derniers jours", debut: iso(last7Start), fin: iso(today) },
+    {
+      key: "this_month",
+      label: "Mois en cours",
+      debut: iso(startOfMonth),
+      fin: iso(endOfMonth),
+    },
+    {
+      key: "prev_month",
+      label: "Mois dernier",
+      debut: iso(startPrevMonth),
+      fin: iso(endPrevMonth),
+    },
+  ];
+}
 
 export default async function NouveauPaiementPage({
   searchParams,
@@ -24,6 +79,7 @@ export default async function NouveauPaiementPage({
   const lastOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   const periodeDebut = sp.periodeDebut ?? firstOfMonth.toISOString().slice(0, 10);
   const periodeFin = sp.periodeFin ?? lastOfMonth.toISOString().slice(0, 10);
+  const presets = buildPresets();
 
   // Aperçu si ouvrier sélectionné
   let preview: {
@@ -84,6 +140,34 @@ export default async function NouveauPaiementPage({
 
       <Card className="mb-5">
         <CardBody>
+          {/* Presets rapides pour la période */}
+          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-slate-500 dark:text-slate-400 mr-1">
+              Plage rapide :
+            </span>
+            {presets.map((p) => {
+              const params = new URLSearchParams();
+              if (sp.ouvrierId) params.set("ouvrierId", sp.ouvrierId);
+              params.set("periodeDebut", p.debut);
+              params.set("periodeFin", p.fin);
+              const isActive = p.debut === periodeDebut && p.fin === periodeFin;
+              return (
+                <Link
+                  key={p.key}
+                  href={`/paie/nouveau?${params.toString()}`}
+                  className={cn(
+                    "text-xs px-2.5 py-1 rounded-md border transition",
+                    isActive
+                      ? "bg-brand-100 dark:bg-brand-900/40 border-brand-300 dark:border-brand-700 text-brand-700 dark:text-brand-300 font-medium"
+                      : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                  )}
+                >
+                  {p.label}
+                </Link>
+              );
+            })}
+          </div>
+
           <form className="grid grid-cols-1 sm:grid-cols-12 gap-3" method="get">
             <div className="sm:col-span-5">
               <Field label="Ouvrier" required>

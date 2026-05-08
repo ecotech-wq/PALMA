@@ -11,6 +11,7 @@ import { OuvrierForm } from "../OuvrierForm";
 import { PointageHistory } from "../PointageHistory";
 import { MonthlyRecap } from "../MonthlyRecap";
 import { PointageCalendar } from "../../pointage/PointageCalendar";
+import { OuvrierActiveToggle } from "../OuvrierActiveToggle";
 import { ResettingForm } from "@/components/ResettingForm";
 import { updateOuvrier, deleteOuvrier } from "../actions";
 import {
@@ -124,7 +125,12 @@ export default async function OuvrierDetailPage({
         title={fullName}
         backHref="/ouvriers"
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <OuvrierActiveToggle
+              ouvrierId={id}
+              actif={ouvrier.actif}
+              showLabel
+            />
             <Link href={`/paie/nouveau?ouvrierId=${id}`}>
               <Button size="sm">
                 <Banknote size={14} />

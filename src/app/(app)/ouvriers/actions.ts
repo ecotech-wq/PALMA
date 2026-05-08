@@ -86,3 +86,28 @@ export async function deleteOuvrier(id: string) {
   revalidatePath("/ouvriers");
   redirect("/ouvriers");
 }
+
+/**
+ * Bascule rapide actif / inactif depuis la liste des ouvriers ou
+ * directement sur la fiche, sans passer par le formulaire complet.
+ * Utile pour les ouvriers ponctuels qui ne travaillent qu'un jour : on
+ * les active pour saisir leur pointage / paiement, puis on les
+ * désactive pour qu'ils n'apparaissent plus dans le pointage du jour.
+ */
+export async function toggleOuvrierActif(id: string): Promise<boolean> {
+  const o = await db.ouvrier.findUnique({
+    where: { id },
+    select: { actif: true },
+  });
+  if (!o) throw new Error("Ouvrier introuvable");
+  const nextValue = !o.actif;
+  await db.ouvrier.update({
+    where: { id },
+    data: { actif: nextValue },
+  });
+  revalidatePath("/ouvriers");
+  revalidatePath(`/ouvriers/${id}`);
+  revalidatePath("/pointage");
+  revalidatePath("/paie");
+  return nextValue;
+}

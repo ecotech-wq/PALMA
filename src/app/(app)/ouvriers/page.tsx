@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Plus, User, Phone, Search } from "lucide-react";
+import { Plus, User, Phone, Search, ChevronRight } from "lucide-react";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
 import { formatEuro } from "@/lib/utils";
+import { OuvrierActiveToggle } from "./OuvrierActiveToggle";
 
 const contratLabel: Record<string, string> = {
   FIXE: "Fixe",
@@ -131,12 +132,15 @@ export default async function OuvriersListPage({
             {ouvriers.map((o) => {
               const fullName = [o.prenom, o.nom].filter(Boolean).join(" ");
               return (
-                <li key={o.id}>
+                <li
+                  key={o.id}
+                  className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-900 transition"
+                >
                   <Link
                     href={`/ouvriers/${o.id}`}
-                    className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-900 transition"
+                    className="flex items-center gap-3 flex-1 min-w-0"
                   >
-                    <div className="w-12 h-12 shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
+                    <div className={`w-12 h-12 shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden relative ${!o.actif ? "opacity-50" : ""}`}>
                       {o.photo ? (
                         <Image src={o.photo} alt={fullName} fill sizes="48px" className="object-cover" />
                       ) : (
@@ -147,7 +151,9 @@ export default async function OuvriersListPage({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-slate-900 dark:text-slate-100 truncate">{fullName}</span>
+                        <span className={`font-medium truncate ${o.actif ? "text-slate-900 dark:text-slate-100" : "text-slate-500 dark:text-slate-400"}`}>
+                          {fullName}
+                        </span>
                         {!o.actif && <Badge color="slate">Inactif</Badge>}
                       </div>
                       <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-500 mt-0.5">
@@ -168,6 +174,14 @@ export default async function OuvriersListPage({
                         </span>
                       </div>
                     </div>
+                  </Link>
+                  <OuvrierActiveToggle ouvrierId={o.id} actif={o.actif} />
+                  <Link
+                    href={`/ouvriers/${o.id}`}
+                    className="text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 shrink-0"
+                    aria-label="Voir la fiche"
+                  >
+                    <ChevronRight size={16} />
                   </Link>
                 </li>
               );
