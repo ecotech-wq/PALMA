@@ -100,6 +100,29 @@ export async function updatePointage(id: string, formData: FormData) {
 }
 
 // =====================================================
+// Lecture des pointages d'un mois pour UN ouvrier (utilisé par le calendrier
+// pour charger à la volée les mois suivants/précédents sans recharger la page)
+// =====================================================
+
+export async function fetchPointagesForMonth(
+  ouvrierId: string,
+  year: number,
+  monthIdx: number
+): Promise<{ date: string; jours: number }[]> {
+  if (!ouvrierId) return [];
+  const start = new Date(Date.UTC(year, monthIdx, 1));
+  const end = new Date(Date.UTC(year, monthIdx + 1, 1));
+  const points = await db.pointage.findMany({
+    where: { ouvrierId, date: { gte: start, lt: end } },
+    select: { date: true, joursTravailles: true },
+  });
+  return points.map((p) => ({
+    date: p.date.toISOString().slice(0, 10),
+    jours: Number(p.joursTravailles),
+  }));
+}
+
+// =====================================================
 // Saisie batch via calendrier — un ouvrier, plusieurs jours sélectionnés
 // Format des entries : [{ date: "2025-05-08", jours: 1 }, ...]
 // jours = 0 → suppression du pointage

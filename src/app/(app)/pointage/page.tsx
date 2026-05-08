@@ -225,33 +225,35 @@ export default async function PointagePage({
       )}
 
       {mode === "plage" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Calendrier de pointage</CardTitle>
-          </CardHeader>
-          <CardBody>
-            {ouvriersForRange.length === 0 ? (
-              <EmptyState
-                icon={Calendar}
-                title="Aucun ouvrier actif"
-                description="Crée des ouvriers actifs avant de pointer."
-              />
-            ) : (
-              <PointageCalendar
-                key={`${selectedOuvrierId}-${year}-${monthIdx}`}
-                ouvrierId={selectedOuvrierId}
-                ouvriers={ouvriersForRange}
-                chantiers={chantiers}
-                initialPointages={calendarInitialPointages}
-                defaultChantierId={calendarDefaultChantierId}
-                year={year}
-                monthIdx={monthIdx}
-                basePath="/pointage"
-                action={savePointageBatch}
-              />
-            )}
-          </CardBody>
-        </Card>
+        <div className="max-w-md">
+          <Card>
+            <CardHeader>
+              <CardTitle>Calendrier de pointage</CardTitle>
+            </CardHeader>
+            <CardBody>
+              {ouvriersForRange.length === 0 ? (
+                <EmptyState
+                  icon={Calendar}
+                  title="Aucun ouvrier actif"
+                  description="Crée des ouvriers actifs avant de pointer."
+                />
+              ) : (
+                <PointageCalendar
+                  key={`${selectedOuvrierId}`}
+                  ouvrierId={selectedOuvrierId}
+                  ouvriers={ouvriersForRange}
+                  chantiers={chantiers}
+                  initialPointages={calendarInitialPointages}
+                  defaultChantierId={calendarDefaultChantierId}
+                  year={year}
+                  monthIdx={monthIdx}
+                  basePath="/pointage"
+                  action={savePointageBatch}
+                />
+              )}
+            </CardBody>
+          </Card>
+        </div>
       )}
     </div>
   );

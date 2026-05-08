@@ -168,31 +168,6 @@ export default async function OuvrierDetailPage({
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Calendrier de pointage</CardTitle>
-            </CardHeader>
-            <CardBody>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-                Clique sur un jour pour cycler entre <strong>1 j → ½ j → vide</strong>.
-                Les jours modifiés sont marqués d&apos;un point ; seuls eux
-                sont enregistrés. Idéal pour ajuster jour par jour ou rattraper
-                tout un mois en deux clics.
-              </p>
-              <PointageCalendar
-                key={`cal-${id}-${calYear}-${calMonthIdx}`}
-                ouvrierId={id}
-                chantiers={chantiers}
-                initialPointages={calendarInitial}
-                defaultChantierId={ouvrier.equipe?.chantierId ?? null}
-                year={calYear}
-                monthIdx={calMonthIdx}
-                basePath={`/ouvriers/${id}`}
-                action={savePointageBatch}
-              />
-            </CardBody>
-          </Card>
-
-          <Card>
             <CardHeader className="flex items-center justify-between">
               <CardTitle>Pointages récents (60 derniers jours)</CardTitle>
               <Link href={`/pointage?date=${today}`}>
@@ -405,6 +380,25 @@ export default async function OuvrierDetailPage({
         </div>
 
         <div className="space-y-5">
+          <Card>
+            <CardHeader>
+              <CardTitle>Calendrier de pointage</CardTitle>
+            </CardHeader>
+            <CardBody>
+              <PointageCalendar
+                key={`cal-${id}`}
+                ouvrierId={id}
+                chantiers={chantiers}
+                initialPointages={calendarInitial}
+                defaultChantierId={ouvrier.equipe?.chantierId ?? null}
+                year={calYear}
+                monthIdx={calMonthIdx}
+                basePath={`/ouvriers/${id}`}
+                action={savePointageBatch}
+              />
+            </CardBody>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Récap des 6 derniers mois</CardTitle>
