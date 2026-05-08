@@ -62,28 +62,37 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 # Le client Prisma (généré dans src/generated) est référencé par la sortie standalone
 COPY --from=builder --chown=nextjs:nodejs /app/src/generated ./src/generated
-# Schéma + migrations pour pouvoir lancer `prisma migrate deploy` au démarrage
+# Migrations SQL Prisma (appliquées par docker/migrate.cjs au boot)
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts
 
-# CLI Prisma + client + adaptateur PG (utilisés par l'entrypoint)
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
+# Client Prisma + adaptateur PG (runtime de l'app)
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 
-# Symlink pour que `npx prisma` fonctionne en runtime
-# (le standalone n'inclut pas node_modules/.bin par défaut)
-RUN mkdir -p /app/node_modules/.bin && \
-    ln -sf ../prisma/build/index.js /app/node_modules/.bin/prisma && \
-    chmod +x /app/node_modules/prisma/build/index.js && \
-    chown -h nextjs:nodejs /app/node_modules/.bin/prisma
+# pg + bcryptjs : nécessaires pour docker/migrate.cjs et docker/seed-admin.cjs
+# Le standalone Next.js peut les bundler dans ses chunks, mais on les veut
+# aussi en `require()` direct depuis nos scripts d'admin.
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pg ./node_modules/pg
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pg-types ./node_modules/pg-types
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pg-protocol ./node_modules/pg-protocol
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pg-pool ./node_modules/pg-pool
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pg-connection-string ./node_modules/pg-connection-string
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pgpass ./node_modules/pgpass
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/postgres-array ./node_modules/postgres-array
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/postgres-bytea ./node_modules/postgres-bytea
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/postgres-date ./node_modules/postgres-date
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/postgres-interval ./node_modules/postgres-interval
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/split2 ./node_modules/split2
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pg-cloudflare ./node_modules/pg-cloudflare
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/xtend ./node_modules/xtend
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/bcryptjs ./node_modules/bcryptjs
 
 # Dossier d'uploads persistant (sera monté en volume par docker-compose)
 RUN mkdir -p /app/public/uploads/materiel /app/public/uploads/ouvriers \
  && chown -R nextjs:nodejs /app/public/uploads
 
-# Script d'entrée qui applique les migrations puis lance le serveur
-COPY --chown=nextjs:nodejs docker/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+# Scripts admin/maintenance (entrypoint, migrations, seed)
+COPY --chown=nextjs:nodejs docker /app/docker
+RUN chmod +x /app/docker/entrypoint.sh && cp /app/docker/entrypoint.sh /app/entrypoint.sh
 
 USER nextjs
 EXPOSE 3000
