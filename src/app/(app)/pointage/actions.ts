@@ -100,6 +100,78 @@ export async function updatePointage(id: string, formData: FormData) {
 }
 
 // =====================================================
+// Saisie batch via calendrier — un ouvrier, plusieurs jours sélectionnés
+// Format des entries : [{ date: "2025-05-08", jours: 1 }, ...]
+// jours = 0 → suppression du pointage
+// =====================================================
+
+const batchEntrySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Format de date invalide"),
+  jours: z.coerce.number().min(0).max(2),
+});
+
+const batchSchema = z.object({
+  ouvrierId: z.string().min(1),
+  chantierId: z.string().optional().or(z.literal("")),
+  entries: z.array(batchEntrySchema),
+});
+
+export async function savePointageBatch(formData: FormData) {
+  const entriesRaw = formData.get("entries");
+  let parsedEntries: unknown;
+  try {
+    parsedEntries = JSON.parse(typeof entriesRaw === "string" ? entriesRaw : "[]");
+  } catch {
+    throw new Error("Données invalides");
+  }
+
+  const data = batchSchema.parse({
+    ouvrierId: formData.get("ouvrierId"),
+    chantierId: formData.get("chantierId"),
+    entries: parsedEntries,
+  });
+
+  if (data.entries.length === 0) return;
+
+  // Déduit le chantier par défaut depuis l'équipe si non spécifié
+  let chantierId: string | null = data.chantierId && data.chantierId.length > 0 ? data.chantierId : null;
+  if (!chantierId) {
+    const ouvrier = await db.ouvrier.findUnique({
+      where: { id: data.ouvrierId },
+      include: { equipe: { select: { chantierId: true } } },
+    });
+    if (!ouvrier) throw new Error("Ouvrier introuvable");
+    chantierId = ouvrier.equipe?.chantierId ?? null;
+  }
+
+  await db.$transaction(async (tx) => {
+    for (const entry of data.entries) {
+      const dateObj = new Date(entry.date + "T00:00:00.000Z");
+      if (entry.jours <= 0) {
+        await tx.pointage.deleteMany({
+          where: { ouvrierId: data.ouvrierId, date: dateObj },
+        });
+      } else {
+        await tx.pointage.upsert({
+          where: { ouvrierId_date: { ouvrierId: data.ouvrierId, date: dateObj } },
+          update: { joursTravailles: entry.jours, chantierId },
+          create: {
+            ouvrierId: data.ouvrierId,
+            date: dateObj,
+            joursTravailles: entry.jours,
+            chantierId,
+          },
+        });
+      }
+    }
+  });
+
+  revalidatePath("/pointage");
+  revalidatePath(`/ouvriers/${data.ouvrierId}`);
+  revalidatePath("/dashboard");
+}
+
+// =====================================================
 // Saisie sur une plage de dates pour UN ouvrier
 // (rattrapage en fin de semaine, fin de mois, forfait, etc.)
 // =====================================================

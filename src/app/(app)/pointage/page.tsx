@@ -6,9 +6,9 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { PointageGrid } from "./PointageGrid";
+import { PointageCalendar } from "./PointageCalendar";
 import { DatePicker } from "./DatePicker";
-import { savePointage, addPointagesRange } from "./actions";
-import { MultiPointageForm } from "../ouvriers/MultiPointageForm";
+import { savePointage, savePointageBatch } from "./actions";
 import { cn } from "@/lib/utils";
 
 function isoDate(d: Date): string {
@@ -24,13 +24,35 @@ function shiftDate(date: string, days: number): string {
 export default async function PointagePage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; mode?: string }>;
+  searchParams: Promise<{
+    date?: string;
+    mode?: string;
+    ouvrierId?: string;
+    month?: string;
+  }>;
 }) {
-  const { date: dateParam, mode: modeParam } = await searchParams;
+  const {
+    date: dateParam,
+    mode: modeParam,
+    ouvrierId: ouvrierIdParam,
+    month: monthParam,
+  } = await searchParams;
   const date = dateParam || isoDate(new Date());
   const dateObj = new Date(date);
   const dayDate = new Date(date + "T00:00:00.000Z");
   const mode = modeParam === "plage" ? "plage" : "jour";
+
+  // Mois affiché en mode plage (par défaut : mois courant)
+  const now = new Date();
+  let year = now.getFullYear();
+  let monthIdx = now.getMonth(); // 0-11
+  if (monthParam) {
+    const m = monthParam.match(/^(\d{4})-(\d{2})$/);
+    if (m) {
+      year = parseInt(m[1], 10);
+      monthIdx = parseInt(m[2], 10) - 1;
+    }
+  }
 
   const [ouvriers, chantiers] = await Promise.all([
     db.ouvrier.findMany({
@@ -47,6 +69,32 @@ export default async function PointagePage({
       orderBy: { nom: "asc" },
     }),
   ]);
+
+  // En mode plage, on charge les pointages du mois pour l'ouvrier sélectionné
+  let calendarInitialPointages: { date: string; jours: number }[] = [];
+  let calendarDefaultChantierId: string | null = null;
+  const selectedOuvrierId =
+    mode === "plage"
+      ? ouvrierIdParam ?? ouvriers[0]?.id ?? undefined
+      : undefined;
+
+  if (mode === "plage" && selectedOuvrierId) {
+    const monthStart = new Date(Date.UTC(year, monthIdx, 1));
+    const monthEnd = new Date(Date.UTC(year, monthIdx + 1, 1));
+    const ouvrierPointages = await db.pointage.findMany({
+      where: {
+        ouvrierId: selectedOuvrierId,
+        date: { gte: monthStart, lt: monthEnd },
+      },
+      select: { date: true, joursTravailles: true },
+    });
+    calendarInitialPointages = ouvrierPointages.map((p) => ({
+      date: p.date.toISOString().slice(0, 10),
+      jours: Number(p.joursTravailles),
+    }));
+    const ouv = ouvriers.find((o) => o.id === selectedOuvrierId);
+    calendarDefaultChantierId = ouv?.equipe?.chantier?.id ?? null;
+  }
 
   const ouvriersWithPointage = ouvriers.map((o) => ({
     id: o.id,
@@ -179,7 +227,7 @@ export default async function PointagePage({
       {mode === "plage" && (
         <Card>
           <CardHeader>
-            <CardTitle>Saisie sur plusieurs jours</CardTitle>
+            <CardTitle>Calendrier de pointage</CardTitle>
           </CardHeader>
           <CardBody>
             {ouvriersForRange.length === 0 ? (
@@ -189,23 +237,18 @@ export default async function PointagePage({
                 description="Crée des ouvriers actifs avant de pointer."
               />
             ) : (
-              <>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                  Choisis un ouvrier puis une plage de dates : tous les jours
-                  ouvrés sont pointés d&apos;un coup. Les jours déjà pointés
-                  sont conservés sauf si tu coches « Écraser ». Pratique pour
-                  rattraper une semaine ou un mois (ouvrier au mois, forfait,
-                  etc.).
-                </p>
-                <MultiPointageForm
-                  ouvriers={ouvriersForRange}
-                  chantiers={chantiers}
-                  defaultChantierId={
-                    ouvriersForRange[0]?.defaultChantierId ?? null
-                  }
-                  action={addPointagesRange}
-                />
-              </>
+              <PointageCalendar
+                key={`${selectedOuvrierId}-${year}-${monthIdx}`}
+                ouvrierId={selectedOuvrierId}
+                ouvriers={ouvriersForRange}
+                chantiers={chantiers}
+                initialPointages={calendarInitialPointages}
+                defaultChantierId={calendarDefaultChantierId}
+                year={year}
+                monthIdx={monthIdx}
+                basePath="/pointage"
+                action={savePointageBatch}
+              />
             )}
           </CardBody>
         </Card>

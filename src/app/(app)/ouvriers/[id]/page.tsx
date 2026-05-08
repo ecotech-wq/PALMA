@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { OuvrierForm } from "../OuvrierForm";
 import { PointageHistory } from "../PointageHistory";
 import { MonthlyRecap } from "../MonthlyRecap";
-import { MultiPointageForm } from "../MultiPointageForm";
+import { PointageCalendar } from "../../pointage/PointageCalendar";
 import { ResettingForm } from "@/components/ResettingForm";
 import { updateOuvrier, deleteOuvrier } from "../actions";
 import {
@@ -22,22 +22,39 @@ import {
 import {
   updatePointage,
   deletePointage,
-  addPointagesRange,
+  savePointageBatch,
 } from "../../pointage/actions";
 import { formatEuro, formatDate } from "@/lib/utils";
 
 export default async function OuvrierDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ month?: string }>;
 }) {
   const { id } = await params;
+  const { month: monthParam } = await searchParams;
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   const sixtyDaysAgo = new Date();
   sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
 
-  const [ouvrier, equipes, chantiers, pointages, pointagesRecap] = await Promise.all([
+  // Mois affiché dans le calendrier (par défaut : mois courant)
+  const now = new Date();
+  let calYear = now.getFullYear();
+  let calMonthIdx = now.getMonth();
+  if (monthParam) {
+    const m = monthParam.match(/^(\d{4})-(\d{2})$/);
+    if (m) {
+      calYear = parseInt(m[1], 10);
+      calMonthIdx = parseInt(m[2], 10) - 1;
+    }
+  }
+  const calMonthStart = new Date(Date.UTC(calYear, calMonthIdx, 1));
+  const calMonthEnd = new Date(Date.UTC(calYear, calMonthIdx + 1, 1));
+
+  const [ouvrier, equipes, chantiers, pointages, pointagesRecap, pointagesCalendar] = await Promise.all([
     db.ouvrier.findUnique({
       where: { id },
       include: {
@@ -67,8 +84,21 @@ export default async function OuvrierDetailPage({
       where: { ouvrierId: id, date: { gte: sixMonthsAgo } },
       select: { date: true, joursTravailles: true },
     }),
+    // Mois affiché dans le calendrier
+    db.pointage.findMany({
+      where: {
+        ouvrierId: id,
+        date: { gte: calMonthStart, lt: calMonthEnd },
+      },
+      select: { date: true, joursTravailles: true },
+    }),
   ]);
   if (!ouvrier) notFound();
+
+  const calendarInitial = pointagesCalendar.map((p) => ({
+    date: p.date.toISOString().slice(0, 10),
+    jours: Number(p.joursTravailles),
+  }));
 
   const updateAction = updateOuvrier.bind(null, id);
   const deleteAction = deleteOuvrier.bind(null, id);
@@ -139,19 +169,25 @@ export default async function OuvrierDetailPage({
 
           <Card>
             <CardHeader>
-              <CardTitle>Saisie rapide d&apos;une plage</CardTitle>
+              <CardTitle>Calendrier de pointage</CardTitle>
             </CardHeader>
             <CardBody>
               <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-                Pratique pour rattraper une semaine ou un mois entier (forfait,
-                ouvrier au mois). Les jours déjà pointés sont conservés sauf si
-                tu coches « Écraser ».
+                Clique sur un jour pour cycler entre <strong>1 j → ½ j → vide</strong>.
+                Les jours modifiés sont marqués d&apos;un point ; seuls eux
+                sont enregistrés. Idéal pour ajuster jour par jour ou rattraper
+                tout un mois en deux clics.
               </p>
-              <MultiPointageForm
+              <PointageCalendar
+                key={`cal-${id}-${calYear}-${calMonthIdx}`}
                 ouvrierId={id}
                 chantiers={chantiers}
+                initialPointages={calendarInitial}
                 defaultChantierId={ouvrier.equipe?.chantierId ?? null}
-                action={addPointagesRange}
+                year={calYear}
+                monthIdx={calMonthIdx}
+                basePath={`/ouvriers/${id}`}
+                action={savePointageBatch}
               />
             </CardBody>
           </Card>
