@@ -61,3 +61,54 @@ export async function savePointage(date: string, formData: FormData) {
   revalidatePath("/pointage");
   revalidatePath("/dashboard");
 }
+
+// =====================================================
+// Edition / suppression d'un pointage individuel
+// =====================================================
+
+const updateSchema = z.object({
+  joursTravailles: z.coerce.number().min(0.25).max(2),
+  chantierId: z.string().optional().or(z.literal("")),
+  note: z.string().optional().or(z.literal("")),
+});
+
+export async function updatePointage(id: string, formData: FormData) {
+  const data = updateSchema.parse({
+    joursTravailles: formData.get("joursTravailles"),
+    chantierId: formData.get("chantierId"),
+    note: formData.get("note"),
+  });
+
+  const existing = await db.pointage.findUnique({
+    where: { id },
+    select: { ouvrierId: true },
+  });
+  if (!existing) throw new Error("Pointage introuvable");
+
+  await db.pointage.update({
+    where: { id },
+    data: {
+      joursTravailles: data.joursTravailles,
+      chantierId: data.chantierId || null,
+      note: data.note || null,
+    },
+  });
+
+  revalidatePath("/pointage");
+  revalidatePath(`/ouvriers/${existing.ouvrierId}`);
+  revalidatePath("/dashboard");
+}
+
+export async function deletePointage(id: string) {
+  const existing = await db.pointage.findUnique({
+    where: { id },
+    select: { ouvrierId: true },
+  });
+  if (!existing) return;
+
+  await db.pointage.delete({ where: { id } });
+
+  revalidatePath("/pointage");
+  revalidatePath(`/ouvriers/${existing.ouvrierId}`);
+  revalidatePath("/dashboard");
+}

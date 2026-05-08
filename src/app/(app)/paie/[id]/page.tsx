@@ -1,12 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Check, X, ArrowLeft } from "lucide-react";
+import { Check, X, Trash2, Save } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
-import { marquerPaye, annulerPaiement } from "../actions";
+import { Field, Input, Select } from "@/components/ui/Input";
+import {
+  marquerPaye,
+  annulerPaiement,
+  updatePaiementMeta,
+  deletePaiement,
+} from "../actions";
 import { formatEuro, formatDate } from "@/lib/utils";
 
 const contratLabel: Record<string, string> = {
@@ -36,6 +42,11 @@ export default async function PaiementDetailPage({
   const fullName = [paiement.ouvrier.prenom, paiement.ouvrier.nom].filter(Boolean).join(" ");
   const payerAction = marquerPaye.bind(null, id);
   const annulerAction = annulerPaiement.bind(null, id);
+  const updateMetaAction = updatePaiementMeta.bind(null, id);
+  const deleteAction = deletePaiement.bind(null, id);
+
+  // Pré-remplit l'input date au format yyyy-MM-dd
+  const dateValue = new Date(paiement.date).toISOString().slice(0, 10);
 
   return (
     <div>
@@ -186,12 +197,72 @@ export default async function PaiementDetailPage({
             </CardBody>
           </Card>
 
-          {paiement.statut === "ANNULE" && (
-            <Card className="bg-red-50 border-red-200">
-              <CardBody className="text-sm text-red-800">
-                Ce paiement a été annulé. Les avances et retenues outils ont été restaurées.
+          {paiement.statut === "CALCULE" && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Modifier le paiement</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <form action={updateMetaAction} className="space-y-3">
+                  <Field label="Date du paiement" required>
+                    <Input
+                      type="date"
+                      name="date"
+                      defaultValue={dateValue}
+                      required
+                    />
+                  </Field>
+                  <Field label="Mode de règlement" required>
+                    <Select name="mode" defaultValue={paiement.mode}>
+                      <option value="ESPECES">Espèces</option>
+                      <option value="VIREMENT">Virement</option>
+                    </Select>
+                  </Field>
+                  <Button type="submit" size="sm" className="w-full">
+                    <Save size={14} />
+                    Enregistrer
+                  </Button>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                    Pour recalculer le montant, annule ce paiement puis génère-le à
+                    nouveau (les avances et retenues seront restaurées).
+                  </p>
+                </form>
               </CardBody>
             </Card>
+          )}
+
+          {paiement.statut === "ANNULE" && (
+            <>
+              <Card className="bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900">
+                <CardBody className="text-sm text-red-800 dark:text-red-300">
+                  Ce paiement a été annulé. Les avances et retenues outils ont été
+                  restaurées.
+                </CardBody>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Supprimer définitivement</CardTitle>
+                </CardHeader>
+                <CardBody>
+                  <form action={deleteAction}>
+                    <Button
+                      type="submit"
+                      variant="danger"
+                      size="sm"
+                      className="w-full"
+                    >
+                      <Trash2 size={14} />
+                      Supprimer ce paiement
+                    </Button>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-2">
+                      L'historique sera retiré définitivement. Les avances et
+                      retenues, déjà restaurées par l'annulation, ne sont pas
+                      affectées.
+                    </p>
+                  </form>
+                </CardBody>
+              </Card>
+            </>
           )}
         </div>
       </div>

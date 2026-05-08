@@ -155,3 +155,63 @@ export async function annulerPaiement(id: string) {
   revalidatePath(`/paie/${id}`);
   revalidatePath(`/ouvriers/${p.ouvrierId}`);
 }
+
+// =====================================================
+// Edition métadonnées (mode + date) — paiement non finalisé
+// =====================================================
+
+const updateMetaSchema = z.object({
+  mode: z.enum(["ESPECES", "VIREMENT"]),
+  date: z.string().min(1),
+});
+
+export async function updatePaiementMeta(id: string, formData: FormData) {
+  const data = updateMetaSchema.parse({
+    mode: formData.get("mode"),
+    date: formData.get("date"),
+  });
+
+  const existing = await db.paiement.findUnique({
+    where: { id },
+    select: { statut: true, ouvrierId: true },
+  });
+  if (!existing) throw new Error("Paiement introuvable");
+  if (existing.statut !== "CALCULE") {
+    throw new Error("Seuls les paiements en attente peuvent être modifiés");
+  }
+
+  const dateObj = new Date(data.date);
+  if (isNaN(dateObj.getTime())) throw new Error("Date invalide");
+
+  await db.paiement.update({
+    where: { id },
+    data: { mode: data.mode, date: dateObj },
+  });
+
+  revalidatePath("/paie");
+  revalidatePath(`/paie/${id}`);
+  revalidatePath(`/ouvriers/${existing.ouvrierId}`);
+}
+
+// =====================================================
+// Suppression définitive — uniquement pour les paiements annulés
+// =====================================================
+
+export async function deletePaiement(id: string) {
+  const existing = await db.paiement.findUnique({
+    where: { id },
+    select: { statut: true, ouvrierId: true },
+  });
+  if (!existing) throw new Error("Paiement introuvable");
+  if (existing.statut !== "ANNULE") {
+    throw new Error(
+      "Seul un paiement annulé peut être supprimé définitivement. Annulez-le d'abord."
+    );
+  }
+
+  await db.paiement.delete({ where: { id } });
+
+  revalidatePath("/paie");
+  revalidatePath(`/ouvriers/${existing.ouvrierId}`);
+  redirect("/paie");
+}

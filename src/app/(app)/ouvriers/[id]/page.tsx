@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Trash2, Banknote, Wrench, Plus, ChevronRight } from "lucide-react";
+import { Trash2, Banknote, Wrench, Plus, ChevronRight, Calendar } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -8,6 +8,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Input, Field, Select } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { OuvrierForm } from "../OuvrierForm";
+import { PointageHistory } from "../PointageHistory";
+import { MonthlyRecap } from "../MonthlyRecap";
 import { updateOuvrier, deleteOuvrier } from "../actions";
 import {
   addAvance,
@@ -15,6 +17,7 @@ import {
   addOutilPersonnel,
   deleteOutilPersonnel,
 } from "../paie-actions";
+import { updatePointage, deletePointage } from "../../pointage/actions";
 import { formatEuro, formatDate } from "@/lib/utils";
 
 export default async function OuvrierDetailPage({
@@ -23,7 +26,12 @@ export default async function OuvrierDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [ouvrier, equipes] = await Promise.all([
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const sixtyDaysAgo = new Date();
+  sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+  const [ouvrier, equipes, chantiers, pointages, pointagesRecap] = await Promise.all([
     db.ouvrier.findUnique({
       where: { id },
       include: {
@@ -36,6 +44,22 @@ export default async function OuvrierDetailPage({
       },
     }),
     db.equipe.findMany({ select: { id: true, nom: true }, orderBy: { nom: "asc" } }),
+    db.chantier.findMany({
+      where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE", "TERMINE"] } },
+      select: { id: true, nom: true },
+      orderBy: { nom: "asc" },
+    }),
+    // 60 derniers jours pour la liste éditable
+    db.pointage.findMany({
+      where: { ouvrierId: id, date: { gte: sixtyDaysAgo } },
+      include: { chantier: { select: { nom: true } } },
+      orderBy: { date: "desc" },
+    }),
+    // 6 derniers mois pour le récap (juste date + jours, pas de relation)
+    db.pointage.findMany({
+      where: { ouvrierId: id, date: { gte: sixMonthsAgo } },
+      select: { date: true, joursTravailles: true },
+    }),
   ]);
   if (!ouvrier) notFound();
 
@@ -102,6 +126,32 @@ export default async function OuvrierDetailPage({
                 equipes={equipes}
                 action={updateAction}
                 submitLabel="Enregistrer"
+              />
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex items-center justify-between">
+              <CardTitle>Pointages récents (60 derniers jours)</CardTitle>
+              <Link href={`/pointage?date=${today}`}>
+                <Button size="sm" variant="outline">
+                  <Calendar size={14} /> Saisir aujourd&apos;hui
+                </Button>
+              </Link>
+            </CardHeader>
+            <CardBody>
+              <PointageHistory
+                pointages={pointages.map((p) => ({
+                  id: p.id,
+                  date: p.date,
+                  joursTravailles: Number(p.joursTravailles),
+                  chantierId: p.chantierId,
+                  chantierNom: p.chantier?.nom ?? null,
+                  note: p.note,
+                }))}
+                chantiers={chantiers}
+                onUpdate={updatePointage}
+                onDelete={deletePointage}
               />
             </CardBody>
           </Card>
@@ -293,6 +343,26 @@ export default async function OuvrierDetailPage({
         </div>
 
         <div className="space-y-5">
+          <Card>
+            <CardHeader>
+              <CardTitle>Récap des 6 derniers mois</CardTitle>
+            </CardHeader>
+            <CardBody>
+              <MonthlyRecap
+                pointages={pointagesRecap.map((p) => ({
+                  date: p.date,
+                  joursTravailles: Number(p.joursTravailles),
+                }))}
+                typeContrat={ouvrier.typeContrat}
+                tarifBase={Number(ouvrier.tarifBase)}
+              />
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-3 italic">
+                Brut estimé selon le tarif actuel. Les paiements réels (avances, retenues
+                outils, etc.) sont dans la liste des paiements ci-dessous.
+              </p>
+            </CardBody>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Synthèse</CardTitle>
