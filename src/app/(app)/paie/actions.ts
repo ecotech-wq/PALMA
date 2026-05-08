@@ -117,6 +117,32 @@ export async function marquerPaye(id: string) {
 }
 
 /**
+ * Marque plusieurs paiements comme payés en un seul lot (bulk).
+ * Seuls les paiements en statut CALCULE sont concernés (sécurité).
+ * Renvoie le nombre de paiements effectivement marqués.
+ */
+export async function marquerPayesBulk(ids: string[]): Promise<number> {
+  if (!Array.isArray(ids) || ids.length === 0) return 0;
+  // Filtre stricte : on ne touche que les CALCULE
+  const result = await db.paiement.updateMany({
+    where: { id: { in: ids }, statut: "CALCULE" },
+    data: { statut: "PAYE" },
+  });
+  // Récupère les ouvrierIds concernés pour revalidate les fiches ouvrier
+  const paiements = await db.paiement.findMany({
+    where: { id: { in: ids } },
+    select: { ouvrierId: true },
+  });
+  const ouvrierIds = Array.from(new Set(paiements.map((p) => p.ouvrierId)));
+  revalidatePath("/paie");
+  revalidatePath("/dashboard");
+  for (const oid of ouvrierIds) {
+    revalidatePath(`/ouvriers/${oid}`);
+  }
+  return result.count;
+}
+
+/**
  * Repasse un paiement payé en statut "Calculé" (= en attente).
  * Pratique pour corriger un paiement marqué payé par erreur, ou pour
  * pouvoir l'éditer plus librement avant de le re-valider.

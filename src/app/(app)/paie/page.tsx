@@ -9,6 +9,7 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight as ChevRight,
+  Receipt,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/Button";
@@ -18,27 +19,12 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { calcMontantBrut } from "@/lib/calc-paie";
 import { formatEuro, formatDate, cn } from "@/lib/utils";
+import { PaiePendingList } from "./PaiePendingList";
 
 const monthFmt = new Intl.DateTimeFormat("fr-FR", {
   month: "long",
   year: "numeric",
 });
-
-type Statut = "PAYE" | "A_VERSER" | "A_CALCULER" | "PAS_DE_POINTAGE";
-
-const statutMeta: Record<
-  Statut,
-  {
-    label: string;
-    color: "green" | "yellow" | "blue" | "slate";
-    order: number;
-  }
-> = {
-  A_VERSER: { label: "À verser", color: "yellow", order: 0 },
-  A_CALCULER: { label: "À calculer", color: "blue", order: 1 },
-  PAYE: { label: "Payé", color: "green", order: 2 },
-  PAS_DE_POINTAGE: { label: "Pas de pointage", color: "slate", order: 3 },
-};
 
 export default async function PaieListPage({
   searchParams,
@@ -61,7 +47,7 @@ export default async function PaieListPage({
   const monthEnd = new Date(Date.UTC(year, monthIdx + 1, 1));
   const monthLabel = monthFmt.format(monthStart);
 
-  // Mois précédent / suivant pour la nav
+  // Format ?month=YYYY-MM pour la nav précédent / suivant
   const prevDate = new Date(Date.UTC(year, monthIdx - 1, 1));
   const nextDate = new Date(Date.UTC(year, monthIdx + 1, 1));
   const fmtMonthParam = (d: Date) =>
@@ -79,7 +65,6 @@ export default async function PaieListPage({
         },
         paiements: {
           where: {
-            // Recouvre le mois courant
             periodeDebut: { lt: monthEnd },
             periodeFin: { gte: monthStart },
             statut: { in: ["CALCULE", "PAYE"] },
@@ -98,73 +83,97 @@ export default async function PaieListPage({
     }),
   ]);
 
-  // État par ouvrier pour le mois courant
-  const ouvriersWithStatus = ouvriers.map((o) => {
+  // Catégorisation par statut
+  const aVerser: {
+    id: string;
+    ouvrierId: string;
+    ouvrierNom: string;
+    periodeDebut: Date;
+    periodeFin: Date;
+    joursTravailles: number;
+    montantNet: number;
+    mode: "ESPECES" | "VIREMENT";
+  }[] = [];
+  const aCalculer: {
+    id: string;
+    nom: string;
+    prenom: string | null;
+    typeContrat: string;
+    joursMonth: number;
+    estime: number;
+  }[] = [];
+  const payes: {
+    id: string;
+    ouvrierId: string;
+    ouvrierNom: string;
+    montantNet: number;
+    mode: "ESPECES" | "VIREMENT";
+    date: Date;
+    paiementId: string;
+  }[] = [];
+  const sansPointage: { id: string; nom: string; prenom: string | null }[] = [];
+
+  for (const o of ouvriers) {
+    const fullName = [o.prenom, o.nom].filter(Boolean).join(" ");
     const joursMonth = o.pointages.reduce(
       (s, p) => s + Number(p.joursTravailles),
       0
     );
-    // Le paiement le plus pertinent : payé > calculé
-    const paiementPaye = o.paiements.find((p) => p.statut === "PAYE");
-    const paiementCalcule = o.paiements.find((p) => p.statut === "CALCULE");
-    const paiementMois = paiementPaye ?? paiementCalcule;
+    const paye = o.paiements.find((p) => p.statut === "PAYE");
+    const calc = o.paiements.find((p) => p.statut === "CALCULE");
 
-    let status: Statut;
-    let amount = 0;
-    if (paiementPaye) {
-      status = "PAYE";
-      amount = Number(paiementPaye.montantNet);
-    } else if (paiementCalcule) {
-      status = "A_VERSER";
-      amount = Number(paiementCalcule.montantNet);
+    if (paye) {
+      payes.push({
+        id: o.id,
+        ouvrierId: o.id,
+        ouvrierNom: fullName,
+        montantNet: Number(paye.montantNet),
+        mode: paye.mode,
+        date: paye.date,
+        paiementId: paye.id,
+      });
+    } else if (calc) {
+      aVerser.push({
+        id: calc.id,
+        ouvrierId: o.id,
+        ouvrierNom: fullName,
+        periodeDebut: calc.periodeDebut,
+        periodeFin: calc.periodeFin,
+        joursTravailles: Number(calc.joursTravailles),
+        montantNet: Number(calc.montantNet),
+        mode: calc.mode,
+      });
     } else if (joursMonth > 0) {
-      status = "A_CALCULER";
-      amount = calcMontantBrut(
-        o.typeContrat,
-        Number(o.tarifBase),
-        joursMonth
-      );
+      aCalculer.push({
+        id: o.id,
+        nom: o.nom,
+        prenom: o.prenom,
+        typeContrat: o.typeContrat,
+        joursMonth,
+        estime: calcMontantBrut(o.typeContrat, Number(o.tarifBase), joursMonth),
+      });
     } else {
-      status = "PAS_DE_POINTAGE";
-      amount = 0;
+      sansPointage.push({ id: o.id, nom: o.nom, prenom: o.prenom });
     }
-
-    return {
-      id: o.id,
-      nom: o.nom,
-      prenom: o.prenom,
-      typeContrat: o.typeContrat,
-      joursMonth,
-      paiementMoisId: paiementMois?.id ?? null,
-      status,
-      amount,
-    };
-  });
-
-  // Tri par statut puis par nom
-  ouvriersWithStatus.sort((a, b) => {
-    const sd = statutMeta[a.status].order - statutMeta[b.status].order;
-    if (sd !== 0) return sd;
-    return a.nom.localeCompare(b.nom);
-  });
-
-  // Totaux par statut
-  const counts = {
-    A_CALCULER: 0,
-    A_VERSER: 0,
-    PAYE: 0,
-    PAS_DE_POINTAGE: 0,
-  };
-  const totals = { A_CALCULER: 0, A_VERSER: 0, PAYE: 0 };
-  for (const o of ouvriersWithStatus) {
-    counts[o.status]++;
-    if (o.status !== "PAS_DE_POINTAGE") totals[o.status] += o.amount;
   }
+
+  // Totaux
+  const totalAVerser = aVerser.reduce((s, p) => s + p.montantNet, 0);
+  const totalACalculer = aCalculer.reduce((s, o) => s + o.estime, 0);
+  const totalPayes = payes.reduce((s, p) => s + p.montantNet, 0);
   const totalActifs = ouvriers.length;
   const progressPct =
-    totalActifs > 0
-      ? Math.round((counts.PAYE / totalActifs) * 100)
-      : 0;
+    totalActifs > 0 ? Math.round((payes.length / totalActifs) * 100) : 0;
+  const aVerserPct =
+    totalActifs > 0 ? Math.round((aVerser.length / totalActifs) * 100) : 0;
+  const aCalculerPct =
+    totalActifs > 0 ? Math.round((aCalculer.length / totalActifs) * 100) : 0;
+
+  // Période YYYY-MM-DD pour les liens "Générer paiement"
+  const periodeDebutStr = monthStart.toISOString().slice(0, 10);
+  const periodeFinStr = new Date(Date.UTC(year, monthIdx + 1, 0))
+    .toISOString()
+    .slice(0, 10);
 
   return (
     <div>
@@ -215,10 +224,10 @@ export default async function PaieListPage({
         <StatCard
           icon={Calculator}
           label="À calculer"
-          value={counts.A_CALCULER}
+          value={aCalculer.length}
           subtitle={
-            counts.A_CALCULER > 0
-              ? `≈ ${formatEuro(totals.A_CALCULER)} brut estimé`
+            aCalculer.length > 0
+              ? `≈ ${formatEuro(totalACalculer)} brut estimé`
               : "Tous calculés"
           }
           color="blue"
@@ -226,21 +235,21 @@ export default async function PaieListPage({
         <StatCard
           icon={Wallet}
           label="À verser"
-          value={counts.A_VERSER}
+          value={aVerser.length}
           subtitle={
-            counts.A_VERSER > 0
-              ? `${formatEuro(totals.A_VERSER)} en attente`
-              : "Aucun paiement en attente"
+            aVerser.length > 0
+              ? `${formatEuro(totalAVerser)} en attente`
+              : "Aucun en attente"
           }
           color="yellow"
         />
         <StatCard
           icon={CheckCircle2}
           label="Payés"
-          value={counts.PAYE}
+          value={payes.length}
           subtitle={
-            counts.PAYE > 0
-              ? `${formatEuro(totals.PAYE)} versés`
+            payes.length > 0
+              ? `${formatEuro(totalPayes)} versés`
               : "Aucun versement"
           }
           color="green"
@@ -248,17 +257,15 @@ export default async function PaieListPage({
         <StatCard
           icon={AlertCircle}
           label="Sans pointage"
-          value={counts.PAS_DE_POINTAGE}
+          value={sansPointage.length}
           subtitle={
-            counts.PAS_DE_POINTAGE > 0
-              ? "Pas de pointage ce mois"
-              : "Tous pointés"
+            sansPointage.length > 0 ? "Pas de pointage ce mois" : "Tous pointés"
           }
           color="gray"
         />
       </div>
 
-      {/* Barre de progression de la paie du mois */}
+      {/* Barre de progression */}
       {totalActifs > 0 && (
         <Card className="mb-5">
           <CardBody>
@@ -267,173 +274,197 @@ export default async function PaieListPage({
                 Avancement de la paie
               </span>
               <span className="font-semibold text-slate-700 dark:text-slate-300">
-                {counts.PAYE} / {totalActifs} ouvrier
-                {totalActifs > 1 ? "s" : ""} payé
-                {counts.PAYE > 1 ? "s" : ""} ({progressPct} %)
+                {payes.length} / {totalActifs} payé
+                {payes.length > 1 ? "s" : ""} ({progressPct} %)
               </span>
             </div>
             <div className="h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
               <div
                 className="h-full bg-green-500 transition-all"
                 style={{ width: `${progressPct}%` }}
-                title={`${counts.PAYE} payés`}
               />
               <div
                 className="h-full bg-yellow-500 transition-all"
-                style={{
-                  width: `${
-                    totalActifs > 0
-                      ? Math.round((counts.A_VERSER / totalActifs) * 100)
-                      : 0
-                  }%`,
-                }}
-                title={`${counts.A_VERSER} à verser`}
+                style={{ width: `${aVerserPct}%` }}
               />
               <div
                 className="h-full bg-blue-500 transition-all"
-                style={{
-                  width: `${
-                    totalActifs > 0
-                      ? Math.round((counts.A_CALCULER / totalActifs) * 100)
-                      : 0
-                  }%`,
-                }}
-                title={`${counts.A_CALCULER} à calculer`}
+                style={{ width: `${aCalculerPct}%` }}
               />
             </div>
           </CardBody>
         </Card>
       )}
 
-      {/* Tableau ouvrier × statut pour le mois */}
-      <Card className="mb-5">
-        <CardHeader>
-          <CardTitle>État du mois par ouvrier</CardTitle>
+      {/* SECTION PROEMINENTE : "À verser" — paiements en attente, sélection bulk */}
+      <Card className="mb-5 border-amber-200 dark:border-amber-900 ring-1 ring-amber-200 dark:ring-amber-900/50">
+        <CardHeader className="bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900 flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Wallet size={18} className="text-amber-700 dark:text-amber-400" />
+            À verser ({aVerser.length})
+            {totalAVerser > 0 && (
+              <span className="text-sm font-normal text-amber-700 dark:text-amber-400">
+                — {formatEuro(totalAVerser)}
+              </span>
+            )}
+          </CardTitle>
         </CardHeader>
         <CardBody className="!p-0">
-          {ouvriersWithStatus.length === 0 ? (
-            <div className="p-5">
-              <EmptyState
-                icon={Banknote}
-                title="Aucun ouvrier actif"
-                description="Crée des ouvriers actifs pour suivre leur paie ici."
-                action={
-                  <Link href="/ouvriers/nouveau">
-                    <Button>Ajouter un ouvrier</Button>
-                  </Link>
-                }
-              />
+          <PaiePendingList paiements={aVerser} />
+        </CardBody>
+      </Card>
+
+      {/* SECTION : "À calculer" — pointages mais pas de paiement */}
+      <Card className="mb-5 border-blue-200 dark:border-blue-900">
+        <CardHeader className="bg-blue-50 dark:bg-blue-950/40 border-b border-blue-200 dark:border-blue-900 flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Calculator size={18} className="text-blue-700 dark:text-blue-400" />
+            À calculer ({aCalculer.length})
+            {totalACalculer > 0 && (
+              <span className="text-sm font-normal text-blue-700 dark:text-blue-400">
+                — ≈ {formatEuro(totalACalculer)} brut
+              </span>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardBody className="!p-0">
+          {aCalculer.length === 0 ? (
+            <div className="text-sm text-slate-500 dark:text-slate-400 italic py-3 px-4">
+              Aucun ouvrier en attente de paiement à calculer.
             </div>
           ) : (
-            <>
-              {/* Desktop : table */}
-              <div className="hidden md:block">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 dark:bg-slate-800 text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    <tr>
-                      <th className="text-left px-4 py-2 font-medium">
-                        Ouvrier
-                      </th>
-                      <th className="text-right px-4 py-2 font-medium">
-                        Jours
-                      </th>
-                      <th className="text-left px-4 py-2 font-medium">
-                        Statut
-                      </th>
-                      <th className="text-right px-4 py-2 font-medium">
-                        Montant
-                      </th>
-                      <th className="px-4 py-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {ouvriersWithStatus.map((o) => {
-                      const fullName = [o.prenom, o.nom]
-                        .filter(Boolean)
-                        .join(" ");
-                      const meta = statutMeta[o.status];
-                      return (
-                        <tr
-                          key={o.id}
-                          className="hover:bg-slate-50 dark:hover:bg-slate-900"
-                        >
-                          <td className="px-4 py-3">
-                            <Link
-                              href={`/ouvriers/${o.id}`}
-                              className="font-medium text-slate-900 dark:text-slate-100 hover:text-brand-600"
-                            >
-                              {fullName}
-                            </Link>
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
-                            {o.joursMonth > 0 ? `${o.joursMonth} j` : "—"}
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge color={meta.color}>{meta.label}</Badge>
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold text-slate-900 dark:text-slate-100">
-                            {o.amount > 0
-                              ? `${o.status === "A_CALCULER" ? "≈ " : ""}${formatEuro(o.amount)}`
-                              : "—"}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <ActionButton
-                              status={o.status}
-                              ouvrierId={o.id}
-                              paiementId={o.paiementMoisId}
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile : cards */}
-              <ul className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
-                {ouvriersWithStatus.map((o) => {
-                  const fullName = [o.prenom, o.nom]
-                    .filter(Boolean)
-                    .join(" ");
-                  const meta = statutMeta[o.status];
-                  return (
-                    <li key={o.id} className="p-3">
-                      <div className="flex items-start justify-between gap-2 mb-1.5">
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+              {aCalculer.map((o) => {
+                const fullName = [o.prenom, o.nom].filter(Boolean).join(" ");
+                const generateUrl = `/paie/nouveau?ouvrierId=${o.id}&periodeDebut=${periodeDebutStr}&periodeFin=${periodeFinStr}`;
+                return (
+                  <li
+                    key={o.id}
+                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-900"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <Link
                           href={`/ouvriers/${o.id}`}
                           className="font-medium text-slate-900 dark:text-slate-100 hover:text-brand-600 truncate"
                         >
                           {fullName}
                         </Link>
-                        <Badge color={meta.color}>{meta.label}</Badge>
+                        <Badge color="blue">À calculer</Badge>
                       </div>
-                      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                        <span>
-                          {o.joursMonth > 0 ? `${o.joursMonth} j` : "—"}
-                        </span>
-                        <span className="font-semibold text-slate-900 dark:text-slate-100">
-                          {o.amount > 0
-                            ? `${o.status === "A_CALCULER" ? "≈ " : ""}${formatEuro(o.amount)}`
-                            : "—"}
-                        </span>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        {o.joursMonth} j pointé{o.joursMonth > 1 ? "s" : ""} ·
+                        contrat {o.typeContrat.toLowerCase()}
                       </div>
-                      <div className="mt-2">
-                        <ActionButton
-                          status={o.status}
-                          ouvrierId={o.id}
-                          paiementId={o.paiementMoisId}
-                          fullWidth
-                        />
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-semibold text-slate-900 dark:text-slate-100">
+                        ≈ {formatEuro(o.estime)}
                       </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                        brut estimé
+                      </div>
+                    </div>
+                    <Link href={generateUrl}>
+                      <Button type="button" size="sm" variant="outline">
+                        <Receipt size={14} />
+                        <span className="hidden sm:inline">Générer</span>
+                      </Button>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </CardBody>
       </Card>
+
+      {/* SECTION : "Payés" du mois */}
+      <Card className="mb-5">
+        <CardHeader className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <CheckCircle2 size={18} className="text-green-600" />
+            Payés ce mois ({payes.length})
+            {totalPayes > 0 && (
+              <span className="text-sm font-normal text-slate-500 dark:text-slate-400">
+                — {formatEuro(totalPayes)}
+              </span>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardBody className="!p-0">
+          {payes.length === 0 ? (
+            <div className="text-sm text-slate-500 dark:text-slate-400 italic py-3 px-4">
+              Aucun paiement réglé pour ce mois.
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+              {payes.map((p) => (
+                <li key={p.id}>
+                  <Link
+                    href={`/paie/${p.paiementId}`}
+                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-900 transition"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-slate-900 dark:text-slate-100 truncate">
+                          {p.ouvrierNom}
+                        </span>
+                        <Badge color="green">Payé</Badge>
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        Versé le {formatDate(p.date)} ·{" "}
+                        {p.mode === "ESPECES" ? "Espèces" : "Virement"}
+                      </div>
+                    </div>
+                    <div className="font-semibold text-slate-900 dark:text-slate-100 shrink-0">
+                      {formatEuro(p.montantNet)}
+                    </div>
+                    <ChevronRight
+                      size={16}
+                      className="text-slate-300 dark:text-slate-600 shrink-0"
+                    />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* Sans pointage (info) */}
+      {sansPointage.length > 0 && (
+        <Card className="mb-5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertCircle size={18} className="text-slate-500" />
+              Sans pointage ce mois ({sansPointage.length})
+            </CardTitle>
+          </CardHeader>
+          <CardBody>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+              Ces ouvriers actifs n&apos;ont aucun pointage sur la période.
+              Vérifie qu&apos;ils ont bien été pointés ou désactive-les si
+              besoin.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {sansPointage.map((o) => {
+                const fullName = [o.prenom, o.nom].filter(Boolean).join(" ");
+                return (
+                  <Link
+                    key={o.id}
+                    href={`/ouvriers/${o.id}`}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                  >
+                    {fullName}
+                    <ChevronRight size={12} />
+                  </Link>
+                );
+              })}
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {/* Historique récent */}
       <Card>
@@ -543,41 +574,4 @@ function StatCard({
       </div>
     </div>
   );
-}
-
-function ActionButton({
-  status,
-  ouvrierId,
-  paiementId,
-  fullWidth,
-}: {
-  status: Statut;
-  ouvrierId: string;
-  paiementId: string | null;
-  fullWidth?: boolean;
-}) {
-  if (status === "A_CALCULER") {
-    return (
-      <Link href={`/paie/nouveau?ouvrierId=${ouvrierId}`}>
-        <Button size="sm" className={fullWidth ? "w-full" : ""}>
-          Générer
-        </Button>
-      </Link>
-    );
-  }
-  if (status === "A_VERSER" || status === "PAYE") {
-    if (!paiementId) return null;
-    return (
-      <Link href={`/paie/${paiementId}`}>
-        <Button
-          size="sm"
-          variant="outline"
-          className={fullWidth ? "w-full" : ""}
-        >
-          Voir
-        </Button>
-      </Link>
-    );
-  }
-  return null;
 }
