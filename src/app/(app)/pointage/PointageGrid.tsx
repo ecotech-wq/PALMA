@@ -1,8 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useTransition } from "react";
-import { Check, User, ChevronDown, ChevronUp } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import { Check, User, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
@@ -40,13 +40,31 @@ export function PointageGrid({
   date: string;
   action: (date: string, formData: FormData) => Promise<void>;
 }) {
-  const [values, setValues] = useState<Record<string, number>>(
-    Object.fromEntries(ouvriers.map((o) => [o.id, o.pointageJours]))
-  );
+  // Valeurs initiales (= valeurs sauvegardées en base à l'ouverture)
+  const initialValues = Object.fromEntries(ouvriers.map((o) => [o.id, o.pointageJours]));
+  const [values, setValues] = useState<Record<string, number>>(initialValues);
   const [pending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const toastApi = useToast();
+
+  // L'indicateur "Enregistré" disparaît tout seul après 2,5 s
+  useEffect(() => {
+    if (!saved) return;
+    const t = setTimeout(() => setSaved(false), 2500);
+    return () => clearTimeout(t);
+  }, [saved]);
+
+  // Y a-t-il des modifications non enregistrées ?
+  const hasChanges = ouvriers.some(
+    (o) => (values[o.id] ?? 0) !== (initialValues[o.id] ?? 0)
+  );
+
+  function resetAll() {
+    // Remet tout à 0 (utile pour repartir d'une feuille blanche sur cette journée)
+    setValues(Object.fromEntries(ouvriers.map((o) => [o.id, 0])));
+    setSaved(false);
+  }
 
   // Group by équipe
   const byEquipe = new Map<string, { equipeNom: string; chantierNom: string | null; ouvriers: Ouvrier[] }>();
@@ -148,6 +166,21 @@ export function PointageGrid({
               <Check size={14} /> Enregistré
             </span>
           )}
+          {hasChanges && !saved && (
+            <span className="text-xs text-amber-600 dark:text-amber-500 hidden sm:inline">
+              Modifications non sauvegardées
+            </span>
+          )}
+          <Button
+            onClick={resetAll}
+            disabled={pending}
+            variant="outline"
+            size="lg"
+            title="Tout remettre à 0 (sans enregistrer)"
+          >
+            <RotateCcw size={16} />
+            <span className="hidden sm:inline">Vider</span>
+          </Button>
           <Button onClick={onSubmit} disabled={pending} size="lg">
             {pending ? "..." : (
               <>

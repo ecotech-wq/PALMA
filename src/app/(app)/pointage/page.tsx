@@ -111,7 +111,12 @@ export default async function PointagePage({
           </CardBody>
         </Card>
       ) : (
-        <PointageGrid ouvriers={ouvriersWithPointage} date={date} action={savePointage} />
+        <PointageGrid
+          key={date}
+          ouvriers={ouvriersWithPointage}
+          date={date}
+          action={savePointage}
+        />
       )}
     </div>
   );

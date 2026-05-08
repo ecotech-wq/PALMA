@@ -99,6 +99,107 @@ export async function updatePointage(id: string, formData: FormData) {
   revalidatePath("/dashboard");
 }
 
+// =====================================================
+// Saisie sur une plage de dates pour UN ouvrier
+// (rattrapage en fin de semaine, fin de mois, forfait, etc.)
+// =====================================================
+
+const rangeSchema = z.object({
+  ouvrierId: z.string().min(1),
+  dateDebut: z.string().min(1),
+  dateFin: z.string().min(1),
+  joursParJour: z.coerce.number().min(0.25).max(2),
+  inclureWeekend: z
+    .union([z.literal("on"), z.literal("true"), z.literal("1"), z.null()])
+    .optional()
+    .transform((v) => v === "on" || v === "true" || v === "1"),
+  chantierId: z.string().optional().or(z.literal("")),
+  note: z.string().optional().or(z.literal("")),
+  ecraserExistants: z
+    .union([z.literal("on"), z.literal("true"), z.literal("1"), z.null()])
+    .optional()
+    .transform((v) => v === "on" || v === "true" || v === "1"),
+});
+
+export async function addPointagesRange(formData: FormData) {
+  const data = rangeSchema.parse({
+    ouvrierId: formData.get("ouvrierId"),
+    dateDebut: formData.get("dateDebut"),
+    dateFin: formData.get("dateFin"),
+    joursParJour: formData.get("joursParJour"),
+    inclureWeekend: formData.get("inclureWeekend"),
+    chantierId: formData.get("chantierId"),
+    note: formData.get("note"),
+    ecraserExistants: formData.get("ecraserExistants"),
+  });
+
+  // Construit toutes les dates concernées (UTC midnight, comme savePointage)
+  const debut = new Date(data.dateDebut + "T00:00:00.000Z");
+  const fin = new Date(data.dateFin + "T00:00:00.000Z");
+  if (isNaN(debut.getTime()) || isNaN(fin.getTime())) {
+    throw new Error("Dates invalides");
+  }
+  if (fin < debut) throw new Error("La date de fin doit être après le début");
+
+  const dates: Date[] = [];
+  const cursor = new Date(debut);
+  while (cursor <= fin) {
+    const dow = cursor.getUTCDay(); // 0 = dimanche, 6 = samedi
+    const isWeekend = dow === 0 || dow === 6;
+    if (data.inclureWeekend || !isWeekend) {
+      dates.push(new Date(cursor));
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  if (dates.length === 0) {
+    throw new Error("Aucun jour à enregistrer dans cette plage");
+  }
+
+  // Récupère l'équipe/chantier pour pouvoir hériter du chantier si besoin
+  const ouvrier = await db.ouvrier.findUnique({
+    where: { id: data.ouvrierId },
+    include: { equipe: { select: { chantierId: true } } },
+  });
+  if (!ouvrier) throw new Error("Ouvrier introuvable");
+
+  const chantierId =
+    (data.chantierId && data.chantierId.length > 0 ? data.chantierId : null) ??
+    ouvrier.equipe?.chantierId ??
+    null;
+
+  await db.$transaction(async (tx) => {
+    for (const d of dates) {
+      const existing = await tx.pointage.findUnique({
+        where: { ouvrierId_date: { ouvrierId: data.ouvrierId, date: d } },
+      });
+      if (existing && !data.ecraserExistants) {
+        // Saute les jours déjà pointés (sécurité)
+        continue;
+      }
+      await tx.pointage.upsert({
+        where: { ouvrierId_date: { ouvrierId: data.ouvrierId, date: d } },
+        update: {
+          joursTravailles: data.joursParJour,
+          chantierId,
+          note: data.note || null,
+        },
+        create: {
+          ouvrierId: data.ouvrierId,
+          date: d,
+          joursTravailles: data.joursParJour,
+          chantierId,
+          note: data.note || null,
+        },
+      });
+    }
+  });
+
+  revalidatePath("/pointage");
+  revalidatePath(`/ouvriers/${data.ouvrierId}`);
+  revalidatePath("/dashboard");
+}
+
 export async function deletePointage(id: string) {
   const existing = await db.pointage.findUnique({
     where: { id },

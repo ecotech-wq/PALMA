@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/Badge";
 import { OuvrierForm } from "../OuvrierForm";
 import { PointageHistory } from "../PointageHistory";
 import { MonthlyRecap } from "../MonthlyRecap";
+import { MultiPointageForm } from "../MultiPointageForm";
+import { ResettingForm } from "@/components/ResettingForm";
 import { updateOuvrier, deleteOuvrier } from "../actions";
 import {
   addAvance,
@@ -17,7 +19,11 @@ import {
   addOutilPersonnel,
   deleteOutilPersonnel,
 } from "../paie-actions";
-import { updatePointage, deletePointage } from "../../pointage/actions";
+import {
+  updatePointage,
+  deletePointage,
+  addPointagesRange,
+} from "../../pointage/actions";
 import { formatEuro, formatDate } from "@/lib/utils";
 
 export default async function OuvrierDetailPage({
@@ -41,6 +47,7 @@ export default async function OuvrierDetailPage({
           orderBy: { periodeDebut: "desc" },
           take: 5,
         },
+        equipe: { select: { chantierId: true } },
       },
     }),
     db.equipe.findMany({ select: { id: true, nom: true }, orderBy: { nom: "asc" } }),
@@ -131,6 +138,25 @@ export default async function OuvrierDetailPage({
           </Card>
 
           <Card>
+            <CardHeader>
+              <CardTitle>Saisie rapide d&apos;une plage</CardTitle>
+            </CardHeader>
+            <CardBody>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                Pratique pour rattraper une semaine ou un mois entier (forfait,
+                ouvrier au mois). Les jours déjà pointés sont conservés sauf si
+                tu coches « Écraser ».
+              </p>
+              <MultiPointageForm
+                ouvrierId={id}
+                chantiers={chantiers}
+                defaultChantierId={ouvrier.equipe?.chantierId ?? null}
+                action={addPointagesRange}
+              />
+            </CardBody>
+          </Card>
+
+          <Card>
             <CardHeader className="flex items-center justify-between">
               <CardTitle>Pointages récents (60 derniers jours)</CardTitle>
               <Link href={`/pointage?date=${today}`}>
@@ -195,9 +221,9 @@ export default async function OuvrierDetailPage({
                 </ul>
               )}
 
-              <form
-                key={`av-${ouvrier.avances.length}`}
+              <ResettingForm
                 action={addAvanceAction}
+                successMessage="Avance enregistrée"
                 className="grid grid-cols-1 sm:grid-cols-12 gap-2"
               >
                 <div className="sm:col-span-3">
@@ -220,7 +246,7 @@ export default async function OuvrierDetailPage({
                     <Plus size={14} />
                   </Button>
                 </div>
-              </form>
+              </ResettingForm>
             </CardBody>
           </Card>
 
@@ -279,9 +305,9 @@ export default async function OuvrierDetailPage({
                 </ul>
               )}
 
-              <form
-                key={`outil-${ouvrier.outilsPersonnels.length}`}
+              <ResettingForm
                 action={addOutilAction}
+                successMessage="Outil enregistré"
                 className="grid grid-cols-1 sm:grid-cols-12 gap-2"
               >
                 <div className="sm:col-span-4">
@@ -301,7 +327,7 @@ export default async function OuvrierDetailPage({
                     <Plus size={14} />
                   </Button>
                 </div>
-              </form>
+              </ResettingForm>
             </CardBody>
           </Card>
 
