@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   Hammer,
@@ -18,6 +19,8 @@ import {
   LogOut,
   ShieldCheck,
   UserCircle,
+  Menu,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -36,12 +39,24 @@ const items = [
   { href: "/planning", label: "Planning", icon: Calendar },
 ];
 
-const mobileItems = [
+// 4 raccourcis principaux dans la barre de tab + menu "Plus"
+const mobilePrimary = [
   { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
-  { href: "/sorties", label: "Sorties", icon: ArrowLeftRight },
+  { href: "/paie", label: "Paie", icon: Banknote },
+  { href: "/ouvriers", label: "Ouvriers", icon: HardHat },
+];
+
+// Tout le reste, accessible via le bouton "Plus"
+const mobileMore = [
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
+  { href: "/equipes", label: "Équipes", icon: Users },
   { href: "/materiel", label: "Matériel", icon: Wrench },
+  { href: "/sorties", label: "Sorties / Retours", icon: ArrowLeftRight },
+  { href: "/locations", label: "Locations / Prêts", icon: Truck },
+  { href: "/commandes", label: "Commandes", icon: ShoppingCart },
+  { href: "/planning", label: "Planning", icon: Calendar },
+  { href: "/profil", label: "Mon profil", icon: UserCircle },
 ];
 
 function BrandHeader({
@@ -193,30 +208,161 @@ export function DesktopSidebar({
   );
 }
 
-export function MobileBottomNav() {
+export function MobileBottomNav({
+  isAdmin,
+  pendingUsersCount,
+}: {
+  isAdmin?: boolean;
+  pendingUsersCount?: number;
+}) {
   const pathname = usePathname();
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  // Ferme le drawer quand on navigue
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [pathname]);
+
+  // Bloque le scroll body quand le drawer est ouvert
+  useEffect(() => {
+    if (moreOpen) {
+      const original = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = original;
+      };
+    }
+  }, [moreOpen]);
+
+  const moreActive = mobileMore.some(
+    (i) => pathname === i.href || pathname?.startsWith(i.href + "/")
+  );
+
   return (
-    <nav
-      className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 grid grid-cols-5"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-    >
-      {mobileItems.map(({ href, label, icon: Icon }) => {
-        const active = pathname === href || pathname?.startsWith(href + "/");
-        return (
-          <Link
-            key={href}
-            href={href}
-            className={cn(
-              "flex flex-col items-center justify-center py-2 gap-0.5 text-[10px]",
-              active ? "text-brand-700" : "text-slate-600 dark:text-slate-400"
-            )}
+    <>
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 grid grid-cols-5"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        {mobilePrimary.map(({ href, label, icon: Icon }) => {
+          const active = pathname === href || pathname?.startsWith(href + "/");
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={cn(
+                "flex flex-col items-center justify-center py-2 gap-0.5 text-[10px]",
+                active
+                  ? "text-brand-700 dark:text-brand-400"
+                  : "text-slate-600 dark:text-slate-400"
+              )}
+            >
+              <Icon size={20} />
+              <span className="truncate max-w-full px-1">{label}</span>
+            </Link>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setMoreOpen(true)}
+          className={cn(
+            "flex flex-col items-center justify-center py-2 gap-0.5 text-[10px] relative",
+            moreActive
+              ? "text-brand-700 dark:text-brand-400"
+              : "text-slate-600 dark:text-slate-400"
+          )}
+        >
+          <Menu size={20} />
+          <span>Plus</span>
+          {isAdmin && (pendingUsersCount ?? 0) > 0 && (
+            <span className="absolute top-1 right-3 bg-yellow-500 text-white text-[9px] font-bold px-1 py-px rounded-full">
+              {pendingUsersCount}
+            </span>
+          )}
+        </button>
+      </nav>
+
+      {/* Drawer "Plus" */}
+      {moreOpen && (
+        <div className="md:hidden fixed inset-0 z-40 flex flex-col">
+          {/* Overlay */}
+          <button
+            type="button"
+            onClick={() => setMoreOpen(false)}
+            className="flex-1 bg-black/50 backdrop-blur-sm"
+            aria-label="Fermer le menu"
+          />
+          {/* Panel */}
+          <div
+            className="bg-white dark:bg-slate-900 rounded-t-2xl border-t border-slate-200 dark:border-slate-800 max-h-[80vh] overflow-y-auto"
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
           >
-            <Icon size={20} />
-            <span className="truncate max-w-full px-1">{label}</span>
-          </Link>
-        );
-      })}
-    </nav>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 sticky top-0 bg-white dark:bg-slate-900 z-10">
+              <h2 className="font-semibold text-slate-900 dark:text-slate-100">
+                Tout le menu
+              </h2>
+              <button
+                type="button"
+                onClick={() => setMoreOpen(false)}
+                className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                aria-label="Fermer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <nav className="p-2">
+              {mobileMore.map(({ href, label, icon: Icon }) => {
+                const active =
+                  pathname === href || pathname?.startsWith(href + "/");
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setMoreOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition",
+                      active
+                        ? "bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 font-medium"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    )}
+                  >
+                    <Icon size={20} />
+                    {label}
+                  </Link>
+                );
+              })}
+
+              {isAdmin && (
+                <>
+                  <div className="mt-3 mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                    Administration
+                  </div>
+                  <Link
+                    href="/admin/users"
+                    onClick={() => setMoreOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition",
+                      pathname?.startsWith("/admin")
+                        ? "bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 font-medium"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    )}
+                  >
+                    <ShieldCheck size={20} />
+                    <span className="flex-1">Utilisateurs</span>
+                    {(pendingUsersCount ?? 0) > 0 && (
+                      <span className="bg-yellow-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                        {pendingUsersCount}
+                      </span>
+                    )}
+                  </Link>
+                </>
+              )}
+            </nav>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -228,7 +374,7 @@ export function MobileTopBar({
   signOutAction: () => Promise<void>;
 }) {
   return (
-    <header className="md:hidden sticky top-0 z-30 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-between gap-2">
+    <header className="md:hidden sticky top-0 z-20 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-between gap-2">
       <BrandHeader subtitle={userName} href="/profil" />
       <div className="flex items-center gap-1">
         <ThemeToggle compact />

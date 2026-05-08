@@ -30,10 +30,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         />
         <div className="flex-1 flex flex-col min-w-0">
           <MobileTopBar userName={session.user.name} signOutAction={handleSignOut} />
-          <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
-            <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-6">{children}</div>
+          <main className="flex-1 pb-24 md:pb-0">
+            <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-4 md:py-6">
+              {children}
+            </div>
           </main>
-          <MobileBottomNav />
+          <MobileBottomNav
+            isAdmin={isAdmin}
+            pendingUsersCount={pendingUsersCount}
+          />
         </div>
       </div>
     </ToastProvider>

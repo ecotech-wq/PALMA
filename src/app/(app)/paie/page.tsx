@@ -450,37 +450,39 @@ export default async function PaieListPage({
                 return (
                   <li
                     key={o.id}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-900"
+                    className="px-3 sm:px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-900"
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Link
-                          href={`/ouvriers/${o.id}`}
-                          className="font-medium text-slate-900 dark:text-slate-100 hover:text-brand-600 truncate"
-                        >
-                          {fullName}
-                        </Link>
+                    <div className="flex items-start justify-between gap-2">
+                      <Link
+                        href={`/ouvriers/${o.id}`}
+                        className="font-medium text-slate-900 dark:text-slate-100 hover:text-brand-600 truncate flex-1 min-w-0"
+                      >
+                        {fullName}
+                      </Link>
+                      <div className="text-right shrink-0">
+                        <div className="font-semibold text-slate-900 dark:text-slate-100">
+                          ≈ {formatEuro(o.estime)}
+                        </div>
+                        <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                          brut estimé
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 mt-1.5 flex-wrap">
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 flex-wrap min-w-0">
                         <Badge color="blue">À calculer</Badge>
+                        <span>
+                          {o.joursMonth} j pointé{o.joursMonth > 1 ? "s" : ""}
+                        </span>
+                        <span>· {o.typeContrat.toLowerCase()}</span>
                       </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        {o.joursMonth} j pointé{o.joursMonth > 1 ? "s" : ""} ·
-                        contrat {o.typeContrat.toLowerCase()}
-                      </div>
+                      <Link href={generateUrl} className="shrink-0">
+                        <Button type="button" size="sm" variant="outline">
+                          <Receipt size={14} />
+                          Générer
+                        </Button>
+                      </Link>
                     </div>
-                    <div className="text-right shrink-0">
-                      <div className="font-semibold text-slate-900 dark:text-slate-100">
-                        ≈ {formatEuro(o.estime)}
-                      </div>
-                      <div className="text-[10px] text-slate-400 dark:text-slate-500">
-                        brut estimé
-                      </div>
-                    </div>
-                    <Link href={generateUrl}>
-                      <Button type="button" size="sm" variant="outline">
-                        <Receipt size={14} />
-                        <span className="hidden sm:inline">Générer</span>
-                      </Button>
-                    </Link>
                   </li>
                 );
               })}
@@ -513,22 +515,24 @@ export default async function PaieListPage({
                 <li key={p.id}>
                   <Link
                     href={`/paie/${p.paiementId}`}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-900 transition"
+                    className="flex items-center gap-2 px-3 sm:px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-900 transition"
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
                         <span className="font-medium text-slate-900 dark:text-slate-100 truncate">
                           {p.ouvrierNom}
                         </span>
+                        <span className="font-semibold text-slate-900 dark:text-slate-100 shrink-0">
+                          {formatEuro(p.montantNet)}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
                         <Badge color="green">Payé</Badge>
+                        <span>{formatDate(p.date)}</span>
+                        <span>
+                          · {p.mode === "ESPECES" ? "Espèces" : "Virement"}
+                        </span>
                       </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Versé le {formatDate(p.date)} ·{" "}
-                        {p.mode === "ESPECES" ? "Espèces" : "Virement"}
-                      </div>
-                    </div>
-                    <div className="font-semibold text-slate-900 dark:text-slate-100 shrink-0">
-                      {formatEuro(p.montantNet)}
                     </div>
                     <ChevronRight
                       size={16}
