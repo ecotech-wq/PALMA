@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2, MapPin, CheckCircle2, Circle } from "lucide-react";
+import { Trash2, MapPin, CheckCircle2, Circle, Pencil } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import {
   supprimerReserve,
@@ -34,10 +34,14 @@ export function ReserveList({
   chantierId,
   reserves,
   canEdit,
+  onEdit,
 }: {
   chantierId: string;
   reserves: Reserve[];
   canEdit: boolean;
+  /** Si fourni : un bouton "Modifier" est affiché sur chaque réserve.
+   *  Le parent gère l'ouverture du formulaire d'édition. */
+  onEdit?: (reserveId: string) => void;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -186,6 +190,17 @@ export function ReserveList({
                       <Circle size={16} />
                     )}
                   </button>
+                  {onEdit && (
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={() => onEdit(r.id)}
+                      title="Modifier"
+                      className="p-1.5 rounded hover:bg-white/60 dark:hover:bg-slate-800 text-slate-500 hover:text-brand-600"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={pending}

@@ -21,6 +21,7 @@ import {
   Layers,
   Filter as FilterIcon,
   Crosshair,
+  Pencil,
 } from "lucide-react";
 import {
   TransformWrapper,
@@ -78,12 +79,16 @@ export function PvWorkspace({
   reserves,
   canEdit,
   isAdmin,
+  lotSuggestions = [],
 }: {
   chantierId: string;
   plans: PlanItem[];
   reserves: ReserveItem[];
   canEdit: boolean;
   isAdmin: boolean;
+  /** Suggestions pour le champ Lot : équipes du chantier, entreprises,
+   *  lots déjà utilisés... Mergées avec les codes par défaut dans le form. */
+  lotSuggestions?: { value: string; label?: string }[];
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -95,11 +100,14 @@ export function PvWorkspace({
   const [filterCurrentPlan, setFilterCurrentPlan] = useState(true);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
-  // Mode du panneau latéral : list (défaut) | new-pin (clic plan) | new-no-plan
-  const [panelMode, setPanelMode] = useState<"list" | "new-pin" | "new-no-plan">(
-    "list"
-  );
+  // Mode du panneau latéral
+  const [panelMode, setPanelMode] = useState<
+    "list" | "new-pin" | "new-no-plan" | "edit"
+  >("list");
   const [draftPos, setDraftPos] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const [editingReserve, setEditingReserve] = useState<ReserveItem | null>(
     null
   );
 
@@ -181,7 +189,14 @@ export function PvWorkspace({
 
   function cancelPanel() {
     setDraftPos(null);
+    setEditingReserve(null);
     setPanelMode("list");
+  }
+
+  /** Ouvre le panneau d'édition pour la réserve donnée. */
+  function editReserve(r: ReserveItem) {
+    setEditingReserve(r);
+    setPanelMode("edit");
   }
 
   async function handleDeletePlan(planId: string) {
@@ -273,6 +288,7 @@ export function PvWorkspace({
                   hasMultiplePlans={plans.length > 1}
                   highlightedId={highlightedId}
                   onSelectReserve={focusReserve}
+                  onEditReserve={editReserve}
                   canEdit={canEdit}
                   onAddNoPlan={() => setPanelMode("new-no-plan")}
                 />
@@ -289,6 +305,7 @@ export function PvWorkspace({
                     planId={activePlan.id}
                     posX={draftPos.x}
                     posY={draftPos.y}
+                    lotSuggestions={lotSuggestions}
                     onSuccess={cancelPanel}
                   />
                 </FormPanel>
@@ -302,6 +319,33 @@ export function PvWorkspace({
                 >
                   <ReserveForm
                     chantierId={chantierId}
+                    lotSuggestions={lotSuggestions}
+                    onSuccess={cancelPanel}
+                  />
+                </FormPanel>
+              )}
+
+              {panelMode === "edit" && editingReserve && (
+                <FormPanel
+                  title={`Modifier la réserve #${editingReserve.numero}`}
+                  subtitle={
+                    editingReserve.planNom
+                      ? `Plan : ${editingReserve.planNom}`
+                      : "Sans plan"
+                  }
+                  onCancel={cancelPanel}
+                >
+                  <ReserveForm
+                    chantierId={chantierId}
+                    lotSuggestions={lotSuggestions}
+                    initialValues={{
+                      reserveId: editingReserve.id,
+                      texte: editingReserve.texte,
+                      zone: editingReserve.zone,
+                      lot: editingReserve.lot,
+                      dateLimite: editingReserve.dateLimite,
+                      photos: editingReserve.photos,
+                    }}
                     onSuccess={cancelPanel}
                   />
                 </FormPanel>
@@ -320,6 +364,10 @@ export function PvWorkspace({
           <ReserveList
             chantierId={chantierId}
             canEdit={canEdit}
+            onEdit={(id) => {
+              const r = reserves.find((x) => x.id === id);
+              if (r) editReserve(r);
+            }}
             reserves={reserves.map((r) => ({
               id: r.id,
               numero: r.numero,
@@ -355,6 +403,7 @@ function ListPanel({
   hasMultiplePlans,
   highlightedId,
   onSelectReserve,
+  onEditReserve,
   canEdit,
   onAddNoPlan,
 }: {
@@ -369,6 +418,7 @@ function ListPanel({
   hasMultiplePlans: boolean;
   highlightedId: string | null;
   onSelectReserve: (r: ReserveItem) => void;
+  onEditReserve: (r: ReserveItem) => void;
   canEdit: boolean;
   onAddNoPlan: () => void;
 }) {
@@ -434,6 +484,8 @@ function ListPanel({
                 reserve={r}
                 highlighted={r.id === highlightedId}
                 onClick={() => onSelectReserve(r)}
+                onEdit={() => onEditReserve(r)}
+                canEdit={canEdit}
               />
             ))}
           </ul>
@@ -545,10 +597,14 @@ function CompactReserveCard({
   reserve: r,
   highlighted,
   onClick,
+  onEdit,
+  canEdit,
 }: {
   reserve: ReserveItem;
   highlighted: boolean;
   onClick: () => void;
+  onEdit?: () => void;
+  canEdit?: boolean;
 }) {
   const lifted = !!r.leveLe;
   const late =
@@ -605,12 +661,28 @@ function CompactReserveCard({
           )}
         </div>
       </div>
-      {r.hasPosition && (
-        <Crosshair
-          size={12}
-          className="shrink-0 text-slate-400 dark:text-slate-500 mt-1"
-        />
-      )}
+      <div className="shrink-0 flex flex-col items-center gap-1 mt-0.5">
+        {canEdit && onEdit && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="p-1 rounded text-slate-400 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+            aria-label="Modifier"
+            title="Modifier la réserve"
+          >
+            <Pencil size={12} />
+          </button>
+        )}
+        {r.hasPosition && (
+          <Crosshair
+            size={12}
+            className="text-slate-400 dark:text-slate-500"
+          />
+        )}
+      </div>
     </li>
   );
 }

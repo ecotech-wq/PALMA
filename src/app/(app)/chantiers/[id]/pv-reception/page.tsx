@@ -62,7 +62,12 @@ export default async function PvReceptionPage({
 
   const chantier = await db.chantier.findUnique({
     where: { id },
-    select: { id: true, nom: true, adresse: true },
+    select: {
+      id: true,
+      nom: true,
+      adresse: true,
+      equipes: { select: { id: true, nom: true } },
+    },
   });
   if (!chantier) notFound();
 
@@ -131,6 +136,33 @@ export default async function PvReceptionPage({
 
   // Map des plans pour résoudre planId -> nom dans la liste des réserves
   const planMap = new Map(pv.plans.map((p) => [p.id, p]));
+
+  // Suggestions pour le champ Lot du formulaire de réserve :
+  //   1. Équipes du chantier (peuvent servir d'entreprises)
+  //   2. Lots/entreprises déjà utilisés sur les réserves existantes
+  // (Les codes par défaut NIC/ACC/SOL... sont ajoutés côté ReserveForm.)
+  const usedLots = Array.from(
+    new Set(
+      pv.reserves
+        .map((r) => r.lot)
+        .filter((l): l is string => !!l && l.trim().length > 0)
+    )
+  );
+  const lotSuggestions: { value: string; label?: string }[] = [
+    ...chantier.equipes.map((e) => ({
+      value: e.nom,
+      label: `Équipe : ${e.nom}`,
+    })),
+    ...usedLots
+      // ne pas dupliquer si déjà dans les équipes
+      .filter(
+        (l) =>
+          !chantier.equipes.some(
+            (e) => e.nom.trim().toLowerCase() === l.trim().toLowerCase()
+          )
+      )
+      .map((l) => ({ value: l })),
+  ];
 
   return (
     <div>
@@ -222,6 +254,7 @@ export default async function PvReceptionPage({
             chantierId={id}
             isAdmin={isAdmin}
             canEdit={editable}
+            lotSuggestions={lotSuggestions}
             plans={pv.plans.map((p) => ({
               id: p.id,
               url: p.url,
