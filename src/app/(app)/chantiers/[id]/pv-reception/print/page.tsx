@@ -9,6 +9,12 @@ const dateFmt = new Intl.DateTimeFormat("fr-FR", {
   year: "numeric",
 });
 
+const dateShortFmt = new Intl.DateTimeFormat("fr-FR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
 const dateTimeFmt = new Intl.DateTimeFormat("fr-FR", {
   day: "2-digit",
   month: "long",
@@ -18,9 +24,11 @@ const dateTimeFmt = new Intl.DateTimeFormat("fr-FR", {
 });
 
 /**
- * Vue "imprimable" du PV — sans navigation, lisible en A4. Le bouton
- * "Imprimer" déclenche window.print() côté client. L'utilisateur peut
- * ensuite "Enregistrer en PDF" depuis sa boîte d'impression.
+ * Vue imprimable du PV — format OPR. Sections :
+ *   1. Page de garde (informations projet)
+ *   2. Pour chaque plan : image avec puces, tableau récap des réserves
+ *   3. Annexe photos (3 par ligne, légendes)
+ *   4. Signatures
  */
 export default async function PvPrintPage({
   params,
@@ -34,7 +42,10 @@ export default async function PvPrintPage({
   const [chantier, pv] = await Promise.all([
     db.chantier.findUnique({
       where: { id },
-      select: { id: true, nom: true, adresse: true, chef: { select: { name: true } } },
+      include: {
+        chef: { select: { name: true, email: true } },
+        clients: { select: { name: true, email: true } },
+      },
     }),
     db.pvReception.findUnique({
       where: { chantierId: id },
@@ -48,17 +59,70 @@ export default async function PvPrintPage({
 
   const planMap = new Map(pv.plans.map((p) => [p.id, p]));
 
+  // Regroupement des réserves par plan (+ "sans plan" comme dernier groupe)
+  const groups = pv.plans.map((plan) => ({
+    plan: { id: plan.id, url: plan.url, nom: plan.nom },
+    reserves: pv.reserves
+      .filter((r) => r.planId === plan.id)
+      .map((r) => ({
+        numero: r.numero,
+        texte: r.texte,
+        zone: r.zone,
+        lot: r.lot,
+        photos: r.photos,
+        hasPin: r.posX !== null && r.posY !== null,
+        posX: r.posX,
+        posY: r.posY,
+        dateLimite: r.dateLimite ? dateShortFmt.format(new Date(r.dateLimite)) : null,
+        leveLe: r.leveLe ? dateShortFmt.format(new Date(r.leveLe)) : null,
+      })),
+  }));
+  const sansPlan = pv.reserves
+    .filter((r) => r.planId === null)
+    .map((r) => ({
+      numero: r.numero,
+      texte: r.texte,
+      zone: r.zone,
+      lot: r.lot,
+      photos: r.photos,
+      hasPin: false,
+      posX: null,
+      posY: null,
+      dateLimite: r.dateLimite ? dateShortFmt.format(new Date(r.dateLimite)) : null,
+      leveLe: r.leveLe ? dateShortFmt.format(new Date(r.leveLe)) : null,
+    }));
+
+  // Toutes les photos pour l'annexe (par puce, dans l'ordre)
+  const photosAnnex = pv.reserves.flatMap((r) =>
+    r.photos.map((url) => ({
+      url,
+      numero: r.numero,
+      lot: r.lot,
+      texte: r.texte,
+      planNom: r.planId ? planMap.get(r.planId)?.nom ?? "Plan" : null,
+    }))
+  );
+
   return (
     <PvPrintView
       chantier={{
         nom: chantier.nom,
         adresse: chantier.adresse,
+        description: chantier.description,
         chefName: chantier.chef?.name ?? null,
+        chefEmail: chantier.chef?.email ?? null,
+        clients: chantier.clients.map((c) => ({
+          name: c.name,
+          email: c.email,
+        })),
       }}
       pv={{
         dateReception: dateFmt.format(new Date(pv.dateReception)),
+        dateRapport: dateFmt.format(new Date()),
         texteRecap: pv.texteRecap,
         statut: pv.statut,
+        nbReserves: pv.reserves.length,
+        nbReservesLevees: pv.reserves.filter((r) => r.leveLe).length,
         signatureAdminUrl: pv.signatureAdminUrl,
         signatureAdminLe: pv.signatureAdminLe
           ? dateTimeFmt.format(new Date(pv.signatureAdminLe))
@@ -72,31 +136,9 @@ export default async function PvPrintPage({
           ? dateTimeFmt.format(new Date(pv.reservesLeveeLe))
           : null,
       }}
-      plans={pv.plans.map((plan) => ({
-        id: plan.id,
-        url: plan.url,
-        nom: plan.nom,
-        pins: pv.reserves
-          .filter(
-            (r) => r.planId === plan.id && r.posX !== null && r.posY !== null
-          )
-          .map((r) => ({
-            id: r.id,
-            numero: r.numero,
-            posX: r.posX as number,
-            posY: r.posY as number,
-            leveLe: r.leveLe !== null,
-          })),
-      }))}
-      reserves={pv.reserves.map((r) => ({
-        numero: r.numero,
-        texte: r.texte,
-        zone: r.zone,
-        photos: r.photos,
-        planNom: r.planId ? planMap.get(r.planId)?.nom ?? "Plan" : null,
-        leveLe: r.leveLe ? dateFmt.format(new Date(r.leveLe)) : null,
-        leveNote: r.leveNote,
-      }))}
+      groups={groups}
+      sansPlan={sansPlan}
+      photosAnnex={photosAnnex}
     />
   );
 }

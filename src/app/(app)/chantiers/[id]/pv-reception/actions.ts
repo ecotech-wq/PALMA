@@ -161,6 +161,8 @@ export async function supprimerPlan(chantierId: string, planId: string) {
 const reserveSchema = z.object({
   texte: z.string().min(1, "Description requise"),
   zone: z.string().optional().or(z.literal("")),
+  lot: z.string().optional().or(z.literal("")),
+  dateLimite: z.string().optional().or(z.literal("")),
   planId: z.string().optional().or(z.literal("")),
   posX: z.coerce.number().min(0).max(1).optional().or(z.literal("")),
   posY: z.coerce.number().min(0).max(1).optional().or(z.literal("")),
@@ -172,6 +174,8 @@ export async function ajouterReserve(chantierId: string, formData: FormData) {
   const parsed = reserveSchema.parse({
     texte: formData.get("texte"),
     zone: formData.get("zone") || "",
+    lot: formData.get("lot") || "",
+    dateLimite: formData.get("dateLimite") || "",
     planId: formData.get("planId") || "",
     posX: formData.get("posX") || "",
     posY: formData.get("posY") || "",
@@ -207,6 +211,10 @@ export async function ajouterReserve(chantierId: string, formData: FormData) {
       numero: nextNumero,
       texte: parsed.texte,
       zone: parsed.zone || null,
+      lot: parsed.lot || null,
+      dateLimite: parsed.dateLimite
+        ? new Date(parsed.dateLimite + "T00:00:00.000Z")
+        : null,
       planId: parsed.planId || null,
       posX: typeof parsed.posX === "number" ? parsed.posX : null,
       posY: typeof parsed.posY === "number" ? parsed.posY : null,
@@ -219,6 +227,8 @@ export async function ajouterReserve(chantierId: string, formData: FormData) {
 const reserveUpdateSchema = z.object({
   texte: z.string().min(1, "Description requise"),
   zone: z.string().optional().or(z.literal("")),
+  lot: z.string().optional().or(z.literal("")),
+  dateLimite: z.string().optional().or(z.literal("")),
 });
 
 /** Met à jour le texte / la zone d'une réserve. */
@@ -231,6 +241,8 @@ export async function modifierReserve(
   const parsed = reserveUpdateSchema.parse({
     texte: formData.get("texte"),
     zone: formData.get("zone") || "",
+    lot: formData.get("lot") || "",
+    dateLimite: formData.get("dateLimite") || "",
   });
 
   // Photos additionnelles
@@ -253,6 +265,10 @@ export async function modifierReserve(
     data: {
       texte: parsed.texte,
       zone: parsed.zone || null,
+      lot: parsed.lot || null,
+      dateLimite: parsed.dateLimite
+        ? new Date(parsed.dateLimite + "T00:00:00.000Z")
+        : null,
       photos: [...existing.photos, ...newPhotos],
     },
   });

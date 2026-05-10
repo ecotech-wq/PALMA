@@ -15,6 +15,8 @@ type Reserve = {
   numero: number;
   texte: string;
   zone: string | null;
+  lot?: string | null;
+  dateLimite?: Date | string | null;
   photos: string[];
   planNom: string | null;
   hasPosition: boolean;
@@ -113,6 +115,11 @@ export function ReserveList({
                   {r.texte}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap text-xs text-slate-600 dark:text-slate-400">
+                  {r.lot && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-mono text-[10px] font-semibold">
+                      {r.lot}
+                    </span>
+                  )}
                   {r.zone && (
                     <span className="inline-flex items-center gap-1">
                       <MapPin size={10} /> {r.zone}
@@ -121,6 +128,11 @@ export function ReserveList({
                   {r.planNom && r.hasPosition && (
                     <span className="inline-flex items-center gap-1">
                       <MapPin size={10} /> Sur plan « {r.planNom} »
+                    </span>
+                  )}
+                  {r.dateLimite && !lifted && (
+                    <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400">
+                      Pour le {dateFmt.format(new Date(r.dateLimite))}
                     </span>
                   )}
                   {lifted && r.leveLe && (

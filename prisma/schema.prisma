@@ -764,26 +764,28 @@ model PvPlan {
 /// liée à une position sur un plan (puce numérotée) ou simplement à une
 /// zone textuelle (ex: "Cuisine"). Photos + commentaire pour documenter.
 model PvReserve {
-  id        String      @id @default(cuid())
-  pvId      String
-  pv        PvReception @relation(fields: [pvId], references: [id], onDelete: Cascade)
-  numero    Int         // 1, 2, 3... — affiché sur le plan et dans le rapport
-  texte     String
-  photos    String[]    @default([])
-  zone      String?     // ex: "Cuisine", "Chambre 1" — utilisé sans plan ou en complément
+  id          String      @id @default(cuid())
+  pvId        String
+  pv          PvReception @relation(fields: [pvId], references: [id], onDelete: Cascade)
+  numero      Int         // 1, 2, 3... — affiché sur le plan et dans le rapport
+  texte       String
+  photos      String[]    @default([])
+  zone        String?     // localisation textuelle, ex: "Cuisine", "Chambre 1"
+  lot         String?     // corps de métier, ex: "NIC", "ACC", "SOL", "FER", "Peinture"
+  dateLimite  DateTime?   @db.Date  // "Pour le" — échéance souhaitée pour la levée
 
   // Position sur un plan (optionnelle)
-  planId    String?
-  plan      PvPlan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
-  posX      Float?      // 0..1 (relatif à la largeur du plan)
-  posY      Float?      // 0..1 (relatif à la hauteur du plan)
+  planId      String?
+  plan        PvPlan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
+  posX        Float?      // 0..1 (relatif à la largeur du plan)
+  posY        Float?      // 0..1 (relatif à la hauteur du plan)
 
   // Levée individuelle
-  leveLe    DateTime?
-  leveNote  String?
+  leveLe      DateTime?
+  leveNote    String?
 
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   @@index([pvId, numero])
 }

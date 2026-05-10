@@ -232,6 +232,8 @@ export default async function PvReceptionPage({
               numero: r.numero,
               texte: r.texte,
               zone: r.zone,
+              lot: r.lot,
+              dateLimite: r.dateLimite,
               photos: r.photos,
               planId: r.planId,
               planNom: r.planId

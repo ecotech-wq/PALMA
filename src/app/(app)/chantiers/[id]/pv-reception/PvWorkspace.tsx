@@ -38,6 +38,8 @@ type ReserveItem = {
   numero: number;
   texte: string;
   zone: string | null;
+  lot: string | null;
+  dateLimite: Date | string | null;
   photos: string[];
   planId: string | null;
   planNom: string | null;
@@ -268,6 +270,8 @@ export function PvWorkspace({
               numero: r.numero,
               texte: r.texte,
               zone: r.zone,
+              lot: r.lot,
+              dateLimite: r.dateLimite,
               photos: r.photos,
               planNom: r.planNom,
               hasPosition: r.hasPosition,
@@ -363,7 +367,12 @@ function CompactReserveList({ reserves }: { reserves: ReserveItem[] }) {
               <p className="text-slate-900 dark:text-slate-100 line-clamp-2">
                 {r.texte}
               </p>
-              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap gap-x-2">
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 items-center">
+                {r.lot && (
+                  <span className="inline-flex items-center px-1 rounded bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-mono font-semibold">
+                    {r.lot}
+                  </span>
+                )}
                 {r.zone && (
                   <span>
                     <MapPin size={9} className="inline mr-0.5" />
@@ -371,6 +380,11 @@ function CompactReserveList({ reserves }: { reserves: ReserveItem[] }) {
                   </span>
                 )}
                 {r.photos.length > 0 && <span>📷 {r.photos.length}</span>}
+                {r.dateLimite && !lifted && (
+                  <span className="text-amber-700 dark:text-amber-400">
+                    Pour le {dateFmt.format(new Date(r.dateLimite))}
+                  </span>
+                )}
                 {lifted && r.leveLe && (
                   <span className="text-green-700 dark:text-green-400">
                     <CheckCircle2 size={9} className="inline mr-0.5" />

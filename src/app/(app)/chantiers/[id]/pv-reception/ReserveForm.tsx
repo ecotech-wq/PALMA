@@ -83,14 +83,47 @@ export function ReserveForm({
         />
       </div>
 
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">
+            Localisation
+          </label>
+          <Input
+            name="zone"
+            placeholder="Cuisine, Chambre 1..."
+          />
+        </div>
+        <div>
+          <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">
+            Lot / corps de métier
+          </label>
+          <Input
+            name="lot"
+            list="lot-suggestions"
+            placeholder="NIC, ACC, SOL, FER..."
+          />
+          <datalist id="lot-suggestions">
+            <option value="NIC">Nettoyage</option>
+            <option value="ACC">Accessoires / Quincaillerie</option>
+            <option value="SOL">Sols</option>
+            <option value="FER">Plomberie / Sanitaires</option>
+            <option value="MET">Menuiseries Extérieures</option>
+            <option value="BOI">Menuiseries Bois</option>
+            <option value="PEI">Peinture</option>
+            <option value="CAR">Carrelage / Faïence</option>
+            <option value="ELE">Électricité</option>
+            <option value="VRD">Voirie / Réseaux divers</option>
+            <option value="ETA">Étanchéité</option>
+            <option value="SBT">Béton / Maçonnerie</option>
+          </datalist>
+        </div>
+      </div>
+
       <div>
         <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">
-          Zone (optionnel)
+          Date limite (« Pour le ») — optionnel
         </label>
-        <Input
-          name="zone"
-          placeholder="Ex : Cuisine, Chambre 1, Façade nord..."
-        />
+        <Input type="date" name="dateLimite" />
       </div>
 
       <div>
