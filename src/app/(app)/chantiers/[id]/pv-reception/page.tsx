@@ -1,10 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import {
   ClipboardCheck,
-  AlertTriangle,
   CheckCircle2,
-  ImageIcon,
-  Plus,
   Printer,
 } from "lucide-react";
 import Link from "next/link";
@@ -17,10 +14,7 @@ import { db } from "@/lib/db";
 import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
 import { updatePvInfos } from "./actions";
 import { PvSignBox } from "./PvSignBox";
-import { PvPlanViewer } from "./PvPlanViewer";
-import { ReserveForm } from "./ReserveForm";
-import { ReserveList } from "./ReserveList";
-import { PlanUploadForm } from "./PlanUploadForm";
+import { PvWorkspace } from "./PvWorkspace";
 import { PvAdminActions } from "./PvAdminActions";
 
 const dateFmt = new Intl.DateTimeFormat("fr-FR", {
@@ -223,108 +217,33 @@ export default async function PvReceptionPage({
             </CardBody>
           </Card>
 
-          {/* Plans avec puces */}
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <ImageIcon size={16} className="inline mr-1" />
-                Plans ({pv.plans.length})
-              </CardTitle>
-            </CardHeader>
-            <CardBody className="space-y-4">
-              {pv.plans.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400 italic">
-                  {editable
-                    ? "Importez un plan pour pouvoir cliquer sur la zone du défaut et y placer une puce numérotée."
-                    : "Aucun plan importé."}
-                </p>
-              ) : (
-                pv.plans.map((plan) => {
-                  const pinsForPlan = pv!.reserves
-                    .filter(
-                      (r) =>
-                        r.planId === plan.id &&
-                        r.posX !== null &&
-                        r.posY !== null
-                    )
-                    .map((r) => ({
-                      id: r.id,
-                      numero: r.numero,
-                      posX: r.posX as number,
-                      posY: r.posY as number,
-                      texte: r.texte,
-                      leveLe: r.leveLe,
-                    }));
-                  return (
-                    <PvPlanViewer
-                      key={plan.id}
-                      chantierId={id}
-                      plan={{ id: plan.id, url: plan.url, nom: plan.nom }}
-                      pins={pinsForPlan}
-                      canEdit={editable}
-                    />
-                  );
-                })
-              )}
-              {editable && (
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-                  <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Importer un nouveau plan
-                  </h4>
-                  <PlanUploadForm chantierId={id} />
-                </div>
-              )}
-            </CardBody>
-          </Card>
-
-          {/* Liste des réserves */}
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <AlertTriangle size={16} className="inline mr-1" />
-                Réserves ({pv.reserves.length})
-                {pv.reserves.length > 0 && (
-                  <span className="text-xs text-slate-500 dark:text-slate-400 font-normal ml-2">
-                    {pv.reserves.filter((r) => r.leveLe).length} levée(s) /{" "}
-                    {pv.reserves.filter((r) => !r.leveLe).length} en attente
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardBody className="space-y-4">
-              <ReserveList
-                chantierId={id}
-                canEdit={isAdmin}
-                reserves={pv.reserves.map((r) => ({
-                  id: r.id,
-                  numero: r.numero,
-                  texte: r.texte,
-                  zone: r.zone,
-                  photos: r.photos,
-                  planNom: r.planId
-                    ? planMap.get(r.planId)?.nom ?? "Plan"
-                    : null,
-                  hasPosition: r.posX !== null && r.posY !== null,
-                  leveLe: r.leveLe,
-                  leveNote: r.leveNote,
-                }))}
-              />
-
-              {editable && (
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-                  <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    <Plus size={14} className="inline mr-1" />
-                    Ajouter une réserve sans plan
-                  </h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 italic mb-2">
-                    Pour placer une puce sur un plan : cliquez directement sur
-                    l&apos;image du plan ci-dessus.
-                  </p>
-                  <ReserveForm chantierId={id} />
-                </div>
-              )}
-            </CardBody>
-          </Card>
+          {/* Workspace plans + réserves (style Archipad) */}
+          <PvWorkspace
+            chantierId={id}
+            isAdmin={isAdmin}
+            canEdit={editable}
+            plans={pv.plans.map((p) => ({
+              id: p.id,
+              url: p.url,
+              nom: p.nom,
+            }))}
+            reserves={pv.reserves.map((r) => ({
+              id: r.id,
+              numero: r.numero,
+              texte: r.texte,
+              zone: r.zone,
+              photos: r.photos,
+              planId: r.planId,
+              planNom: r.planId
+                ? planMap.get(r.planId)?.nom ?? "Plan"
+                : null,
+              hasPosition: r.posX !== null && r.posY !== null,
+              posX: r.posX,
+              posY: r.posY,
+              leveLe: r.leveLe,
+              leveNote: r.leveNote,
+            }))}
+          />
 
           {/* Signatures */}
           <Card>

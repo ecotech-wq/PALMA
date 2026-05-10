@@ -30,15 +30,19 @@ const DPI_OPTIONS = [72, 100, 150, 200, 300] as const;
  */
 export function PdfImporterModal({
   chantierId,
+  initialFile = null,
   onClose,
 }: {
   chantierId: string;
+  /** Fichier déjà choisi en amont (par le parent). Si fourni, on saute
+   *  l'écran "Choisir un PDF". */
+  initialFile?: File | null;
   onClose: () => void;
 }) {
   const router = useRouter();
   const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [file, setFile] = useState<File | null>(initialFile);
   const [pages, setPages] = useState<PageItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [dpi, setDpi] = useState<number>(150);
