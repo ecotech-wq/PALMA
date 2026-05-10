@@ -49,10 +49,8 @@ next-env.d.ts
 /src/generated/prisma
 
 # uploads utilisateurs (volumes Docker en prod, jamais committés)
-/public/uploads/materiel/*
-/public/uploads/ouvriers/*
-!/public/uploads/materiel/.gitkeep
-!/public/uploads/ouvriers/.gitkeep
+/public/uploads/*/*
+!/public/uploads/*/.gitkeep
 
 # Claude Code / agents locaux
 /.claude/
