@@ -1,6 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Trash2, Users, Plus, ShoppingCart, Truck, Banknote } from "lucide-react";
+import {
+  Trash2,
+  Users,
+  Plus,
+  ShoppingCart,
+  Truck,
+  Banknote,
+  MessageSquare,
+} from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -77,8 +85,14 @@ export default async function ChantierDetailPage({
         description={chantier.adresse ?? undefined}
         backHref="/chantiers"
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             <ChantierStatutBadge statut={chantier.statut} />
+            <Link href={`/chantiers/${id}/journal`}>
+              <Button size="sm">
+                <MessageSquare size={14} />
+                <span className="hidden sm:inline">Journal</span>
+              </Button>
+            </Link>
             {me.isAdmin && (
               <form action={deleteAction}>
                 <Button type="submit" variant="danger" size="sm">

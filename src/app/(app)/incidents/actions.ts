@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { saveUploadedPhoto, deleteUploadedPhoto } from "@/lib/upload";
 import { requireAuth } from "@/lib/auth-helpers";
 import { notify, notifyAdmins } from "@/lib/notifications";
+import { insertSystemMessage } from "@/app/(app)/journal/actions";
 
 const categorieEnum = z.enum([
   "MATERIEL_MANQUANT",
@@ -76,6 +77,18 @@ export async function createIncident(formData: FormData) {
       `${me.name} a remonté un problème (${data.categorie.replaceAll("_", " ").toLowerCase()}).`,
       `/incidents/${incident.id}`
     );
+  }
+
+  // Insertion auto dans le journal du chantier (si rattaché)
+  if (data.chantierId) {
+    await insertSystemMessage({
+      chantierId: data.chantierId,
+      type: "SYSTEM_INCIDENT",
+      texte: `🚨 Incident ${data.gravite === "URGENT" ? "URGENT " : ""}: ${data.titre}\n${data.description}`,
+      authorId: me.id,
+      incidentId: incident.id,
+      photos,
+    });
   }
 
   revalidatePath("/incidents");

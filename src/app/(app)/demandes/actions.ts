@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAuth, requireAdmin } from "@/lib/auth-helpers";
 import { notify, notifyAdmins } from "@/lib/notifications";
+import { insertSystemMessage } from "@/app/(app)/journal/actions";
 
 const urgenceEnum = z.enum(["INFO", "ATTENTION", "URGENT"]);
 
@@ -51,6 +52,15 @@ export async function createDemande(formData: FormData) {
       `/demandes/${created.id}`
     );
   }
+
+  // Insertion auto dans le journal du chantier
+  await insertSystemMessage({
+    chantierId: data.chantierId,
+    type: "SYSTEM_DEMANDE",
+    texte: `📦 Demande de matériel : ${data.description} (${data.quantite}${data.unite ? " " + data.unite : ""})`,
+    authorId: me.id,
+    demandeId: created.id,
+  });
 
   revalidatePath("/demandes");
   revalidatePath(`/chantiers/${data.chantierId}`);

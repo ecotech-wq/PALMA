@@ -44,6 +44,8 @@ model User {
   demandesFaites     DemandeMateriel[]    @relation("DemandeRequester")
   demandesValidees   DemandeMateriel[]    @relation("DemandeApprover")
   notifications      Notification[]
+  journalMessages    JournalMessage[]
+  plansUploaded      PlanChantier[]
 }
 
 // Token à usage unique pour réinitialiser un mot de passe.
@@ -99,6 +101,9 @@ model Chantier {
   incidents        Incident[]
   demandesMateriel DemandeMateriel[]
   clients          User[]            @relation("ChantierClients")
+  journalMessages  JournalMessage[]
+  plans            PlanChantier[]
+  rapportsHebdo    RapportHebdo[]
 }
 
 model Equipe {
@@ -600,4 +605,90 @@ model DemandeMateriel {
   @@index([chantierId])
   @@index([statut])
   @@index([createdAt(sort: Desc)])
+}
+
+// =====================================================
+// JOURNAL DE CHANTIER (timeline chat-like)
+// =====================================================
+
+enum JournalMessageType {
+  NOTE
+  SYSTEM_INCIDENT
+  SYSTEM_DEMANDE
+  SYSTEM_COMMANDE
+  SYSTEM_RAPPORT
+  BILAN_JOURNEE
+}
+
+/// Message dans le fil de discussion du chantier (un fil par chantier × jour).
+/// Auto-inséré quand un incident, une demande ou une commande est créé(e).
+/// Permet aux équipes terrain et aux admins de communiquer au fil de la
+/// journée avec photos et vidéos.
+model JournalMessage {
+  id           String             @id @default(cuid())
+  chantierId   String
+  chantier     Chantier           @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  authorId     String?
+  author       User?              @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  date         DateTime           @db.Date
+  type         JournalMessageType @default(NOTE)
+  texte        String?
+  photos       String[]           @default([])
+  videos       String[]           @default([])
+  // Liens vers événements existants (pour les messages SYSTEM_*)
+  incidentId   String?
+  demandeId    String?
+  commandeId   String?
+  rapportId    String?
+  // Filtrage avant envoi au client (admin coche/décoche)
+  hiddenFromClient Boolean        @default(false)
+  // Auteur peut éditer dans les 5 min, admin tout le temps
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([chantierId, date])
+  @@index([createdAt(sort: Desc)])
+}
+
+// =====================================================
+// PLANS DE CHANTIER (fichiers d'aide aux équipes)
+// =====================================================
+
+model PlanChantier {
+  id           String   @id @default(cuid())
+  chantierId   String
+  chantier     Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  uploaderId   String
+  uploader     User     @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
+  nom          String
+  description  String?
+  fileUrl      String
+  mimeType     String
+  fileSize     Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([chantierId])
+}
+
+// =====================================================
+// RAPPORT HEBDOMADAIRE (curé par admin avant envoi client)
+// =====================================================
+
+model RapportHebdo {
+  id                 String   @id @default(cuid())
+  chantierId         String
+  chantier           Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  semaineDebut       DateTime @db.Date  // lundi de la semaine
+  texteIntro         String?
+  // Liste des messageIds inclus dans le rapport envoyé au client
+  // (par défaut, tous les messages NOTE et BILAN_JOURNEE de la semaine
+  //  qui ne sont pas hiddenFromClient. L'admin peut surcharger ici.)
+  hiddenMessageIds   String[] @default([])
+  envoyeAuClient     Boolean  @default(false)
+  envoyeLe           DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([chantierId, semaineDebut])
 }

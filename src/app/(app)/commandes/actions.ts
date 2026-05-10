@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { insertSystemMessage } from "@/app/(app)/journal/actions";
 
 const ligneSchema = z.object({
   designation: z.string().min(1),
@@ -107,6 +108,14 @@ export async function createCommande(formData: FormData) {
       console.error("Failed to link demande:", e);
     }
   }
+
+  // Insertion auto dans le journal du chantier
+  await insertSystemMessage({
+    chantierId: data.chantierId,
+    type: "SYSTEM_COMMANDE",
+    texte: `🛒 Commande passée chez ${data.fournisseur} : ${lignes.length} ligne${lignes.length > 1 ? "s" : ""}`,
+    commandeId: created.id,
+  });
 
   revalidatePath("/commandes");
   revalidatePath(`/chantiers/${data.chantierId}`);
