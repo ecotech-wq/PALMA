@@ -90,7 +90,7 @@ export default async function MaterielListPage({
           }
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-3">
           {materiels.map((m) => (
             <Link
               key={m.id}
@@ -103,26 +103,28 @@ export default async function MaterielListPage({
                     src={m.photo}
                     alt={m.nomCommun}
                     fill
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                     className="object-cover"
                   />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-slate-300">
-                    <Wrench size={48} />
+                    <Wrench size={36} />
                   </div>
                 )}
-                <div className="absolute top-2 left-2">
+                <div className="absolute top-1.5 left-1.5">
                   <MaterielStatutBadge statut={m.statut} />
                 </div>
               </div>
-              <div className="p-3 flex-1">
-                <div className="font-medium text-slate-900 dark:text-slate-100 truncate">{m.nomCommun}</div>
-                <div className="text-xs text-slate-500 dark:text-slate-500 mt-0.5 truncate">
+              <div className="p-2 sm:p-3 flex-1 min-w-0">
+                <div className="font-medium text-slate-900 dark:text-slate-100 truncate text-sm">
+                  {m.nomCommun}
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-500 mt-0.5 truncate">
                   {[m.marque, m.modele].filter(Boolean).join(" ") || "—"}
                 </div>
                 {m._count.accessoires > 0 && (
-                  <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                    {m._count.accessoires} accessoire{m._count.accessoires > 1 ? "s" : ""}
+                  <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                    {m._count.accessoires} acc.
                   </div>
                 )}
               </div>

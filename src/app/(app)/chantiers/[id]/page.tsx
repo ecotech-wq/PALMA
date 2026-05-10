@@ -193,17 +193,21 @@ export default async function ChantierDetailPage({
                     <li key={c.id}>
                       <Link
                         href={`/commandes/${c.id}`}
-                        className="flex items-center gap-2 p-3 text-sm hover:bg-slate-50 dark:hover:bg-slate-900"
+                        className="flex items-start gap-2 p-3 text-sm hover:bg-slate-50 dark:hover:bg-slate-900"
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate">{c.fournisseur}</div>
-                          <div className="text-xs text-slate-500 dark:text-slate-500">
-                            {formatDate(c.dateCommande)}
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="font-medium truncate">
+                              {c.fournisseur}
+                            </span>
+                            <span className="font-semibold shrink-0">
+                              {formatEuro(c.coutTotal.toString())}
+                            </span>
                           </div>
-                        </div>
-                        <CommandeStatutBadge statut={c.statut} />
-                        <div className="font-semibold w-24 text-right">
-                          {formatEuro(c.coutTotal.toString())}
+                          <div className="text-xs text-slate-500 dark:text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                            <CommandeStatutBadge statut={c.statut} />
+                            <span>{formatDate(c.dateCommande)}</span>
+                          </div>
                         </div>
                       </Link>
                     </li>
@@ -231,20 +235,38 @@ export default async function ChantierDetailPage({
                     <li key={l.id}>
                       <Link
                         href={`/locations/${l.id}`}
-                        className="flex items-center gap-2 p-3 text-sm hover:bg-slate-50 dark:hover:bg-slate-900"
+                        className="flex items-start gap-2 p-3 text-sm hover:bg-slate-50 dark:hover:bg-slate-900"
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate">{l.designation}</div>
-                          <div className="text-xs text-slate-500 dark:text-slate-500">{l.fournisseurNom}</div>
-                        </div>
-                        <Badge color={l.cloture ? "green" : l.type === "LOCATION" ? "purple" : "blue"}>
-                          {l.cloture ? "Clôturée" : l.type === "LOCATION" ? "Location" : "Prêt"}
-                        </Badge>
-                        {l.type === "LOCATION" && (
-                          <div className="font-semibold w-24 text-right">
-                            {formatEuro(l.coutTotal.toString())}
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="font-medium truncate">
+                              {l.designation}
+                            </span>
+                            {l.type === "LOCATION" && (
+                              <span className="font-semibold shrink-0">
+                                {formatEuro(l.coutTotal.toString())}
+                              </span>
+                            )}
                           </div>
-                        )}
+                          <div className="text-xs text-slate-500 dark:text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                            <Badge
+                              color={
+                                l.cloture
+                                  ? "green"
+                                  : l.type === "LOCATION"
+                                    ? "purple"
+                                    : "blue"
+                              }
+                            >
+                              {l.cloture
+                                ? "Clôturée"
+                                : l.type === "LOCATION"
+                                  ? "Location"
+                                  : "Prêt"}
+                            </Badge>
+                            <span className="truncate">{l.fournisseurNom}</span>
+                          </div>
+                        </div>
                       </Link>
                     </li>
                   ))}

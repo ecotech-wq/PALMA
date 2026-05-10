@@ -143,22 +143,28 @@ export default async function LocationsPage() {
           <CardBody className="!p-0">
             <ul className="divide-y divide-slate-100 dark:divide-slate-800">
               {cloturees.map((l) => (
-                <li key={l.id} className="px-5 py-2 flex items-center gap-3 text-sm">
+                <li key={l.id} className="px-3 sm:px-5 py-2">
                   <Link
                     href={`/locations/${l.id}`}
-                    className="font-medium text-slate-700 dark:text-slate-300 hover:underline truncate flex-1"
+                    className="block text-sm hover:bg-slate-50 dark:hover:bg-slate-900 -mx-3 sm:-mx-5 px-3 sm:px-5 py-1 -my-1"
                   >
-                    {l.designation}
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-medium text-slate-700 dark:text-slate-300 truncate flex-1">
+                        {l.designation}
+                      </span>
+                      {l.type === "LOCATION" && (
+                        <span className="font-medium shrink-0">
+                          {formatEuro(l.coutTotal.toString())}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                      <span className="truncate">
+                        {l.chantier?.nom || l.fournisseurNom}
+                      </span>
+                      <span>· {formatDate(l.dateRetourReel)}</span>
+                    </div>
                   </Link>
-                  <span className="text-xs text-slate-500 dark:text-slate-500 hidden sm:inline truncate">
-                    {l.chantier?.nom || l.fournisseurNom}
-                  </span>
-                  {l.type === "LOCATION" && (
-                    <span className="font-medium">{formatEuro(l.coutTotal.toString())}</span>
-                  )}
-                  <span className="text-xs text-slate-400 dark:text-slate-500 shrink-0">
-                    {formatDate(l.dateRetourReel)}
-                  </span>
                 </li>
               ))}
             </ul>
