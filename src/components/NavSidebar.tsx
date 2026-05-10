@@ -89,15 +89,63 @@ function BrandHeader({
   );
 }
 
+export type NavBadges = {
+  paie?: number;
+  locations?: number;
+  sorties?: number;
+};
+
+function NavBadge({
+  count,
+  variant = "warning",
+}: {
+  count: number;
+  variant?: "warning" | "danger" | "info";
+}) {
+  if (count <= 0) return null;
+  const cls =
+    variant === "danger"
+      ? "bg-red-500 text-white"
+      : variant === "info"
+        ? "bg-brand-500 text-white"
+        : "bg-yellow-500 text-white";
+  return (
+    <span
+      className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none min-w-[1.25rem] text-center ${cls}`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+function getBadgeForHref(
+  href: string,
+  badges?: NavBadges
+): { count: number; variant: "warning" | "danger" | "info" } | null {
+  if (!badges) return null;
+  if (href === "/paie" && (badges.paie ?? 0) > 0) {
+    return { count: badges.paie!, variant: "warning" };
+  }
+  if (href === "/locations" && (badges.locations ?? 0) > 0) {
+    return { count: badges.locations!, variant: "danger" };
+  }
+  if (href === "/sorties" && (badges.sorties ?? 0) > 0) {
+    return { count: badges.sorties!, variant: "danger" };
+  }
+  return null;
+}
+
 export function DesktopSidebar({
   userName,
   userRole,
   pendingUsersCount,
+  navBadges,
   signOutAction,
 }: {
   userName: string;
   userRole: string;
   pendingUsersCount: number;
+  navBadges?: NavBadges;
   signOutAction: () => Promise<void>;
 }) {
   const pathname = usePathname();
@@ -132,6 +180,7 @@ export function DesktopSidebar({
       <nav className="flex-1 overflow-y-auto py-3">
         {items.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname?.startsWith(href + "/");
+          const badge = getBadgeForHref(href, navBadges);
           return (
             <Link
               key={href}
@@ -144,7 +193,10 @@ export function DesktopSidebar({
               )}
             >
               <Icon size={18} />
-              {label}
+              <span className="flex-1">{label}</span>
+              {badge && (
+                <NavBadge count={badge.count} variant={badge.variant} />
+              )}
             </Link>
           );
         })}
@@ -211,9 +263,11 @@ export function DesktopSidebar({
 export function MobileBottomNav({
   isAdmin,
   pendingUsersCount,
+  navBadges,
 }: {
   isAdmin?: boolean;
   pendingUsersCount?: number;
+  navBadges?: NavBadges;
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -238,6 +292,13 @@ export function MobileBottomNav({
     (i) => pathname === i.href || pathname?.startsWith(i.href + "/")
   );
 
+  // Compteur cumulé pour le badge sur le bouton "Plus" : tout ce qui n'est
+  // pas dans la barre primaire (locations + sorties + admin)
+  const moreBadgeCount =
+    (navBadges?.locations ?? 0) +
+    (navBadges?.sorties ?? 0) +
+    (isAdmin ? (pendingUsersCount ?? 0) : 0);
+
   return (
     <>
       <nav
@@ -246,12 +307,13 @@ export function MobileBottomNav({
       >
         {mobilePrimary.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname?.startsWith(href + "/");
+          const badge = getBadgeForHref(href, navBadges);
           return (
             <Link
               key={href}
               href={href}
               className={cn(
-                "flex flex-col items-center justify-center py-2 gap-0.5 text-[10px]",
+                "flex flex-col items-center justify-center py-2 gap-0.5 text-[10px] relative",
                 active
                   ? "text-brand-700 dark:text-brand-400"
                   : "text-slate-600 dark:text-slate-400"
@@ -259,6 +321,17 @@ export function MobileBottomNav({
             >
               <Icon size={20} />
               <span className="truncate max-w-full px-1">{label}</span>
+              {badge && (
+                <span
+                  className={`absolute top-1 right-3 text-[9px] font-bold px-1 py-px rounded-full leading-none min-w-[1rem] text-center ${
+                    badge.variant === "danger"
+                      ? "bg-red-500 text-white"
+                      : "bg-yellow-500 text-white"
+                  }`}
+                >
+                  {badge.count > 99 ? "99+" : badge.count}
+                </span>
+              )}
             </Link>
           );
         })}
@@ -274,9 +347,9 @@ export function MobileBottomNav({
         >
           <Menu size={20} />
           <span>Plus</span>
-          {isAdmin && (pendingUsersCount ?? 0) > 0 && (
-            <span className="absolute top-1 right-3 bg-yellow-500 text-white text-[9px] font-bold px-1 py-px rounded-full">
-              {pendingUsersCount}
+          {moreBadgeCount > 0 && (
+            <span className="absolute top-1 right-3 bg-yellow-500 text-white text-[9px] font-bold px-1 py-px rounded-full leading-none min-w-[1rem] text-center">
+              {moreBadgeCount > 99 ? "99+" : moreBadgeCount}
             </span>
           )}
         </button>
@@ -315,6 +388,7 @@ export function MobileBottomNav({
               {mobileMore.map(({ href, label, icon: Icon }) => {
                 const active =
                   pathname === href || pathname?.startsWith(href + "/");
+                const badge = getBadgeForHref(href, navBadges);
                 return (
                   <Link
                     key={href}
@@ -328,7 +402,10 @@ export function MobileBottomNav({
                     )}
                   >
                     <Icon size={20} />
-                    {label}
+                    <span className="flex-1">{label}</span>
+                    {badge && (
+                      <NavBadge count={badge.count} variant={badge.variant} />
+                    )}
                   </Link>
                 );
               })}

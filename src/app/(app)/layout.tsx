@@ -8,11 +8,39 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  // Compteur de comptes en attente (badge dans la nav admin)
+  // Compteurs pour les badges de notification dans la nav
   const isAdmin = session.user.role === "ADMIN";
-  const pendingUsersCount = isAdmin
-    ? await db.user.count({ where: { status: "PENDING" } })
-    : 0;
+  const today = new Date();
+
+  const [
+    pendingUsersCount,
+    paiementsAVerser,
+    locationsEnRetard,
+    sortiesEnRetard,
+  ] = await Promise.all([
+    isAdmin ? db.user.count({ where: { status: "PENDING" } }) : 0,
+    // Paiements en attente de versement (statut CALCULE)
+    db.paiement.count({ where: { statut: "CALCULE" } }),
+    // Locations dont le retour prévu est dépassé et qui ne sont pas clôturées
+    db.locationPret.count({
+      where: { cloture: false, dateFinPrevue: { lt: today } },
+    }),
+    // Sorties matériel ouvertes depuis plus de 30 jours
+    db.sortieMateriel.count({
+      where: {
+        dateRetour: null,
+        dateSortie: {
+          lt: new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000),
+        },
+      },
+    }),
+  ]);
+
+  const navBadges = {
+    paie: paiementsAVerser,
+    locations: locationsEnRetard,
+    sorties: sortiesEnRetard,
+  };
 
   async function handleSignOut() {
     "use server";
@@ -26,6 +54,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           userName={session.user.name}
           userRole={session.user.role}
           pendingUsersCount={pendingUsersCount}
+          navBadges={navBadges}
           signOutAction={handleSignOut}
         />
         <div className="flex-1 flex flex-col min-w-0">
@@ -38,6 +67,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <MobileBottomNav
             isAdmin={isAdmin}
             pendingUsersCount={pendingUsersCount}
+            navBadges={navBadges}
           />
         </div>
       </div>
