@@ -275,6 +275,39 @@ export async function modifierReserve(
   revalidatePath(`/chantiers/${chantierId}/pv-reception`);
 }
 
+/**
+ * Déplace une réserve sur son plan (drag de la puce). Coordonnées
+ * relatives 0..1 ; le planId reste inchangé.
+ */
+export async function deplacerReserve(
+  chantierId: string,
+  reserveId: string,
+  posX: number,
+  posY: number
+) {
+  await requireAdmin();
+  if (
+    typeof posX !== "number" ||
+    typeof posY !== "number" ||
+    posX < 0 ||
+    posX > 1 ||
+    posY < 0 ||
+    posY > 1
+  ) {
+    throw new Error("Coordonnées invalides");
+  }
+  const r = await db.pvReserve.findUnique({ where: { id: reserveId } });
+  if (!r) return;
+  if (!r.planId) {
+    throw new Error("Cette réserve n'est pas attachée à un plan");
+  }
+  await db.pvReserve.update({
+    where: { id: reserveId },
+    data: { posX, posY },
+  });
+  revalidatePath(`/chantiers/${chantierId}/pv-reception`);
+}
+
 /** Retire une photo d'une réserve. */
 export async function retirerPhotoReserve(
   chantierId: string,

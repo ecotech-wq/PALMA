@@ -34,7 +34,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ReserveForm } from "./ReserveForm";
 import { ReserveList } from "./ReserveList";
 import { PlanUploadForm } from "./PlanUploadForm";
-import { supprimerPlan } from "./actions";
+import { supprimerPlan, deplacerReserve } from "./actions";
 
 type PlanItem = {
   id: string;
@@ -144,6 +144,7 @@ export function PvWorkspace({
               posY: r.posY as number,
               texte: r.texte,
               leveLe: r.leveLe,
+              dateLimite: r.dateLimite,
               highlighted: r.id === highlightedId,
             }))
         : [],
@@ -246,11 +247,13 @@ export function PvWorkspace({
               <PlanCanvas
                 ref={canvasRef}
                 key={activePlan.id}
+                chantierId={chantierId}
                 plan={activePlan}
                 pins={activePins}
                 canEdit={canEdit}
                 onPlanClick={handlePlanClick}
                 draftPos={draftPos}
+                setDraftPos={setDraftPos}
                 draftNumero={reserves.length + 1}
               />
             </div>
@@ -548,6 +551,13 @@ function CompactReserveCard({
   onClick: () => void;
 }) {
   const lifted = !!r.leveLe;
+  const late =
+    !lifted && r.dateLimite && new Date(r.dateLimite) < new Date();
+  const pinBg = lifted
+    ? "bg-green-500 border-green-700"
+    : late
+      ? "bg-red-500 border-red-700"
+      : "bg-blue-500 border-blue-700";
   return (
     <li
       onClick={onClick}
@@ -561,11 +571,7 @@ function CompactReserveCard({
       title={r.hasPosition ? "Cliquer pour zoomer sur la puce" : ""}
     >
       <div
-        className={`shrink-0 flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold border-2 ${
-          lifted
-            ? "bg-green-500 border-green-700 text-white"
-            : "bg-red-500 border-red-700 text-white"
-        }`}
+        className={`shrink-0 flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold border-2 text-white ${pinBg}`}
       >
         {r.numero}
       </div>
@@ -661,42 +667,82 @@ function PlanTab({
 }
 
 /* ----------------------------------------------------------------- */
-/* Le canvas zoomable / pannable + clic-puce                          */
+/* Le canvas zoomable / pannable + puces draggables                   */
 /* ----------------------------------------------------------------- */
 type PlanCanvasHandle = {
   focusPin: (reserveId: string) => void;
 };
 
+type PinForCanvas = {
+  id: string;
+  numero: number;
+  posX: number;
+  posY: number;
+  texte: string;
+  leveLe: Date | string | null;
+  dateLimite: Date | string | null;
+  highlighted: boolean;
+};
+
 type PlanCanvasProps = {
+  chantierId: string;
   plan: PlanItem;
-  pins: {
-    id: string;
-    numero: number;
-    posX: number;
-    posY: number;
-    texte: string;
-    leveLe: Date | string | null;
-    highlighted: boolean;
-  }[];
+  pins: PinForCanvas[];
   canEdit: boolean;
+  /** Demande à ouvrir le panneau "nouvelle réserve" avec une position */
   onPlanClick: (x: number, y: number) => void;
+  /** Position de la puce brouillon (en cours de création), draggable */
   draftPos: { x: number; y: number } | null;
+  /** Mise à jour de la position de la puce brouillon pendant le drag */
+  setDraftPos: (pos: { x: number; y: number }) => void;
   draftNumero: number;
 };
 
+/**
+ * Couleurs Archipad :
+ *  - vert  = levée
+ *  - rouge = en retard (date limite dépassée et non levée)
+ *  - bleu  = à temps (en cours, pas encore en retard)
+ */
+function pinColors(p: { leveLe: Date | string | null; dateLimite: Date | string | null }) {
+  if (p.leveLe) {
+    return { bg: "bg-green-500", border: "border-green-700" };
+  }
+  if (p.dateLimite && new Date(p.dateLimite) < new Date()) {
+    return { bg: "bg-red-500", border: "border-red-700" };
+  }
+  return { bg: "bg-blue-500", border: "border-blue-700" };
+}
+
 const PlanCanvas = forwardRef<PlanCanvasHandle, PlanCanvasProps>(
   function PlanCanvas(
-    { plan, pins, canEdit, onPlanClick, draftPos, draftNumero },
+    {
+      chantierId,
+      plan,
+      pins,
+      canEdit,
+      onPlanClick,
+      draftPos,
+      setDraftPos,
+      draftNumero,
+    },
     ref
   ) {
     const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
     const imgRef = useRef<HTMLImageElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
-    // Garde la dernière fonction onPlanClick dans une ref pour que le
-    // listener DOM (qui ne se ré-attache pas) appelle toujours la
-    // version courante.
-    const onPlanClickRef = useRef(onPlanClick);
-    onPlanClickRef.current = onPlanClick;
+    const router = useRouter();
+    const toast = useToast();
+
+    // ID de la puce en cours de drag (ou "draft"). Désactive le panning
+    // de react-zoom-pan-pinch pendant le drag.
+    const [draggingId, setDraggingId] = useState<string | null>(null);
+
+    // Position locale "live" pendant un drag de puce existante (override
+    // visuel ; on ne sauve qu'au pointerup).
+    const [pinOverrides, setPinOverrides] = useState<
+      Record<string, { x: number; y: number }>
+    >({});
 
     useImperativeHandle(ref, () => ({
       focusPin: (reserveId: string) => {
@@ -712,84 +758,130 @@ const PlanCanvas = forwardRef<PlanCanvasHandle, PlanCanvasProps>(
     }));
 
     /**
-     * Détection click manuelle au niveau DOM, parce que :
-     * - react-zoom-pan-pinch utilise setPointerCapture sur son wrapper,
-     *   ce qui empêche le click event natif de fire sur l'image
-     *   (Chrome a un comportement strict avec le pointer capture).
-     * - Le React onClick est en plus souvent absorbé.
-     *
-     * Approche fiable :
-     * - pointerdown sur l'image : record (x, y, t)
-     * - pointerup sur la window (capture phase) : on regarde si le
-     *   point d'arrivée est dans l'image ET si la distance parcourue
-     *   est < 10 px (un vrai clic). Si oui, on calcule les coords
-     *   relatives et on appelle onPlanClick.
-     *
-     * Marche identiquement souris (Chrome desktop), trackpad, tactile.
+     * Démarre le drag d'une puce (existante ou brouillon).
+     * Pose une listener globale pointermove/pointerup, calcule la
+     * position relative à l'image en temps réel, sauvegarde au up.
      */
-    useEffect(() => {
+    function startDrag(pinId: string, e: React.PointerEvent) {
       if (!canEdit) return;
+      e.stopPropagation();
+      e.preventDefault();
+      setDraggingId(pinId);
+
       const img = imgRef.current;
       if (!img) return;
 
-      let downX: number | null = null;
-      let downY: number | null = null;
-      let downTime = 0;
+      let lastPos: { x: number; y: number } | null = null;
 
-      const onDown = (e: PointerEvent) => {
-        // Souris : seul le bouton gauche
-        if (e.pointerType === "mouse" && e.button !== 0) return;
-        downX = e.clientX;
-        downY = e.clientY;
-        downTime = Date.now();
-      };
+      function clamp01(v: number) {
+        return Math.max(0, Math.min(1, v));
+      }
 
-      const onUp = (e: PointerEvent) => {
-        if (downX === null || downY === null) return;
-        const dx = e.clientX - downX;
-        const dy = e.clientY - downY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const elapsed = Date.now() - downTime;
-        downX = null;
-        downY = null;
+      function computePos(clientX: number, clientY: number) {
+        const rect = img!.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return null;
+        return {
+          x: clamp01((clientX - rect.left) / rect.width),
+          y: clamp01((clientY - rect.top) / rect.height),
+        };
+      }
 
-        if (dist > 10) return; // c'était un drag
-        if (elapsed > 800) return; // long-press, on ignore
-
-        // Vérifie que le up est dans le rectangle de l'image
-        const rect = img.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return;
-        if (
-          e.clientX < rect.left ||
-          e.clientX > rect.right ||
-          e.clientY < rect.top ||
-          e.clientY > rect.bottom
-        ) {
-          return;
+      function onMove(ev: PointerEvent) {
+        const p = computePos(ev.clientX, ev.clientY);
+        if (!p) return;
+        lastPos = p;
+        if (pinId === "draft") {
+          setDraftPos(p);
+        } else {
+          setPinOverrides((prev) => ({ ...prev, [pinId]: p }));
         }
-        const x = (e.clientX - rect.left) / rect.width;
-        const y = (e.clientY - rect.top) / rect.height;
-        if (x < 0 || x > 1 || y < 0 || y > 1) return;
-        onPlanClickRef.current(x, y);
-      };
+      }
 
-      img.addEventListener("pointerdown", onDown);
-      // window + capture : pour intercepter même quand le pointer
-      // est captured par le wrapper de react-zoom-pan-pinch.
-      window.addEventListener("pointerup", onUp, { capture: true });
+      async function onUp() {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        setDraggingId(null);
 
-      return () => {
-        img.removeEventListener("pointerdown", onDown);
-        window.removeEventListener("pointerup", onUp, { capture: true });
-      };
-    }, [canEdit, plan.url]);
+        if (pinId === "draft" || !lastPos) return;
+
+        // Sauvegarde sur le serveur
+        try {
+          await deplacerReserve(chantierId, pinId, lastPos.x, lastPos.y);
+          // Nettoie l'override visuel : la prop pin.posX/posY sera mise à
+          // jour par le router refresh
+          setPinOverrides((prev) => {
+            const next = { ...prev };
+            delete next[pinId];
+            return next;
+          });
+          router.refresh();
+        } catch (err) {
+          toast.error(
+            err instanceof Error ? err.message : "Erreur de déplacement"
+          );
+          // En cas d'erreur, on retire l'override pour revenir à la pos serveur
+          setPinOverrides((prev) => {
+            const next = { ...prev };
+            delete next[pinId];
+            return next;
+          });
+        }
+      }
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    }
+
+    /**
+     * "+ Nouvelle réserve" : pose une puce brouillon au centre du
+     * viewport (visible) et ouvre le panneau de création.
+     * Le centre du viewport est calculé à partir des rects courants
+     * (qui tiennent compte du zoom et du pan).
+     */
+    function handleAddCenter() {
+      if (!canEdit) return;
+      const wrapperEl = wrapperRef.current?.querySelector(
+        ".react-transform-wrapper"
+      ) as HTMLElement | null;
+      const img = imgRef.current;
+      if (!wrapperEl || !img) {
+        // Fallback : centre du plan
+        onPlanClick(0.5, 0.5);
+        return;
+      }
+      const wRect = wrapperEl.getBoundingClientRect();
+      const iRect = img.getBoundingClientRect();
+      if (iRect.width <= 0 || iRect.height <= 0) {
+        onPlanClick(0.5, 0.5);
+        return;
+      }
+      const cx = wRect.left + wRect.width / 2;
+      const cy = wRect.top + wRect.height / 2;
+      let x = (cx - iRect.left) / iRect.width;
+      let y = (cy - iRect.top) / iRect.height;
+      // Si le centre est hors image (utilisateur a pané loin), on
+      // retombe sur le centre logique 0.5, 0.5
+      if (x < 0 || x > 1 || y < 0 || y > 1) {
+        x = 0.5;
+        y = 0.5;
+      }
+      onPlanClick(x, y);
+    }
 
     return (
-      <div ref={wrapperRef} className="relative w-full bg-slate-100 dark:bg-slate-950">
+      <div
+        ref={wrapperRef}
+        className="relative w-full bg-slate-100 dark:bg-slate-950"
+      >
         {canEdit && (
-          <div className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400 italic border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70">
-            <MapPin size={12} className="inline mr-1" />
-            Molette/pinch : zoom · Glisser : déplacer · Clic / tap : poser une puce
+          <div className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 flex items-center justify-between gap-2 flex-wrap">
+            <span className="italic">
+              <MapPin size={12} className="inline mr-1" />
+              Molette/pinch : zoom · Glisser fond : déplacer · Glisser puce : repositionner
+            </span>
+            <Button type="button" size="sm" onClick={handleAddCenter}>
+              <Plus size={14} /> Nouvelle réserve
+            </Button>
           </div>
         )}
 
@@ -807,6 +899,8 @@ const PlanCanvas = forwardRef<PlanCanvasHandle, PlanCanvasProps>(
             velocityDisabled: true,
             lockAxisX: false,
             lockAxisY: false,
+            // Désactive le panning du fond pendant qu'on drag une puce
+            disabled: !!draggingId,
           }}
         >
           <ZoomControls />
@@ -826,50 +920,71 @@ const PlanCanvas = forwardRef<PlanCanvasHandle, PlanCanvasProps>(
                 ref={imgRef}
                 src={plan.url}
                 alt={plan.nom || "Plan"}
-                className={`block max-w-none select-none ${
-                  canEdit ? "cursor-crosshair" : ""
-                }`}
+                className="block max-w-none select-none"
                 draggable={false}
               />
 
-              {pins.map((p) => (
-                <div
-                  key={p.id}
-                  data-pin-id={p.id}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-                  style={{
-                    left: `${p.posX * 100}%`,
-                    top: `${p.posY * 100}%`,
-                  }}
-                  title={`#${p.numero} — ${p.texte}`}
-                >
+              {pins.map((p) => {
+                const override = pinOverrides[p.id];
+                const x = override?.x ?? p.posX;
+                const y = override?.y ?? p.posY;
+                const colors = pinColors(p);
+                const isDragging = draggingId === p.id;
+                return (
                   <div
-                    className={`relative flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold border-2 shadow-md ${
-                      p.leveLe
-                        ? "bg-green-500 border-green-700 text-white"
-                        : "bg-red-500 border-red-700 text-white"
+                    key={p.id}
+                    data-pin-id={p.id}
+                    onPointerDown={(e) => startDrag(p.id, e)}
+                    className={`absolute -translate-x-1/2 -translate-y-1/2 ${
+                      canEdit ? "cursor-grab active:cursor-grabbing" : ""
+                    } ${isDragging ? "z-30" : "z-10"}`}
+                    style={{
+                      left: `${x * 100}%`,
+                      top: `${y * 100}%`,
+                      touchAction: "none",
+                    }}
+                    title={`#${p.numero} — ${p.texte}${
+                      canEdit ? " · Glisser pour repositionner" : ""
                     }`}
                   >
-                    {p.numero}
-                    {p.highlighted && (
-                      <span
-                        className="absolute inset-0 rounded-full ring-4 ring-amber-400 animate-ping"
-                        style={{ animationDuration: "1.2s" }}
-                      />
-                    )}
+                    <div
+                      className={`relative flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold border-2 shadow-md text-white ${colors.bg} ${colors.border} ${
+                        isDragging ? "scale-125" : ""
+                      } transition-transform`}
+                    >
+                      {p.numero}
+                      {p.highlighted && (
+                        <span
+                          className="absolute inset-0 rounded-full ring-4 ring-amber-400 animate-ping"
+                          style={{ animationDuration: "1.2s" }}
+                        />
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {draftPos && (
                 <div
-                  className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                  data-pin-id="draft"
+                  onPointerDown={(e) => startDrag("draft", e)}
+                  className={`absolute -translate-x-1/2 -translate-y-1/2 z-20 ${
+                    canEdit ? "cursor-grab active:cursor-grabbing" : ""
+                  }`}
                   style={{
                     left: `${draftPos.x * 100}%`,
                     top: `${draftPos.y * 100}%`,
+                    touchAction: "none",
                   }}
+                  title="Puce en cours de création — glisser pour repositionner"
                 >
-                  <div className="flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold border-2 bg-amber-400 border-amber-600 text-white shadow-md animate-pulse">
+                  <div
+                    className={`flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold border-2 bg-amber-400 border-amber-600 text-white shadow-md ${
+                      draggingId === "draft"
+                        ? "scale-125"
+                        : "animate-pulse"
+                    } transition-transform`}
+                  >
                     {draftNumero}
                   </div>
                 </div>
