@@ -115,6 +115,7 @@ model Chantier {
   rapportsHebdo    RapportHebdo[]
   pvReceptions     PvReception[]
   labels           Label[]
+  sections         Section[]
 }
 
 model Equipe {
@@ -454,6 +455,10 @@ model Tache {
   enfants     Tache[]     @relation("TacheSousTaches")
   /// Ordre manuel dans la liste (drag-to-reorder dans l'UI).
   ordre       Int         @default(0)
+  /// Groupe de regroupement façon Todoist (ex: "Gros œuvre", "Finitions").
+  /// Par chantier ; SetNull si la section est supprimée.
+  sectionId   String?
+  section     Section?    @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   dependances Tache[]     @relation("TacheDependance")
   dependants  Tache[]     @relation("TacheDependance")
   labels      TacheLabel[]
@@ -463,6 +468,23 @@ model Tache {
   @@index([chantierId])
   @@index([dateDebut, dateFin])
   @@index([parentId])
+  @@index([sectionId])
+}
+
+/// Section pour grouper les tâches dans un chantier (Todoist-like).
+/// Exemples : "Gros œuvre", "Second œuvre", "Finitions", "VRD".
+model Section {
+  id         String   @id @default(cuid())
+  chantierId String
+  chantier   Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  nom        String
+  couleur    String?  // hex optionnel pour accent visuel
+  ordre      Int      @default(0)
+  taches     Tache[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([chantierId])
 }
 
 /// Étiquette / tag pour catégoriser les tâches (sécurité, urgent, livraison...).

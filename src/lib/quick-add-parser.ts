@@ -17,6 +17,7 @@ export type QuickAddTokens = {
   nom: string;
   chantierMatch: string | null;
   equipeMatch: string | null;
+  sectionMatch: string | null;
   labels: string[];
   priorite: 1 | 2 | 3 | 4;
   dateDebut: Date | null;
@@ -187,6 +188,14 @@ export function parseQuickAdd(input: string): QuickAddTokens {
     txt = txt.replace(eMatch[0], eMatch[1]);
   }
 
+  // ~section
+  let sectionMatch: string | null = null;
+  const sMatch = /(^|\s)~([\p{L}\p{N}_\-]+)/u.exec(txt);
+  if (sMatch) {
+    sectionMatch = sMatch[2];
+    txt = txt.replace(sMatch[0], sMatch[1]);
+  }
+
   // +labels (peuvent être plusieurs)
   const labels: string[] = [];
   const labelRe = /(^|\s)\+([\p{L}\p{N}_\-]+)/gu;
@@ -227,6 +236,7 @@ export function parseQuickAdd(input: string): QuickAddTokens {
     nom,
     chantierMatch,
     equipeMatch,
+    sectionMatch,
     labels,
     priorite,
     dateDebut,

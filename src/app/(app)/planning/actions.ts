@@ -231,6 +231,35 @@ export async function quickAddTache(input: string, defaultChantierId?: string) {
     if (m) equipeId = m.id;
   }
 
+  // Résolution section (créée à la volée si inconnue, dans le chantier)
+  let sectionId: string | null = null;
+  if (tokens.sectionMatch) {
+    const cleaned = tokens.sectionMatch.replace(/[-_]/g, " ").trim();
+    if (cleaned) {
+      const sections = await db.section.findMany({
+        where: { chantierId },
+        select: { id: true, nom: true },
+      });
+      const m = fuzzyMatch(sections, cleaned);
+      if (m) {
+        sectionId = m.id;
+      } else {
+        const last = await db.section.aggregate({
+          where: { chantierId },
+          _max: { ordre: true },
+        });
+        const created = await db.section.create({
+          data: {
+            chantierId,
+            nom: cleaned,
+            ordre: (last._max.ordre ?? -1) + 1,
+          },
+        });
+        sectionId = created.id;
+      }
+    }
+  }
+
   // Résolution labels (créés à la volée s'ils n'existent pas)
   const labelIds: string[] = [];
   for (const labelName of tokens.labels) {
@@ -261,6 +290,7 @@ export async function quickAddTache(input: string, defaultChantierId?: string) {
       chantierId,
       nom: tokens.nom,
       equipeId,
+      sectionId,
       priorite: tokens.priorite,
       dateDebut,
       dateFin,
@@ -308,6 +338,108 @@ export async function ajouterSousTache(
   });
   revalidatePath("/planning");
   revalidatePath(`/chantiers/${parent.chantierId}`);
+}
+
+/* -------------------- Sections (Todoist-like) -------------------- */
+
+export async function createSection(input: {
+  chantierId: string;
+  nom: string;
+  couleur?: string | null;
+}) {
+  if (!input.nom.trim()) throw new Error("Nom requis");
+  // Place la nouvelle section à la fin
+  const last = await db.section.aggregate({
+    where: { chantierId: input.chantierId },
+    _max: { ordre: true },
+  });
+  await db.section.create({
+    data: {
+      chantierId: input.chantierId,
+      nom: input.nom.trim(),
+      couleur: input.couleur || null,
+      ordre: (last._max.ordre ?? -1) + 1,
+    },
+  });
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${input.chantierId}`);
+}
+
+export async function renameSection(sectionId: string, nom: string) {
+  if (!nom.trim()) throw new Error("Nom requis");
+  const s = await db.section.update({
+    where: { id: sectionId },
+    data: { nom: nom.trim() },
+  });
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${s.chantierId}`);
+}
+
+export async function deleteSection(sectionId: string) {
+  // Les tâches sont mises à sectionId=null via onDelete: SetNull
+  const s = await db.section.findUnique({ where: { id: sectionId } });
+  if (!s) return;
+  await db.section.delete({ where: { id: sectionId } });
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${s.chantierId}`);
+}
+
+/** Déplace une tâche vers une section (ou la sort de toute section). */
+export async function deplacerVersSection(
+  tacheId: string,
+  sectionId: string | null
+) {
+  const t = await db.tache.update({
+    where: { id: tacheId },
+    data: { sectionId },
+  });
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${t.chantierId}`);
+}
+
+/** Réordonne les sections d'un chantier (drag-and-drop futur). */
+export async function reordonnerSections(
+  chantierId: string,
+  orderedIds: string[]
+) {
+  await db.$transaction(
+    orderedIds.map((id, ordre) =>
+      db.section.update({
+        where: { id },
+        data: { ordre },
+      })
+    )
+  );
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${chantierId}`);
+}
+
+/* -------------------- Statut (drag Kanban) -------------------- */
+
+const STATUTS = ["A_FAIRE", "EN_COURS", "TERMINEE", "BLOQUEE"] as const;
+type StatutTache = (typeof STATUTS)[number];
+
+/**
+ * Change le statut d'une tâche (drop entre colonnes Kanban).
+ * Si on passe en TERMINEE on monte à 100%, si on quitte TERMINEE on
+ * remet à 0% (sauf si avancement déjà entre 1 et 99 et statut EN_COURS).
+ */
+export async function setStatut(id: string, statut: StatutTache) {
+  if (!STATUTS.includes(statut)) throw new Error("Statut invalide");
+  const existing = await db.tache.findUnique({ where: { id } });
+  if (!existing) return;
+
+  let avancement = existing.avancement;
+  if (statut === "TERMINEE") avancement = 100;
+  else if (existing.statut === "TERMINEE") avancement = 0;
+  else if (statut === "A_FAIRE") avancement = 0;
+
+  const t = await db.tache.update({
+    where: { id },
+    data: { statut, avancement },
+  });
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${t.chantierId}`);
 }
 
 /* -------------------- Labels (CRUD) -------------------- */

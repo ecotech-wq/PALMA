@@ -8,11 +8,12 @@ import { PertChart } from "./PertChart";
 import { CreateTacheForm } from "./TacheForm";
 import { TacheList } from "./TacheList";
 import { TacheListTodoist } from "./TacheListTodoist";
+import { KanbanBoard } from "./KanbanBoard";
 import { QuickAddBar } from "./QuickAddBar";
 import { requireAuth } from "@/lib/auth-helpers";
 import { createTache, deleteTache, setAvancement, updateTache } from "./actions";
 
-type Vue = "gantt" | "liste" | "pert";
+type Vue = "gantt" | "liste" | "pert" | "kanban";
 
 export default async function PlanningPage({
   searchParams,
@@ -25,9 +26,16 @@ export default async function PlanningPage({
   const chantier = Array.isArray(sp.chantier) ? sp.chantier[0] : sp.chantier;
   const vueRaw = Array.isArray(sp.vue) ? sp.vue[0] : sp.vue;
   const view: Vue =
-    vueRaw === "liste" ? "liste" : vueRaw === "pert" ? "pert" : "gantt";
+    vueRaw === "liste"
+      ? "liste"
+      : vueRaw === "pert"
+        ? "pert"
+        : vueRaw === "kanban"
+          ? "kanban"
+          : "gantt";
 
-  const [taches, chantiers, equipes, commandes, locations] = await Promise.all([
+  const [taches, chantiers, equipes, commandes, locations, sections] =
+    await Promise.all([
     db.tache.findMany({
       where: chantier ? { chantierId: chantier } : {},
       include: {
@@ -75,6 +83,11 @@ export default async function PlanningPage({
         dateFinPrevue: true,
         chantier: { select: { id: true, nom: true } },
       },
+    }),
+    db.section.findMany({
+      where: chantier ? { chantierId: chantier } : {},
+      select: { id: true, chantierId: true, nom: true, ordre: true },
+      orderBy: { ordre: "asc" },
     }),
   ]);
 
@@ -155,6 +168,18 @@ export default async function PlanningPage({
                 <button
                   type="submit"
                   name="vue"
+                  value="kanban"
+                  className={`px-3 py-2 border-l border-slate-300 dark:border-slate-700 ${
+                    view === "kanban"
+                      ? "bg-brand-500 text-white"
+                      : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900"
+                  }`}
+                >
+                  Kanban
+                </button>
+                <button
+                  type="submit"
+                  name="vue"
                   value="pert"
                   className={`px-3 py-2 border-l border-slate-300 dark:border-slate-700 ${
                     view === "pert"
@@ -219,11 +244,32 @@ export default async function PlanningPage({
         </div>
       )}
 
+      {view === "kanban" && (
+        <KanbanBoard
+          canEdit={canEdit}
+          taches={taches.map((t) => ({
+            id: t.id,
+            nom: t.nom,
+            dateDebut: t.dateDebut,
+            dateFin: t.dateFin,
+            avancement: t.avancement,
+            statut: t.statut,
+            priorite: t.priorite,
+            parentId: t.parentId,
+            equipe: t.equipe,
+            chantier: t.chantier,
+            labels: t.labels,
+          }))}
+        />
+      )}
+
       {view === "pert" && <PertChart taches={tachesPourPert} />}
 
       {view === "liste" && (
         <div className="space-y-4">
           <TacheListTodoist
+            sections={sections}
+            defaultChantierId={chantier}
             taches={taches.map((t) => ({
               id: t.id,
               nom: t.nom,
@@ -234,6 +280,7 @@ export default async function PlanningPage({
               statut: t.statut,
               priorite: t.priorite,
               parentId: t.parentId,
+              sectionId: t.sectionId,
               equipe: t.equipe,
               chantier: t.chantier,
               labels: t.labels,

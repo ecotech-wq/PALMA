@@ -18,6 +18,8 @@ type Tache = {
   parentId: string | null;
   equipe: { nom: string } | null;
   chantier: { nom: string };
+  /** IDs des prédécesseurs (la tâche dépend d'eux). */
+  dependances?: { id: string }[];
 };
 
 type ExtraEvent = {
@@ -260,6 +262,46 @@ export function GanttChartV2({
     ? todayOffset * dayWidth + dayWidth / 2
     : null;
 
+  // Hauteur d'une ligne Gantt (doit matcher h-44 + bordure)
+  const ROW_H = 44;
+  // Index par id pour résoudre les dépendances (numéro de ligne)
+  const taskRowIndex = new Map(taches.map((t, i) => [t.id, i]));
+
+  // Construit les flèches de dépendance : pour chaque tache T et chaque
+  // dep D, ligne de (right de D, milieu) → (left de T, milieu).
+  type Arrow = {
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+    blocking: boolean;
+  };
+  const arrows: Arrow[] = [];
+  taches.forEach((t, ti) => {
+    if (!t.dependances || t.dependances.length === 0) return;
+    const tStart = offsetFor(t) * dayWidth;
+    const tCenterY = ti * ROW_H + ROW_H / 2;
+    for (const dep of t.dependances) {
+      const di = taskRowIndex.get(dep.id);
+      if (di === undefined) continue;
+      const d = taches[di];
+      const dEnd = (offsetFor(d) + durationFor(d)) * dayWidth - 2;
+      const dCenterY = di * ROW_H + ROW_H / 2;
+      // "Bloquante" si la dep n'est pas terminée ET sa fin est après le
+      // début de t (timing impossible).
+      const blocking =
+        d.statut !== "TERMINEE" &&
+        new Date(d.dateFin) > new Date(t.dateDebut);
+      arrows.push({
+        fromX: dEnd,
+        fromY: dCenterY,
+        toX: tStart,
+        toY: tCenterY,
+        blocking,
+      });
+    }
+  });
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
       <div
@@ -322,6 +364,81 @@ export function GanttChartV2({
               >
                 <div className="w-px h-full bg-red-400/70" />
               </div>
+            )}
+
+            {/* SVG overlay : flèches de dépendances entre tâches */}
+            {arrows.length > 0 && (
+              <svg
+                className="absolute pointer-events-none z-[4]"
+                style={{
+                  left: labelWidth,
+                  top: 0,
+                  width: totalDays * dayWidth,
+                  height: taches.length * ROW_H,
+                }}
+                aria-hidden="true"
+              >
+                <defs>
+                  <marker
+                    id="arrow-blocking"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="6"
+                    markerHeight="6"
+                    orient="auto-start-reverse"
+                  >
+                    <path
+                      d="M 0 0 L 10 5 L 0 10 z"
+                      fill="rgb(220 38 38)"
+                    />
+                  </marker>
+                  <marker
+                    id="arrow-ok"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="6"
+                    markerHeight="6"
+                    orient="auto-start-reverse"
+                  >
+                    <path
+                      d="M 0 0 L 10 5 L 0 10 z"
+                      fill="rgb(100 116 139)"
+                    />
+                  </marker>
+                </defs>
+                {arrows.map((a, i) => {
+                  // Trace en L : sortie horizontale sur 10px puis vertical
+                  // puis horizontal jusqu'au début de la tâche suivante.
+                  // Si la dep est plus à droite que t, on contourne par
+                  // au-dessus.
+                  const stroke = a.blocking
+                    ? "rgb(220 38 38)"
+                    : "rgb(100 116 139)";
+                  const marker = a.blocking
+                    ? "url(#arrow-blocking)"
+                    : "url(#arrow-ok)";
+                  const dashed = a.blocking ? "" : "4 3";
+                  const midX = a.toX > a.fromX
+                    ? a.fromX + Math.max(8, (a.toX - a.fromX) / 2)
+                    : a.fromX + 12;
+                  // Path : M from → H midX → V to.y → H to.x
+                  const d = `M ${a.fromX} ${a.fromY} H ${midX} V ${a.toY} H ${a.toX}`;
+                  return (
+                    <path
+                      key={i}
+                      d={d}
+                      fill="none"
+                      stroke={stroke}
+                      strokeWidth={1.5}
+                      strokeDasharray={dashed}
+                      markerEnd={marker}
+                      opacity={a.blocking ? 0.9 : 0.6}
+                    />
+                  );
+                })}
+              </svg>
             )}
 
             {taches.map((t) => {

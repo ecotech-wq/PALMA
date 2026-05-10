@@ -88,6 +88,7 @@ export function QuickAddBar({
     tokens.priorite !== 4 ||
     !!tokens.chantierMatch ||
     !!tokens.equipeMatch ||
+    !!tokens.sectionMatch ||
     tokens.labels.length > 0 ||
     !!tokens.dateDebut;
 
@@ -113,7 +114,7 @@ export function QuickAddBar({
               inputRef.current?.blur();
             }
           }}
-          placeholder="Ajouter une tâche…  ex : Couler dalle B  #residence-jardin demain p1 x3j"
+          placeholder="Ajouter une tâche…  ex : Couler dalle B  #residence-jardin ~gros-oeuvre demain p1 x3j"
           className="flex-1 bg-transparent outline-none text-sm placeholder:text-slate-400 dark:placeholder:text-slate-500"
           disabled={pending}
         />
@@ -165,6 +166,11 @@ export function QuickAddBar({
               @ {tokens.equipeMatch}
             </span>
           )}
+          {tokens.sectionMatch && (
+            <span className="px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900 text-indigo-700 dark:text-indigo-300">
+              ~ {tokens.sectionMatch}
+            </span>
+          )}
           {tokens.priorite !== 4 && (
             <span
               className={`px-1.5 py-0.5 rounded border font-semibold ${PRIO_COLORS[tokens.priorite]}`}
@@ -206,6 +212,12 @@ export function QuickAddBar({
               @equipe
             </code>{" "}
             — affecte à une équipe
+          </div>
+          <div>
+            <code className="text-indigo-700 dark:text-indigo-400">
+              ~section
+            </code>{" "}
+            — groupe dans une section (créée si inconnue)
           </div>
           <div>
             <code className="text-amber-700 dark:text-amber-400">+label</code>{" "}

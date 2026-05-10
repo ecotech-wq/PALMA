@@ -12,6 +12,9 @@ import {
   Calendar,
   Users,
   Loader2,
+  FolderPlus,
+  Folder,
+  Pencil,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import {
@@ -19,6 +22,9 @@ import {
   setPriorite,
   ajouterSousTache,
   deleteTache,
+  createSection,
+  renameSection,
+  deleteSection,
 } from "./actions";
 
 export type TacheTodo = {
@@ -31,10 +37,18 @@ export type TacheTodo = {
   statut: string;
   priorite: number;
   parentId: string | null;
+  sectionId: string | null;
   equipe: { id: string; nom: string } | null;
   chantier: { id: string; nom: string };
   labels: { label: { id: string; nom: string; couleur: string } }[];
   enfants?: TacheTodo[];
+};
+
+export type SectionItem = {
+  id: string;
+  chantierId: string;
+  nom: string;
+  ordre: number;
 };
 
 const dateFmt = new Intl.DateTimeFormat("fr-FR", {
@@ -98,16 +112,55 @@ function buildTree(taches: TacheTodo[]): TacheTodo[] {
  *  - Sous-tâches indentées (collapse/expand)
  *  - "+ Sous-tâche" à la fin de chaque tâche racine
  */
+/**
+ * Regroupe les tâches racines par section.
+ * Ordre :
+ *   1. "Sans section" en tête (si non vide)
+ *   2. Puis chaque section dans l'ordre `ordre`
+ *   3. Sections vides incluses (pour permettre de drag dedans)
+ */
+function groupBySections(
+  rootTaches: TacheTodo[],
+  sections: SectionItem[]
+): { section: SectionItem | null; taches: TacheTodo[] }[] {
+  const sansSection = rootTaches.filter((t) => !t.sectionId);
+  const groups: { section: SectionItem | null; taches: TacheTodo[] }[] = [];
+  if (sansSection.length > 0 || sections.length === 0) {
+    groups.push({ section: null, taches: sansSection });
+  }
+  for (const s of sections) {
+    groups.push({
+      section: s,
+      taches: rootTaches.filter((t) => t.sectionId === s.id),
+    });
+  }
+  return groups;
+}
+
 export function TacheListTodoist({
   taches,
+  sections = [],
+  defaultChantierId,
   onEdit,
 }: {
   taches: TacheTodo[];
+  sections?: SectionItem[];
+  /** Pour le bouton "Ajouter une section" — chantier cible. */
+  defaultChantierId?: string;
   onEdit?: (id: string) => void;
 }) {
   const tree = buildTree(taches);
+  // Filtre des sections au chantier en cours, si on en a un
+  const visibleSections = defaultChantierId
+    ? sections.filter((s) => s.chantierId === defaultChantierId)
+    : sections;
+  const groups = groupBySections(tree, visibleSections);
 
-  if (tree.length === 0) {
+  if (
+    tree.length === 0 &&
+    visibleSections.length === 0 &&
+    !defaultChantierId
+  ) {
     return (
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 text-center text-sm text-slate-500">
         Aucune tâche pour ces filtres.
@@ -116,11 +169,272 @@ export function TacheListTodoist({
   }
 
   return (
-    <ul className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
-      {tree.map((t) => (
-        <TacheRow key={t.id} tache={t} depth={0} onEdit={onEdit} />
+    <div className="space-y-3">
+      {groups.map((g, i) => (
+        <SectionGroup
+          key={g.section?.id ?? `__none__-${i}`}
+          section={g.section}
+          taches={g.taches}
+          onEdit={onEdit}
+        />
       ))}
-    </ul>
+      {defaultChantierId && (
+        <AddSectionInline chantierId={defaultChantierId} />
+      )}
+    </div>
+  );
+}
+
+function SectionGroup({
+  section,
+  taches,
+  onEdit,
+}: {
+  section: SectionItem | null;
+  taches: TacheTodo[];
+  onEdit?: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const total = taches.length;
+  const done = taches.filter((t) => t.statut === "TERMINEE").length;
+
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+      <SectionHeader
+        section={section}
+        total={total}
+        done={done}
+        expanded={expanded}
+        onToggle={() => setExpanded((v) => !v)}
+      />
+      {expanded && (
+        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+          {taches.length === 0 ? (
+            <li className="px-3 py-3 text-xs text-slate-400 italic text-center">
+              Aucune tâche dans cette section.
+            </li>
+          ) : (
+            taches.map((t) => (
+              <TacheRow key={t.id} tache={t} depth={0} onEdit={onEdit} />
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function SectionHeader({
+  section,
+  total,
+  done,
+  expanded,
+  onToggle,
+}: {
+  section: SectionItem | null;
+  total: number;
+  done: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const router = useRouter();
+  const toast = useToast();
+  const [pending, startTransition] = useTransition();
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(section?.nom ?? "");
+
+  function handleRename() {
+    if (!section || !name.trim() || name.trim() === section.nom) {
+      setEditing(false);
+      return;
+    }
+    startTransition(async () => {
+      try {
+        await renameSection(section.id, name);
+        toast.success("Section renommée");
+        setEditing(false);
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Erreur");
+      }
+    });
+  }
+
+  function handleDelete() {
+    if (!section) return;
+    if (
+      !confirm(
+        total > 0
+          ? `Supprimer la section "${section.nom}" ? Les ${total} tâche(s) seront sorties de la section (pas supprimées).`
+          : `Supprimer la section "${section.nom}" ?`
+      )
+    )
+      return;
+    startTransition(async () => {
+      try {
+        await deleteSection(section.id);
+        toast.success("Section supprimée");
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Erreur");
+      }
+    });
+  }
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 bg-slate-50/80 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0"
+        aria-label={expanded ? "Replier" : "Déplier"}
+      >
+        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+      </button>
+      {section ? (
+        <>
+          <Folder size={14} className="text-slate-500 shrink-0" />
+          {editing ? (
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={handleRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleRename();
+                if (e.key === "Escape") {
+                  setName(section.nom);
+                  setEditing(false);
+                }
+              }}
+              disabled={pending}
+              className="flex-1 bg-transparent outline-none text-sm font-semibold text-slate-800 dark:text-slate-200 border-b border-slate-300 focus:border-brand-500"
+            />
+          ) : (
+            <h3
+              className="flex-1 text-sm font-semibold text-slate-800 dark:text-slate-200 truncate cursor-text"
+              onClick={() => {
+                setName(section.nom);
+                setEditing(true);
+              }}
+              title="Cliquer pour renommer"
+            >
+              {section.nom}
+            </h3>
+          )}
+        </>
+      ) : (
+        <h3 className="flex-1 text-sm font-semibold text-slate-500 dark:text-slate-400 truncate">
+          Sans section
+        </h3>
+      )}
+      <span className="shrink-0 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+        {done}/{total}
+      </span>
+      {section && !editing && (
+        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 hover:opacity-100 focus-within:opacity-100">
+          <button
+            type="button"
+            onClick={() => {
+              setName(section.nom);
+              setEditing(true);
+            }}
+            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500"
+            title="Renommer"
+            aria-label="Renommer"
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={pending}
+            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-red-600"
+            title="Supprimer la section"
+            aria-label="Supprimer"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddSectionInline({ chantierId }: { chantierId: string }) {
+  const router = useRouter();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [pending, startTransition] = useTransition();
+
+  function submit() {
+    if (!name.trim()) {
+      setOpen(false);
+      return;
+    }
+    startTransition(async () => {
+      try {
+        await createSection({ chantierId, nom: name });
+        toast.success("Section créée");
+        setName("");
+        setOpen(false);
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Erreur");
+      }
+    });
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="w-full text-left px-3 py-2 text-xs text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 inline-flex items-center gap-1.5"
+      >
+        <FolderPlus size={14} /> Ajouter une section
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 rounded-md border border-slate-200 dark:border-slate-800">
+      <FolderPlus size={14} className="text-slate-400" />
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+          if (e.key === "Escape") {
+            setName("");
+            setOpen(false);
+          }
+        }}
+        placeholder="Nom de la section (ex : Gros œuvre, Finitions...)"
+        disabled={pending}
+        className="flex-1 bg-transparent outline-none text-sm border-b border-slate-200 focus:border-brand-500 pb-0.5"
+      />
+      <button
+        type="button"
+        onClick={submit}
+        disabled={pending || !name.trim()}
+        className="text-xs text-brand-700 disabled:opacity-50 hover:underline"
+      >
+        {pending ? "..." : "Créer"}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setName("");
+          setOpen(false);
+        }}
+        className="text-xs text-slate-500 hover:underline"
+      >
+        Annuler
+      </button>
+    </div>
   );
 }
 
