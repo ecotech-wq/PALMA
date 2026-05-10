@@ -24,6 +24,7 @@ import {
   Settings,
   FileText,
   AlertTriangle,
+  Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -39,6 +40,7 @@ const items: NavItem[] = [
   { href: "/sorties", label: "Sorties / Retours", icon: ArrowLeftRight },
   { href: "/locations", label: "Locations / Prêts", icon: Truck },
   { href: "/commandes", label: "Commandes", icon: ShoppingCart },
+  { href: "/demandes", label: "Demandes matériel", icon: Package },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
   { href: "/rapports", label: "Rapports", icon: FileText },
   { href: "/incidents", label: "Incidents", icon: AlertTriangle },
@@ -72,6 +74,7 @@ const mobileMore = [
   { href: "/planning", label: "Planning", icon: Calendar },
   { href: "/rapports", label: "Rapports", icon: FileText },
   { href: "/incidents", label: "Incidents", icon: AlertTriangle },
+  { href: "/demandes", label: "Demandes matériel", icon: Package },
   { href: "/profil", label: "Mon profil", icon: UserCircle },
 ];
 
@@ -110,6 +113,7 @@ export type NavBadges = {
   locations?: number;
   sorties?: number;
   incidents?: number;
+  demandes?: number;
 };
 
 function NavBadge({
@@ -151,6 +155,9 @@ function getBadgeForHref(
   }
   if (href === "/incidents" && (badges.incidents ?? 0) > 0) {
     return { count: badges.incidents!, variant: "warning" };
+  }
+  if (href === "/demandes" && (badges.demandes ?? 0) > 0) {
+    return { count: badges.demandes!, variant: "warning" };
   }
   return null;
 }

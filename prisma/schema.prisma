@@ -34,11 +34,13 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  chantiersGeres   Chantier[]           @relation("ChefChantier")
-  passwordResets   PasswordResetToken[]
-  rapportsCrees    RapportChantier[]
-  incidentsRapportes Incident[]         @relation("IncidentReporter")
-  incidentsResolus   Incident[]         @relation("IncidentResolver")
+  chantiersGeres     Chantier[]           @relation("ChefChantier")
+  passwordResets     PasswordResetToken[]
+  rapportsCrees      RapportChantier[]
+  incidentsRapportes Incident[]           @relation("IncidentReporter")
+  incidentsResolus   Incident[]           @relation("IncidentResolver")
+  demandesFaites     DemandeMateriel[]    @relation("DemandeRequester")
+  demandesValidees   DemandeMateriel[]    @relation("DemandeApprover")
 }
 
 // Token à usage unique pour réinitialiser un mot de passe.
@@ -84,14 +86,15 @@ model Chantier {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  equipes         Equipe[]
-  pointages       Pointage[]
-  sortiesMateriel SortieMateriel[]
-  locations       LocationPret[]
-  commandes       Commande[]
-  taches          Tache[]
-  rapports        RapportChantier[]
-  incidents       Incident[]
+  equipes          Equipe[]
+  pointages        Pointage[]
+  sortiesMateriel  SortieMateriel[]
+  locations        LocationPret[]
+  commandes        Commande[]
+  taches           Tache[]
+  rapports         RapportChantier[]
+  incidents        Incident[]
+  demandesMateriel DemandeMateriel[]
 }
 
 model Equipe {
@@ -516,6 +519,45 @@ model Incident {
   photos         String[]          @default([])
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
+
+  @@index([chantierId])
+  @@index([statut])
+  @@index([createdAt(sort: Desc)])
+}
+
+// =====================================================
+// DEMANDES DE MATÉRIEL (chef demande → admin valide → commande)
+// =====================================================
+
+enum StatutDemandeMateriel {
+  DEMANDEE
+  APPROUVEE
+  REFUSEE
+  COMMANDEE
+}
+
+/// Demande de matériel formulée par un chef de chantier. L'admin valide
+/// (ou refuse), puis la transforme en commande quand elle part chez le
+/// fournisseur. Workflow propre : trace tout, évite les SMS perdus.
+model DemandeMateriel {
+  id           String                 @id @default(cuid())
+  chantierId   String
+  chantier     Chantier               @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  requesterId  String
+  requester    User                   @relation("DemandeRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  description  String
+  quantite     Decimal                @default(1) @db.Decimal(10, 2)
+  unite        String?
+  urgence      NiveauGravite          @default(ATTENTION)
+  fournisseur  String?
+  statut       StatutDemandeMateriel  @default(DEMANDEE)
+  reponseNote  String?
+  approverId   String?
+  approver     User?                  @relation("DemandeApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  approuveLe   DateTime?
+  commandeId   String?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
 
   @@index([chantierId])
   @@index([statut])
