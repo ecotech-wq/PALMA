@@ -111,3 +111,24 @@ export async function toggleOuvrierActif(id: string): Promise<boolean> {
   revalidatePath("/paie");
   return nextValue;
 }
+
+/**
+ * Bascule en lot (bulk) plusieurs ouvriers actif ou inactif en une
+ * seule transaction. Utile pour gérer les saisons (activer toute une
+ * équipe d'été, désactiver tous les ponctuels d'un coup).
+ */
+export async function bulkToggleOuvriers(
+  ids: string[],
+  actif: boolean
+): Promise<number> {
+  if (!Array.isArray(ids) || ids.length === 0) return 0;
+  const result = await db.ouvrier.updateMany({
+    where: { id: { in: ids } },
+    data: { actif },
+  });
+  revalidatePath("/ouvriers");
+  for (const id of ids) revalidatePath(`/ouvriers/${id}`);
+  revalidatePath("/pointage");
+  revalidatePath("/paie");
+  return result.count;
+}
