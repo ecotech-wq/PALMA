@@ -138,6 +138,17 @@ model Ouvrier {
   outilsPersonnels OutilPersonnel[]
 }
 
+/// Singleton (id="singleton") qui stocke les préférences de l'app —
+/// modifiables par un admin depuis /parametres.
+model AppSettings {
+  id              String   @id @default("singleton")
+  joursParMois    Int      @default(23)
+  joursParSemaine Int      @default(6)
+  modePaieDefault String   @default("ESPECES") // ESPECES | VIREMENT
+  nomEntreprise   String?
+  updatedAt       DateTime @updatedAt
+}
+
 model Pointage {
   id              String   @id @default(cuid())
   ouvrierId       String

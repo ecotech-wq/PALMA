@@ -47,8 +47,14 @@ export interface CalcPaieResult {
   montantNet: number;
 }
 
+/** Valeurs par défaut, surchargeables via getAppSettings() */
 export const JOURS_PAR_MOIS = 23;
 export const JOURS_PAR_SEMAINE = 6;
+
+export type CalcOptions = {
+  joursParMois?: number;
+  joursParSemaine?: number;
+};
 
 export function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -57,29 +63,36 @@ export function round2(n: number): number {
 export function calcMontantBrut(
   typeContrat: TypeContrat,
   tarifBase: number,
-  joursTravailles: number
+  joursTravailles: number,
+  options?: CalcOptions
 ): number {
   if (tarifBase < 0 || joursTravailles < 0) {
     throw new Error("tarifBase et joursTravailles doivent être positifs");
   }
+  const jpm = options?.joursParMois ?? JOURS_PAR_MOIS;
+  const jps = options?.joursParSemaine ?? JOURS_PAR_SEMAINE;
   switch (typeContrat) {
     case "FIXE":
     case "MOIS":
-      return round2((tarifBase * joursTravailles) / JOURS_PAR_MOIS);
+      return round2((tarifBase * joursTravailles) / jpm);
     case "JOUR":
       return round2(tarifBase * joursTravailles);
     case "SEMAINE":
-      return round2((tarifBase * joursTravailles) / JOURS_PAR_SEMAINE);
+      return round2((tarifBase * joursTravailles) / jps);
     case "FORFAIT":
       return round2(tarifBase);
   }
 }
 
-export function calcPaie(input: CalcPaieInput): CalcPaieResult {
+export function calcPaie(
+  input: CalcPaieInput,
+  options?: CalcOptions
+): CalcPaieResult {
   const montantBrut = calcMontantBrut(
     input.typeContrat,
     input.tarifBase,
-    input.joursTravailles
+    input.joursTravailles,
+    options
   );
 
   const avancesDeduites = round2(

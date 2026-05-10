@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { calcPaie } from "@/lib/calc-paie";
+import { getAppSettings } from "@/lib/app-settings";
 
 const generateSchema = z.object({
   ouvrierId: z.string().min(1),
@@ -42,17 +43,27 @@ export async function generatePaiement(formData: FormData) {
     0
   );
 
-  const calc = calcPaie({
-    typeContrat: ouvrier.typeContrat,
-    tarifBase: Number(ouvrier.tarifBase),
-    joursTravailles,
-    avances: ouvrier.avances.map((a) => ({ id: a.id, montant: Number(a.montant) })),
-    outilsPersonnels: ouvrier.outilsPersonnels.map((o) => ({
-      id: o.id,
-      mensualite: Number(o.mensualite),
-      restantDu: Number(o.restantDu),
-    })),
-  });
+  const settings = await getAppSettings();
+  const calc = calcPaie(
+    {
+      typeContrat: ouvrier.typeContrat,
+      tarifBase: Number(ouvrier.tarifBase),
+      joursTravailles,
+      avances: ouvrier.avances.map((a) => ({
+        id: a.id,
+        montant: Number(a.montant),
+      })),
+      outilsPersonnels: ouvrier.outilsPersonnels.map((o) => ({
+        id: o.id,
+        mensualite: Number(o.mensualite),
+        restantDu: Number(o.restantDu),
+      })),
+    },
+    {
+      joursParMois: settings.joursParMois,
+      joursParSemaine: settings.joursParSemaine,
+    }
+  );
 
   const paiement = await db.$transaction(async (tx) => {
     const created = await tx.paiement.create({

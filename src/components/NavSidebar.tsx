@@ -21,6 +21,7 @@ import {
   UserCircle,
   Menu,
   X,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -222,6 +223,18 @@ export function DesktopSidebar({
                   {pendingUsersCount}
                 </span>
               )}
+            </Link>
+            <Link
+              href="/parametres"
+              className={cn(
+                "flex items-center gap-3 px-5 py-2.5 text-sm transition-colors",
+                pathname?.startsWith("/parametres")
+                  ? "bg-brand-50 text-brand-700 dark:bg-brand-200/30 dark:text-brand-700 font-medium border-r-2 border-brand-500"
+                  : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+              )}
+            >
+              <Settings size={18} />
+              Paramètres
             </Link>
           </>
         )}
@@ -432,6 +445,19 @@ export function MobileBottomNav({
                         {pendingUsersCount}
                       </span>
                     )}
+                  </Link>
+                  <Link
+                    href="/parametres"
+                    onClick={() => setMoreOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition",
+                      pathname?.startsWith("/parametres")
+                        ? "bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 font-medium"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    )}
+                  >
+                    <Settings size={20} />
+                    Paramètres
                   </Link>
                 </>
               )}

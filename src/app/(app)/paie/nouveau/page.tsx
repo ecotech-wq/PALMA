@@ -6,6 +6,7 @@ import { Input, Field, Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { generatePaiement } from "../actions";
 import { calcPaie } from "@/lib/calc-paie";
+import { getAppSettings } from "@/lib/app-settings";
 import { formatEuro, formatDate, cn } from "@/lib/utils";
 
 function iso(d: Date): string {
@@ -80,6 +81,7 @@ export default async function NouveauPaiementPage({
   const periodeDebut = sp.periodeDebut ?? firstOfMonth.toISOString().slice(0, 10);
   const periodeFin = sp.periodeFin ?? lastOfMonth.toISOString().slice(0, 10);
   const presets = buildPresets();
+  const appSettings = await getAppSettings();
 
   // Aperçu si ouvrier sélectionné
   let preview: {
@@ -106,17 +108,23 @@ export default async function NouveauPaiementPage({
     });
     if (o) {
       const joursTravailles = o.pointages.reduce((s, p) => s + Number(p.joursTravailles), 0);
-      const calc = calcPaie({
-        typeContrat: o.typeContrat,
-        tarifBase: Number(o.tarifBase),
-        joursTravailles,
-        avances: o.avances.map((a) => ({ id: a.id, montant: Number(a.montant) })),
-        outilsPersonnels: o.outilsPersonnels.map((p) => ({
-          id: p.id,
-          mensualite: Number(p.mensualite),
-          restantDu: Number(p.restantDu),
-        })),
-      });
+      const calc = calcPaie(
+        {
+          typeContrat: o.typeContrat,
+          tarifBase: Number(o.tarifBase),
+          joursTravailles,
+          avances: o.avances.map((a) => ({ id: a.id, montant: Number(a.montant) })),
+          outilsPersonnels: o.outilsPersonnels.map((p) => ({
+            id: p.id,
+            mensualite: Number(p.mensualite),
+            restantDu: Number(p.restantDu),
+          })),
+        },
+        {
+          joursParMois: appSettings.joursParMois,
+          joursParSemaine: appSettings.joursParSemaine,
+        }
+      );
       preview = {
         ouvrierNom: [o.prenom, o.nom].filter(Boolean).join(" "),
         typeContrat: o.typeContrat,
@@ -263,7 +271,7 @@ export default async function NouveauPaiementPage({
                 <input type="hidden" name="periodeFin" value={periodeFin} />
                 <div className="sm:flex-1">
                   <Field label="Mode de paiement">
-                    <Select name="mode" defaultValue="ESPECES">
+                    <Select name="mode" defaultValue={appSettings.modePaieDefault}>
                       <option value="ESPECES">Espèces</option>
                       <option value="VIREMENT">Virement</option>
                     </Select>
