@@ -20,8 +20,10 @@ import { formatEuro, formatDate } from "@/lib/utils";
 import { getFinanceChantier } from "@/lib/finances-chantier";
 import { ChantierFinanceCard } from "./ChantierFinanceCard";
 import { TodayWidget } from "./TodayWidget";
+import { requireAuth } from "@/lib/auth-helpers";
 
 export default async function DashboardPage() {
+  const me = await requireAuth();
   const debutMois = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   const today = new Date();
 
@@ -213,7 +215,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Budget global agrégé sur tous les chantiers actifs */}
-      {budgetTotal > 0 && (
+      {me.isAdmin && budgetTotal > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Budget global — chantiers actifs</CardTitle>
@@ -268,8 +270,8 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      {/* Détail budget par chantier */}
-      {chantiersActifsList.length > 0 && (
+      {/* Détail budget par chantier (admin uniquement) */}
+      {me.isAdmin && chantiersActifsList.length > 0 && (
         <Card>
           <CardHeader className="flex items-center justify-between">
             <CardTitle>Détail par chantier</CardTitle>
@@ -287,6 +289,37 @@ export default async function DashboardPage() {
                 return <ChantierFinanceCard key={c.id} chantier={c} finance={f} />;
               })}
             </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Pour les CHEFs, version simple sans finance des chantiers actifs */}
+      {!me.isAdmin && chantiersActifsList.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Chantiers en cours ({chantiersActifsList.length})</CardTitle>
+          </CardHeader>
+          <CardBody className="!p-0">
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+              {chantiersActifsList.map((c) => (
+                <li key={c.id}>
+                  <Link
+                    href={`/chantiers/${c.id}`}
+                    className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
+                        {c.nom}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        {c._count.equipes} équipe
+                        {c._count.equipes > 1 ? "s" : ""}
+                      </div>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </CardBody>
         </Card>
       )}
@@ -311,9 +344,11 @@ export default async function DashboardPage() {
                         <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
                           {c.nom}
                         </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                          Budget prévu : {formatEuro(budget)}
-                        </div>
+                        {me.isAdmin && (
+                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            Budget prévu : {formatEuro(budget)}
+                          </div>
+                        )}
                       </div>
                       <span className="text-xs text-slate-500 dark:text-slate-400">
                         {c._count.equipes} équipe{c._count.equipes > 1 ? "s" : ""}
@@ -343,8 +378,8 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      {/* Mini cards : pointage, à verser, locations */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
+      {/* Mini cards : pointage, à verser (admin), locations (admin) */}
+      <div className={`grid grid-cols-1 ${me.isAdmin ? "lg:grid-cols-3" : ""} gap-3 md:gap-4`}>
         <Link
           href="/pointage"
           className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4"
@@ -361,40 +396,44 @@ export default async function DashboardPage() {
           </div>
         </Link>
 
-        <Link
-          href="/paie"
-          className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4"
-        >
-          <div className="flex items-center gap-2 text-amber-600">
-            <Banknote size={18} />
-            <span className="text-sm font-medium">À verser (paiements calculés)</span>
-          </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
-            {formatEuro(totalACalculer)}
-          </div>
-          <div className="text-xs text-slate-400 dark:text-slate-500">
-            {paiementsCalcules._count} paiement{paiementsCalcules._count > 1 ? "s" : ""} en
-            attente
-          </div>
-        </Link>
+        {me.isAdmin && (
+          <>
+            <Link
+              href="/paie"
+              className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4"
+            >
+              <div className="flex items-center gap-2 text-amber-600">
+                <Banknote size={18} />
+                <span className="text-sm font-medium">À verser (paiements calculés)</span>
+              </div>
+              <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
+                {formatEuro(totalACalculer)}
+              </div>
+              <div className="text-xs text-slate-400 dark:text-slate-500">
+                {paiementsCalcules._count} paiement{paiementsCalcules._count > 1 ? "s" : ""} en
+                attente
+              </div>
+            </Link>
 
-        <Link
-          href="/locations"
-          className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4"
-        >
-          <div className="flex items-center gap-2 text-purple-600">
-            <Truck size={18} />
-            <span className="text-sm font-medium">Locations en cours</span>
-          </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
-            {formatEuro(totalLocations)}
-          </div>
-          <div className="text-xs text-slate-400 dark:text-slate-500">
-            {totalAvances > 0 && `Avances : ${formatEuro(totalAvances)} · `}
-            {totalOutilsRestant > 0 && `Outils dus : ${formatEuro(totalOutilsRestant)}`}
-            {totalAvances === 0 && totalOutilsRestant === 0 && "Aucune avance ouverte"}
-          </div>
-        </Link>
+            <Link
+              href="/locations"
+              className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4"
+            >
+              <div className="flex items-center gap-2 text-purple-600">
+                <Truck size={18} />
+                <span className="text-sm font-medium">Locations en cours</span>
+              </div>
+              <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
+                {formatEuro(totalLocations)}
+              </div>
+              <div className="text-xs text-slate-400 dark:text-slate-500">
+                {totalAvances > 0 && `Avances : ${formatEuro(totalAvances)} · `}
+                {totalOutilsRestant > 0 && `Outils dus : ${formatEuro(totalOutilsRestant)}`}
+                {totalAvances === 0 && totalOutilsRestant === 0 && "Aucune avance ouverte"}
+              </div>
+            </Link>
+          </>
+        )}
       </div>
 
       {/* Cartes secondaires */}
@@ -432,9 +471,11 @@ export default async function DashboardPage() {
                         </div>
                       </div>
                       <CommandeStatutBadge statut={c.statut} />
-                      <div className="font-semibold w-20 text-right shrink-0">
-                        {formatEuro(c.coutTotal.toString())}
-                      </div>
+                      {me.isAdmin && (
+                        <div className="font-semibold w-20 text-right shrink-0">
+                          {formatEuro(c.coutTotal.toString())}
+                        </div>
+                      )}
                     </Link>
                   </li>
                 ))}

@@ -13,6 +13,7 @@ import { MonthlyRecap } from "../MonthlyRecap";
 import { PointageCalendar } from "../../pointage/PointageCalendar";
 import { OuvrierActiveToggle } from "../OuvrierActiveToggle";
 import { ResettingForm } from "@/components/ResettingForm";
+import { requireAuth } from "@/lib/auth-helpers";
 import { updateOuvrier, deleteOuvrier } from "../actions";
 import {
   addAvance,
@@ -38,6 +39,7 @@ export default async function OuvrierDetailPage({
 }) {
   const { id } = await params;
   const { month: monthParam } = await searchParams;
+  const me = await requireAuth();
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   const sixtyDaysAgo = new Date();
@@ -133,17 +135,21 @@ export default async function OuvrierDetailPage({
               actif={ouvrier.actif}
               showLabel
             />
-            <Link href={`/paie/nouveau?ouvrierId=${id}`}>
-              <Button size="sm">
-                <Banknote size={14} />
-                <span className="hidden sm:inline">Générer paiement</span>
-              </Button>
-            </Link>
-            <form action={deleteAction}>
-              <Button type="submit" variant="danger" size="sm">
-                <Trash2 size={14} />
-              </Button>
-            </form>
+            {me.isAdmin && (
+              <Link href={`/paie/nouveau?ouvrierId=${id}`}>
+                <Button size="sm">
+                  <Banknote size={14} />
+                  <span className="hidden sm:inline">Générer paiement</span>
+                </Button>
+              </Link>
+            )}
+            {me.isAdmin && (
+              <form action={deleteAction}>
+                <Button type="submit" variant="danger" size="sm">
+                  <Trash2 size={14} />
+                </Button>
+              </form>
+            )}
           </div>
         }
       />
@@ -171,6 +177,7 @@ export default async function OuvrierDetailPage({
                 equipes={equipes}
                 action={updateAction}
                 submitLabel="Enregistrer"
+                isAdmin={me.isAdmin}
               />
             </CardBody>
           </Card>
@@ -204,6 +211,8 @@ export default async function OuvrierDetailPage({
             </CardBody>
           </Card>
 
+          {me.isAdmin && (
+          <>
           <Card>
             <CardHeader>
               <CardTitle>Avances en cours</CardTitle>
@@ -388,6 +397,8 @@ export default async function OuvrierDetailPage({
               </CardBody>
             </Card>
           )}
+          </>
+          )}
         </div>
 
         <div className="space-y-5">
@@ -422,38 +433,54 @@ export default async function OuvrierDetailPage({
                 }))}
                 typeContrat={ouvrier.typeContrat}
                 tarifBase={Number(ouvrier.tarifBase)}
+                showAmount={me.isAdmin}
               />
-              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-3 italic">
-                Brut estimé selon le tarif actuel. Les paiements réels (avances, retenues
-                outils, etc.) sont dans la liste des paiements ci-dessous.
-              </p>
+              {me.isAdmin && (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-3 italic">
+                  Brut estimé selon le tarif actuel. Les paiements réels (avances, retenues
+                  outils, etc.) sont dans la liste des paiements ci-dessous.
+                </p>
+              )}
             </CardBody>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Synthèse</CardTitle>
-            </CardHeader>
-            <CardBody className="space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-500 dark:text-slate-500">Avances en cours</span>
-                <span className="font-medium">{formatEuro(totalAvancesEnCours)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 dark:text-slate-500">Restant dû outils</span>
-                <span className="font-medium">{formatEuro(totalOutilsRestant)}</span>
-              </div>
-              <div className="pt-2 border-t border-slate-100 flex justify-between">
-                <span className="text-slate-700 dark:text-slate-300 font-medium">Total à déduire</span>
-                <span className="font-semibold">
-                  {formatEuro(totalAvancesEnCours + totalOutilsRestant)}
-                </span>
-              </div>
-              <div className="text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-100 flex items-center gap-1">
-                <Wrench size={12} /> Sera appliqué à la prochaine génération de paiement
-              </div>
-            </CardBody>
-          </Card>
+          {me.isAdmin && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Synthèse</CardTitle>
+              </CardHeader>
+              <CardBody className="space-y-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500 dark:text-slate-500">
+                    Avances en cours
+                  </span>
+                  <span className="font-medium">
+                    {formatEuro(totalAvancesEnCours)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 dark:text-slate-500">
+                    Restant dû outils
+                  </span>
+                  <span className="font-medium">
+                    {formatEuro(totalOutilsRestant)}
+                  </span>
+                </div>
+                <div className="pt-2 border-t border-slate-100 flex justify-between">
+                  <span className="text-slate-700 dark:text-slate-300 font-medium">
+                    Total à déduire
+                  </span>
+                  <span className="font-semibold">
+                    {formatEuro(totalAvancesEnCours + totalOutilsRestant)}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-100 flex items-center gap-1">
+                  <Wrench size={12} /> Sera appliqué à la prochaine génération
+                  de paiement
+                </div>
+              </CardBody>
+            </Card>
+          )}
         </div>
       </div>
     </div>

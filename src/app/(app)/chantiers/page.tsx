@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { ChantierStatutBadge } from "./ChantierStatutBadge";
 import { formatEuro, formatDate } from "@/lib/utils";
+import { requireAuth } from "@/lib/auth-helpers";
 
 export default async function ChantiersListPage({
   searchParams,
@@ -14,6 +15,7 @@ export default async function ChantiersListPage({
   searchParams: Promise<{ q?: string; statut?: string }>;
 }) {
   const { q, statut } = await searchParams;
+  const me = await requireAuth();
 
   const chantiers = await db.chantier.findMany({
     where: {
@@ -131,13 +133,15 @@ export default async function ChantiersListPage({
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <div>
-                    <div className="text-slate-400 dark:text-slate-500">Budget</div>
-                    <div className="font-medium text-slate-900 dark:text-slate-100">
-                      {formatEuro(budgetTotal)}
+                <div className={`grid ${me.isAdmin ? "grid-cols-2" : "grid-cols-1"} gap-2 text-xs pt-2 border-t border-slate-100 dark:border-slate-800`}>
+                  {me.isAdmin && (
+                    <div>
+                      <div className="text-slate-400 dark:text-slate-500">Budget</div>
+                      <div className="font-medium text-slate-900 dark:text-slate-100">
+                        {formatEuro(budgetTotal)}
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div>
                     <div className="text-slate-400 dark:text-slate-500">Période</div>
                     <div className="font-medium text-slate-900 dark:text-slate-100 text-[11px]">

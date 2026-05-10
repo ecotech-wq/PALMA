@@ -26,7 +26,9 @@ import {
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-const items = [
+type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean };
+
+const items: NavItem[] = [
   { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
   { href: "/equipes", label: "Équipes", icon: Users },
@@ -36,15 +38,22 @@ const items = [
   { href: "/locations", label: "Locations / Prêts", icon: Truck },
   { href: "/commandes", label: "Commandes", icon: ShoppingCart },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
-  { href: "/paie", label: "Paie", icon: Banknote },
+  { href: "/paie", label: "Paie", icon: Banknote, adminOnly: true },
   { href: "/planning", label: "Planning", icon: Calendar },
 ];
 
-// 4 raccourcis principaux dans la barre de tab + menu "Plus"
-const mobilePrimary = [
+// Barre de tab mobile : Paie est admin-only, Chantiers prend sa place
+// pour les chefs
+const mobilePrimaryAdmin: NavItem[] = [
   { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
-  { href: "/paie", label: "Paie", icon: Banknote },
+  { href: "/paie", label: "Paie", icon: Banknote, adminOnly: true },
+  { href: "/ouvriers", label: "Ouvriers", icon: HardHat },
+];
+const mobilePrimaryChef: NavItem[] = [
+  { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
+  { href: "/pointage", label: "Pointage", icon: CheckSquare },
+  { href: "/chantiers", label: "Chantiers", icon: Hammer },
   { href: "/ouvriers", label: "Ouvriers", icon: HardHat },
 ];
 
@@ -179,7 +188,9 @@ export function DesktopSidebar({
         </Link>
       </div>
       <nav className="flex-1 overflow-y-auto py-3">
-        {items.map(({ href, label, icon: Icon }) => {
+        {items
+          .filter((it) => !it.adminOnly || isAdmin)
+          .map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname?.startsWith(href + "/");
           const badge = getBadgeForHref(href, navBadges);
           return (
@@ -301,6 +312,8 @@ export function MobileBottomNav({
     }
   }, [moreOpen]);
 
+  const mobilePrimary = isAdmin ? mobilePrimaryAdmin : mobilePrimaryChef;
+
   const moreActive = mobileMore.some(
     (i) => pathname === i.href || pathname?.startsWith(i.href + "/")
   );
@@ -398,7 +411,9 @@ export function MobileBottomNav({
             </div>
 
             <nav className="p-2">
-              {mobileMore.map(({ href, label, icon: Icon }) => {
+              {mobileMore
+                .filter((m) => !mobilePrimary.some((p) => p.href === m.href))
+                .map(({ href, label, icon: Icon }) => {
                 const active =
                   pathname === href || pathname?.startsWith(href + "/");
                 const badge = getBadgeForHref(href, navBadges);

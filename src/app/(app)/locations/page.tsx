@@ -7,8 +7,10 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { formatEuro, formatDate } from "@/lib/utils";
+import { requireAuth } from "@/lib/auth-helpers";
 
 export default async function LocationsPage() {
+  const me = await requireAuth();
   const today = new Date();
 
   const [encours, cloturees] = await Promise.all([
@@ -128,7 +130,7 @@ export default async function LocationsPage() {
         </CardBody>
       </Card>
 
-      {totalLocationsEnCours > 0 && (
+      {me.isAdmin && totalLocationsEnCours > 0 && (
         <div className="mb-5 text-sm text-slate-600 dark:text-slate-500">
           Total locations en cours :{" "}
           <span className="font-semibold">{formatEuro(totalLocationsEnCours)}</span>

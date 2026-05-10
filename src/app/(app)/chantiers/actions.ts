@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { requireAdmin, requireAuth } from "@/lib/auth-helpers";
 
 const chantierSchema = z.object({
   nom: z.string().min(1, "Nom requis"),
@@ -44,6 +45,7 @@ function parseChantier(formData: FormData) {
 }
 
 export async function createChantier(formData: FormData) {
+  await requireAdmin();
   const data = parseChantier(formData);
   const created = await db.chantier.create({ data });
   revalidatePath("/chantiers");
@@ -51,13 +53,27 @@ export async function createChantier(formData: FormData) {
 }
 
 export async function updateChantier(id: string, formData: FormData) {
+  const me = await requireAuth();
   const data = parseChantier(formData);
+  // Sécurité : un CHEF ne peut PAS modifier le budget. On force les
+  // valeurs existantes en DB, ignorant le payload.
+  if (!me.isAdmin) {
+    const existing = await db.chantier.findUnique({
+      where: { id },
+      select: { budgetEspeces: true, budgetVirement: true },
+    });
+    if (existing) {
+      data.budgetEspeces = Number(existing.budgetEspeces);
+      data.budgetVirement = Number(existing.budgetVirement);
+    }
+  }
   await db.chantier.update({ where: { id }, data });
   revalidatePath("/chantiers");
   revalidatePath(`/chantiers/${id}`);
 }
 
 export async function deleteChantier(id: string) {
+  await requireAdmin();
   await db.chantier.delete({ where: { id } });
   revalidatePath("/chantiers");
   redirect("/chantiers");

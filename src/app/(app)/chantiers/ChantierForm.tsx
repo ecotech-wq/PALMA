@@ -23,11 +23,13 @@ export function ChantierForm({
   chefs,
   action,
   submitLabel,
+  isAdmin = true,
 }: {
   chantier?: Chantier;
   chefs: Chef[];
   action: (formData: FormData) => Promise<void>;
   submitLabel: string;
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -108,26 +110,42 @@ export function ChantierForm({
         </Field>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Budget espèces (€)" hint="Cash prévu">
-          <Input
+      {isAdmin ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Budget espèces (€)" hint="Cash prévu">
+            <Input
+              name="budgetEspeces"
+              type="number"
+              min="0"
+              step="0.01"
+              defaultValue={chantier?.budgetEspeces ? String(chantier.budgetEspeces) : "0"}
+            />
+          </Field>
+          <Field label="Budget virement (€)" hint="Virements prévus">
+            <Input
+              name="budgetVirement"
+              type="number"
+              min="0"
+              step="0.01"
+              defaultValue={chantier?.budgetVirement ? String(chantier.budgetVirement) : "0"}
+            />
+          </Field>
+        </div>
+      ) : (
+        // Champs cachés pour préserver les valeurs lors d'un update CHEF
+        <>
+          <input
+            type="hidden"
             name="budgetEspeces"
-            type="number"
-            min="0"
-            step="0.01"
-            defaultValue={chantier?.budgetEspeces ? String(chantier.budgetEspeces) : "0"}
+            value={chantier?.budgetEspeces ? String(chantier.budgetEspeces) : "0"}
           />
-        </Field>
-        <Field label="Budget virement (€)" hint="Virements prévus">
-          <Input
+          <input
+            type="hidden"
             name="budgetVirement"
-            type="number"
-            min="0"
-            step="0.01"
-            defaultValue={chantier?.budgetVirement ? String(chantier.budgetVirement) : "0"}
+            value={chantier?.budgetVirement ? String(chantier.budgetVirement) : "0"}
           />
-        </Field>
-      </div>
+        </>
+      )}
 
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="secondary" onClick={() => router.back()} disabled={pending}>

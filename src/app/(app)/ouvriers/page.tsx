@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { OuvriersBulkList } from "./OuvriersBulkList";
+import { requireAuth } from "@/lib/auth-helpers";
 
 export default async function OuvriersListPage({
   searchParams,
@@ -13,6 +14,7 @@ export default async function OuvriersListPage({
   searchParams: Promise<{ q?: string; contrat?: string; actif?: string }>;
 }) {
   const { q, contrat, actif } = await searchParams;
+  const me = await requireAuth();
 
   const ouvriers = await db.ouvrier.findMany({
     where: {
@@ -109,6 +111,7 @@ export default async function OuvriersListPage({
         />
       ) : (
         <OuvriersBulkList
+          isAdmin={me.isAdmin}
           ouvriers={ouvriers.map((o) => ({
             id: o.id,
             nom: o.nom,

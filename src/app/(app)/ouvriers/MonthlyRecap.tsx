@@ -14,10 +14,12 @@ export function MonthlyRecap({
   pointages,
   typeContrat,
   tarifBase,
+  showAmount = true,
 }: {
   pointages: Pointage[];
   typeContrat: "FIXE" | "JOUR" | "SEMAINE" | "MOIS" | "FORFAIT";
   tarifBase: number;
+  showAmount?: boolean;
 }) {
   // Construit les 6 derniers mois (du plus récent au plus ancien)
   const now = new Date();
@@ -59,9 +61,11 @@ export function MonthlyRecap({
             {m.totalJours} j
           </div>
           {m.totalJours > 0 ? (
-            <div className="text-[11px] text-slate-600 dark:text-slate-400">
-              ≈ {formatEuro(m.brutEstime)}
-            </div>
+            showAmount ? (
+              <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                ≈ {formatEuro(m.brutEstime)}
+              </div>
+            ) : null
           ) : (
             <div className="text-[11px] text-slate-400 dark:text-slate-500 italic">—</div>
           )}

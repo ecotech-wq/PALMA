@@ -42,11 +42,13 @@ export function OuvrierForm({
   equipes,
   action,
   submitLabel,
+  isAdmin = true,
 }: {
   ouvrier?: Ouvrier;
   equipes: Equipe[];
   action: (formData: FormData) => Promise<void>;
   submitLabel: string;
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -167,16 +169,28 @@ export function OuvrierForm({
             <option value="FORFAIT">Forfait</option>
           </Select>
         </Field>
-        <Field label={tarifLabels[typeContrat] ?? "Tarif (€)"} required hint={tarifHints[typeContrat]}>
-          <Input
-            name="tarifBase"
-            type="number"
-            min="0"
-            step="0.01"
+        {isAdmin ? (
+          <Field
+            label={tarifLabels[typeContrat] ?? "Tarif (€)"}
             required
-            defaultValue={ouvrier?.tarifBase ? String(ouvrier.tarifBase) : ""}
+            hint={tarifHints[typeContrat]}
+          >
+            <Input
+              name="tarifBase"
+              type="number"
+              min="0"
+              step="0.01"
+              required
+              defaultValue={ouvrier?.tarifBase ? String(ouvrier.tarifBase) : ""}
+            />
+          </Field>
+        ) : (
+          <input
+            type="hidden"
+            name="tarifBase"
+            value={ouvrier?.tarifBase ? String(ouvrier.tarifBase) : "0"}
           />
-        </Field>
+        )}
         <Field label="Mode de paie habituel" required hint="Quand l'ouvrier est payé en pratique">
           <Select name="modePaie" defaultValue={ouvrier?.modePaie ?? "MOIS"} required>
             <option value="JOUR">À la journée</option>

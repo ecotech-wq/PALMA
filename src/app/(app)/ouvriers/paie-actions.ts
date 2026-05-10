@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { requireAdmin } from "@/lib/auth-helpers";
 
 const avanceSchema = z.object({
   montant: z.coerce.number().positive("Montant doit être positif"),
@@ -12,6 +13,7 @@ const avanceSchema = z.object({
 });
 
 export async function addAvance(ouvrierId: string, formData: FormData) {
+  await requireAdmin();
   const data = avanceSchema.parse({
     montant: formData.get("montant"),
     date: formData.get("date"),
@@ -32,6 +34,7 @@ export async function addAvance(ouvrierId: string, formData: FormData) {
 }
 
 export async function deleteAvance(id: string, ouvrierId: string) {
+  await requireAdmin();
   const av = await db.avance.findUnique({ where: { id } });
   if (av && !av.reglee) {
     await db.avance.delete({ where: { id } });
@@ -47,6 +50,7 @@ const outilSchema = z.object({
 });
 
 export async function addOutilPersonnel(ouvrierId: string, formData: FormData) {
+  await requireAdmin();
   const data = outilSchema.parse({
     nom: formData.get("nom"),
     prixTotal: formData.get("prixTotal"),
@@ -70,6 +74,7 @@ export async function addOutilPersonnel(ouvrierId: string, formData: FormData) {
 }
 
 export async function deleteOutilPersonnel(id: string, ouvrierId: string) {
+  await requireAdmin();
   const o = await db.outilPersonnel.findUnique({
     where: { id },
     include: { _count: { select: { retenues: true } } },

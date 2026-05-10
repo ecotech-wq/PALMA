@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { calcPaie } from "@/lib/calc-paie";
 import { getAppSettings } from "@/lib/app-settings";
+import { requireAdmin } from "@/lib/auth-helpers";
 
 const generateSchema = z.object({
   ouvrierId: z.string().min(1),
@@ -15,6 +16,7 @@ const generateSchema = z.object({
 });
 
 export async function generatePaiement(formData: FormData) {
+  await requireAdmin();
   const data = generateSchema.parse({
     ouvrierId: formData.get("ouvrierId"),
     periodeDebut: formData.get("periodeDebut"),
@@ -119,6 +121,7 @@ export async function generatePaiement(formData: FormData) {
 }
 
 export async function marquerPaye(id: string) {
+  await requireAdmin();
   await db.paiement.update({
     where: { id },
     data: { statut: "PAYE" },
@@ -133,6 +136,7 @@ export async function marquerPaye(id: string) {
  * Renvoie le nombre de paiements effectivement marqués.
  */
 export async function marquerPayesBulk(ids: string[]): Promise<number> {
+  await requireAdmin();
   if (!Array.isArray(ids) || ids.length === 0) return 0;
   // Filtre stricte : on ne touche que les CALCULE
   const result = await db.paiement.updateMany({
@@ -159,6 +163,7 @@ export async function marquerPayesBulk(ids: string[]): Promise<number> {
  * pouvoir l'éditer plus librement avant de le re-valider.
  */
 export async function marquerEnAttente(id: string) {
+  await requireAdmin();
   const existing = await db.paiement.findUnique({
     where: { id },
     select: { statut: true, ouvrierId: true },
@@ -177,6 +182,7 @@ export async function marquerEnAttente(id: string) {
 }
 
 export async function annulerPaiement(id: string) {
+  await requireAdmin();
   const p = await db.paiement.findUnique({
     where: { id },
     include: { avances: true, retenuesOutils: true },
@@ -230,6 +236,7 @@ const updateMetaSchema = z.object({
 });
 
 export async function updatePaiementMeta(id: string, formData: FormData) {
+  await requireAdmin();
   const data = updateMetaSchema.parse({
     mode: formData.get("mode"),
     date: formData.get("date"),
@@ -270,6 +277,7 @@ export async function updatePaiementMeta(id: string, formData: FormData) {
  * annulation), pour ne pas laisser de données orphelines.
  */
 export async function deletePaiement(id: string) {
+  await requireAdmin();
   const existing = await db.paiement.findUnique({
     where: { id },
     include: { retenuesOutils: true },

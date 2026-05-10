@@ -7,8 +7,10 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CommandeStatutBadge } from "./CommandeStatutBadge";
 import { formatEuro, formatDate } from "@/lib/utils";
+import { requireAuth } from "@/lib/auth-helpers";
 
 export default async function CommandesListPage() {
+  const me = await requireAuth();
   const commandes = await db.commande.findMany({
     include: {
       chantier: { select: { id: true, nom: true } },
@@ -74,9 +76,11 @@ export default async function CommandesListPage() {
                     </div>
                     <div className="text-right shrink-0">
                       <div className="font-semibold">{formatEuro(c.coutTotal.toString())}</div>
-                      <div className="text-xs text-slate-400 dark:text-slate-500">
-                        {c.mode === "ESPECES" ? "Espèces" : "Virement"}
-                      </div>
+                      {me.isAdmin && (
+                        <div className="text-xs text-slate-400 dark:text-slate-500">
+                          {c.mode === "ESPECES" ? "Espèces" : "Virement"}
+                        </div>
+                      )}
                     </div>
                     <ChevronRight size={16} className="text-slate-300" />
                   </Link>

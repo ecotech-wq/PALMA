@@ -19,8 +19,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     sortiesEnRetard,
   ] = await Promise.all([
     isAdmin ? db.user.count({ where: { status: "PENDING" } }) : 0,
-    // Paiements en attente de versement (statut CALCULE)
-    db.paiement.count({ where: { statut: "CALCULE" } }),
+    // Paiements en attente : badge réservé aux admins
+    isAdmin ? db.paiement.count({ where: { statut: "CALCULE" } }) : 0,
     // Locations dont le retour prévu est dépassé et qui ne sont pas clôturées
     db.locationPret.count({
       where: { cloture: false, dateFinPrevue: { lt: today } },

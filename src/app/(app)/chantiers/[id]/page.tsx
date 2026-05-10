@@ -12,6 +12,7 @@ import { updateChantier, deleteChantier, affecterEquipeAuChantier } from "../act
 import { CommandeStatutBadge } from "@/app/(app)/commandes/CommandeStatutBadge";
 import { formatEuro, formatDate } from "@/lib/utils";
 import { getFinanceChantier } from "@/lib/finances-chantier";
+import { requireAuth } from "@/lib/auth-helpers";
 
 export default async function ChantierDetailPage({
   params,
@@ -19,6 +20,7 @@ export default async function ChantierDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const me = await requireAuth();
   const [chantier, chefs, toutesEquipes, commandes, locations, finance] = await Promise.all([
     db.chantier.findUnique({
       where: { id },
@@ -79,8 +81,8 @@ export default async function ChantierDetailPage({
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 space-y-5">
+      <div className={`grid grid-cols-1 ${me.isAdmin ? "lg:grid-cols-3" : ""} gap-5`}>
+        <div className={me.isAdmin ? "lg:col-span-2 space-y-5" : "space-y-5"}>
           <Card>
             <CardHeader>
               <CardTitle>Informations</CardTitle>
@@ -101,6 +103,7 @@ export default async function ChantierDetailPage({
                 chefs={chefs}
                 action={updateAction}
                 submitLabel="Enregistrer"
+                isAdmin={me.isAdmin}
               />
             </CardBody>
           </Card>
@@ -200,9 +203,11 @@ export default async function ChantierDetailPage({
                             <span className="font-medium truncate">
                               {c.fournisseur}
                             </span>
-                            <span className="font-semibold shrink-0">
-                              {formatEuro(c.coutTotal.toString())}
-                            </span>
+                            {me.isAdmin && (
+                              <span className="font-semibold shrink-0">
+                                {formatEuro(c.coutTotal.toString())}
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-slate-500 dark:text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
                             <CommandeStatutBadge statut={c.statut} />
@@ -242,7 +247,7 @@ export default async function ChantierDetailPage({
                             <span className="font-medium truncate">
                               {l.designation}
                             </span>
-                            {l.type === "LOCATION" && (
+                            {me.isAdmin && l.type === "LOCATION" && (
                               <span className="font-semibold shrink-0">
                                 {formatEuro(l.coutTotal.toString())}
                               </span>
@@ -276,6 +281,7 @@ export default async function ChantierDetailPage({
           </Card>
         </div>
 
+        {me.isAdmin && (
         <div className="space-y-5">
           <Card>
             <CardHeader>
@@ -359,6 +365,7 @@ export default async function ChantierDetailPage({
             </CardBody>
           </Card>
         </div>
+        )}
       </div>
     </div>
   );

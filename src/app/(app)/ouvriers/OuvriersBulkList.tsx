@@ -43,7 +43,13 @@ type Ouvrier = {
  * Liste cliente des ouvriers avec sélection multiple + actions bulk
  * (activer / désactiver plusieurs ouvriers d'un coup).
  */
-export function OuvriersBulkList({ ouvriers }: { ouvriers: Ouvrier[] }) {
+export function OuvriersBulkList({
+  ouvriers,
+  isAdmin = true,
+}: {
+  ouvriers: Ouvrier[];
+  isAdmin?: boolean;
+}) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
   const toast = useToast();
@@ -210,12 +216,14 @@ export function OuvriersBulkList({ ouvriers }: { ouvriers: Ouvrier[] }) {
                 </div>
                 <div className="text-right shrink-0 hidden sm:block">
                   <Badge color="blue">{contratLabel[o.typeContrat]}</Badge>
-                  <div className="text-sm font-medium text-slate-900 dark:text-slate-100 mt-1">
-                    {formatEuro(o.tarifBase)}
-                    <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
-                      {tarifSuffix[o.typeContrat]}
-                    </span>
-                  </div>
+                  {isAdmin && (
+                    <div className="text-sm font-medium text-slate-900 dark:text-slate-100 mt-1">
+                      {formatEuro(o.tarifBase)}
+                      <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+                        {tarifSuffix[o.typeContrat]}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </Link>
               <OuvrierActiveToggle ouvrierId={o.id} actif={o.actif} />

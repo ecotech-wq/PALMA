@@ -22,12 +22,16 @@ export const authConfig = {
 
       if (!isLoggedIn) return false;
 
-      // Restriction admin : seul un user ADMIN peut accéder à /admin/*
-      if (path.startsWith("/admin")) {
-        const role = (auth?.user as { role?: string } | undefined)?.role;
-        if (role !== "ADMIN") {
-          return NextResponse.redirect(new URL("/dashboard", request.nextUrl));
-        }
+      // Restriction admin : seul un user ADMIN peut accéder à /admin/*,
+      // /paie/* et /parametres/* (zones financières / configuration).
+      const role = (auth?.user as { role?: string } | undefined)?.role;
+      const isAdminOnly =
+        path.startsWith("/admin") ||
+        path.startsWith("/paie") ||
+        path.startsWith("/parametres") ||
+        path.startsWith("/api/export/paiements");
+      if (isAdminOnly && role !== "ADMIN") {
+        return NextResponse.redirect(new URL("/dashboard", request.nextUrl));
       }
 
       return true;

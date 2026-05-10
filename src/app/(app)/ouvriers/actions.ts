@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { saveUploadedPhoto, deleteUploadedPhoto } from "@/lib/upload";
+import { requireAdmin, requireAuth } from "@/lib/auth-helpers";
 
 const ouvrierSchema = z.object({
   nom: z.string().min(1, "Nom requis"),
@@ -57,12 +58,19 @@ export async function createOuvrier(formData: FormData) {
 }
 
 export async function updateOuvrier(id: string, formData: FormData) {
+  const me = await requireAuth();
   const data = parseOuvrier(formData);
   const photoFile = formData.get("photo") as File | null;
   const removePhoto = formData.get("removePhoto") === "1";
 
   const existing = await db.ouvrier.findUnique({ where: { id } });
   if (!existing) throw new Error("Ouvrier introuvable");
+
+  // Sécurité : un CHEF ne peut PAS modifier le tarif. On force la
+  // valeur existante dans la DB, ignorant ce qu'envoie le client.
+  if (!me.isAdmin) {
+    data.tarifBase = Number(existing.tarifBase);
+  }
 
   let photo: string | null = existing.photo;
   if (removePhoto && existing.photo) {
@@ -80,6 +88,7 @@ export async function updateOuvrier(id: string, formData: FormData) {
 }
 
 export async function deleteOuvrier(id: string) {
+  await requireAdmin();
   const existing = await db.ouvrier.findUnique({ where: { id } });
   if (existing?.photo) await deleteUploadedPhoto(existing.photo);
   await db.ouvrier.delete({ where: { id } });
