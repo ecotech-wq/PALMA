@@ -20,7 +20,6 @@ import { DemandeForm } from "../DemandeForm";
 import {
   approveDemande,
   refuseDemande,
-  markDemandeCommandee,
   deleteDemande,
   updateDemande,
 } from "../actions";
@@ -73,10 +72,6 @@ export default async function DemandeDetailPage({
   const refuseAction = refuseDemande.bind(null, id);
   const deleteAction = deleteDemande.bind(null, id);
   const updateAction = updateDemande.bind(null, id);
-  const markCommandeeAction = async () => {
-    "use server";
-    await markDemandeCommandee(id);
-  };
 
   const urgence = urgenceLabel[demande.urgence];
 
@@ -270,20 +265,33 @@ export default async function DemandeDetailPage({
               </CardHeader>
               <CardBody className="space-y-3">
                 <p className="text-xs text-slate-600 dark:text-slate-400">
-                  La demande est approuvée. Quand tu passes la commande,
-                  marque-la ici pour clore le workflow.
+                  La demande est approuvée. Crée la commande
+                  correspondante : la demande sera automatiquement liée et
+                  marquée comme commandée.
                 </p>
-                <form action={markCommandeeAction}>
-                  <Button type="submit" size="sm" className="w-full">
-                    <ShoppingCart size={14} /> Marquer comme commandée
-                  </Button>
-                </form>
                 <Link
-                  href={`/commandes/nouvelle?chantierId=${demande.chantierId}`}
-                  className="block text-xs text-brand-600 dark:text-brand-400 hover:underline text-center"
+                  href={`/commandes/nouvelle?demandeId=${id}`}
+                  className="block"
                 >
-                  Créer une nouvelle commande pour ce chantier{" "}
-                  <ChevronRight size={12} className="inline" />
+                  <Button type="button" size="sm" className="w-full">
+                    <ShoppingCart size={14} /> Créer la commande
+                  </Button>
+                </Link>
+              </CardBody>
+            </Card>
+          )}
+
+          {me.isAdmin && demande.statut === "COMMANDEE" && demande.commandeId && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Commande liée</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <Link
+                  href={`/commandes/${demande.commandeId}`}
+                  className="text-sm text-brand-700 dark:text-brand-400 hover:underline inline-flex items-center gap-1"
+                >
+                  Voir la commande <ChevronRight size={12} />
                 </Link>
               </CardBody>
             </Card>

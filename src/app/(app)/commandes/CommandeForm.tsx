@@ -25,12 +25,18 @@ export function CommandeForm({
   commande,
   chantiers,
   defaultChantierId,
+  defaultFournisseur,
+  initialLignes,
+  demandeId,
   action,
   submitLabel,
 }: {
   commande?: Commande;
   chantiers: Chantier[];
   defaultChantierId?: string;
+  defaultFournisseur?: string;
+  initialLignes?: Ligne[];
+  demandeId?: string;
   action: (formData: FormData) => Promise<void>;
   submitLabel: string;
 }) {
@@ -43,7 +49,10 @@ export function CommandeForm({
       designation: l.designation,
       quantite: Number(l.quantite),
       prixUnitaire: Number(l.prixUnitaire),
-    })) ?? [{ designation: "", quantite: 1, prixUnitaire: 0 }]
+    })) ??
+      initialLignes ?? [
+        { designation: "", quantite: 1, prixUnitaire: 0 },
+      ]
   );
 
   function addLigne() {
@@ -82,6 +91,9 @@ export function CommandeForm({
           {error}
         </div>
       )}
+      {demandeId && (
+        <input type="hidden" name="demandeId" value={demandeId} />
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Chantier" required>
@@ -101,7 +113,7 @@ export function CommandeForm({
         <Field label="Fournisseur" required>
           <Input
             name="fournisseur"
-            defaultValue={commande?.fournisseur ?? ""}
+            defaultValue={commande?.fournisseur ?? defaultFournisseur ?? ""}
             placeholder="Point P, Leroy Merlin..."
             required
           />

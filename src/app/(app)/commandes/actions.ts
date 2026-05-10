@@ -87,6 +87,27 @@ export async function createCommande(formData: FormData) {
       lignes: { create: lignes },
     },
   });
+
+  // Si la commande a été créée depuis une demande de matériel, on lie
+  // la demande à cette commande et on la marque COMMANDEE.
+  const demandeId = formData.get("demandeId");
+  if (typeof demandeId === "string" && demandeId.length > 0) {
+    try {
+      await db.demandeMateriel.update({
+        where: { id: demandeId },
+        data: {
+          statut: "COMMANDEE",
+          commandeId: created.id,
+        },
+      });
+      revalidatePath("/demandes");
+      revalidatePath(`/demandes/${demandeId}`);
+    } catch (e) {
+      // Ne bloque pas la création si le lien échoue
+      console.error("Failed to link demande:", e);
+    }
+  }
+
   revalidatePath("/commandes");
   revalidatePath(`/chantiers/${data.chantierId}`);
   redirect(`/commandes/${created.id}`);

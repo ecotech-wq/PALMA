@@ -10,6 +10,7 @@ import {
   Wind,
   Users,
   Search,
+  Plus,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -75,6 +76,17 @@ export default async function RapportsListPage({
       <PageHeader
         title="Rapports de chantier"
         description="Compte-rendus journaliers postés par les chefs"
+        action={
+          !me.isClient && (
+            <Link href="/rapports/nouveau">
+              <Button>
+                <Plus size={16} />
+                <span className="hidden sm:inline">Nouveau rapport</span>
+                <span className="sm:hidden">Nouveau</span>
+              </Button>
+            </Link>
+          )
+        }
       />
 
       {/* Filtres */}

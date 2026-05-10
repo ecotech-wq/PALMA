@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   LayoutDashboard,
   Hammer,
@@ -25,6 +25,7 @@ import {
   FileText,
   AlertTriangle,
   Package,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -37,21 +38,66 @@ type NavItem = {
   clientHidden?: boolean;
 };
 
-const items: NavItem[] = [
-  { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
-  { href: "/chantiers", label: "Chantiers", icon: Hammer },
-  { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true },
-  { href: "/ouvriers", label: "Ouvriers", icon: HardHat, clientHidden: true },
-  { href: "/materiel", label: "Matériel", icon: Wrench, clientHidden: true },
-  { href: "/sorties", label: "Sorties / Retours", icon: ArrowLeftRight, clientHidden: true },
-  { href: "/locations", label: "Locations / Prêts", icon: Truck, clientHidden: true },
-  { href: "/commandes", label: "Commandes", icon: ShoppingCart, clientHidden: true },
-  { href: "/demandes", label: "Demandes matériel", icon: Package, clientHidden: true },
-  { href: "/pointage", label: "Pointage", icon: CheckSquare, clientHidden: true },
-  { href: "/rapports", label: "Rapports", icon: FileText },
-  { href: "/incidents", label: "Incidents", icon: AlertTriangle },
-  { href: "/paie", label: "Paie", icon: Banknote, adminOnly: true },
-  { href: "/planning", label: "Planning", icon: Calendar, clientHidden: true },
+type NavGroup = {
+  key: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  items: NavItem[];
+  /** Cache tout le groupe pour le rôle CLIENT */
+  clientHidden?: boolean;
+  adminOnly?: boolean;
+};
+
+// Item solo (Tableau de bord = toujours en haut, jamais dans un groupe)
+const dashboardItem: NavItem = {
+  href: "/dashboard",
+  label: "Tableau de bord",
+  icon: LayoutDashboard,
+};
+
+// Groupes thématiques pour la sidebar — repliables, pré-ouverts si on est dedans
+const groups: NavGroup[] = [
+  {
+    key: "chantiers",
+    label: "Chantiers & équipes",
+    icon: Hammer,
+    items: [
+      { href: "/chantiers", label: "Chantiers", icon: Hammer },
+      { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true },
+      { href: "/ouvriers", label: "Ouvriers", icon: HardHat, clientHidden: true },
+      { href: "/planning", label: "Planning", icon: Calendar, clientHidden: true },
+    ],
+  },
+  {
+    key: "terrain",
+    label: "Suivi terrain",
+    icon: FileText,
+    items: [
+      { href: "/pointage", label: "Pointage", icon: CheckSquare, clientHidden: true },
+      { href: "/rapports", label: "Rapports", icon: FileText },
+      { href: "/incidents", label: "Incidents", icon: AlertTriangle },
+    ],
+  },
+  {
+    key: "materiel",
+    label: "Matériel & achats",
+    icon: Wrench,
+    clientHidden: true,
+    items: [
+      { href: "/materiel", label: "Matériel", icon: Wrench },
+      { href: "/sorties", label: "Sorties / Retours", icon: ArrowLeftRight },
+      { href: "/locations", label: "Locations / Prêts", icon: Truck },
+      { href: "/commandes", label: "Commandes", icon: ShoppingCart },
+      { href: "/demandes", label: "Demandes matériel", icon: Package },
+    ],
+  },
+  {
+    key: "finance",
+    label: "Finances",
+    icon: Banknote,
+    adminOnly: true,
+    items: [{ href: "/paie", label: "Paie", icon: Banknote }],
+  },
 ];
 
 // Barre de tab mobile, variante par rôle
@@ -125,6 +171,7 @@ export type NavBadges = {
   sorties?: number;
   incidents?: number;
   demandes?: number;
+  adminUsers?: number;
 };
 
 function NavBadge({
@@ -170,7 +217,110 @@ function getBadgeForHref(
   if (href === "/demandes" && (badges.demandes ?? 0) > 0) {
     return { count: badges.demandes!, variant: "warning" };
   }
+  if (href === "/admin/users" && (badges.adminUsers ?? 0) > 0) {
+    return { count: badges.adminUsers!, variant: "warning" };
+  }
   return null;
+}
+
+function NavLeaf({
+  href,
+  label,
+  icon: Icon,
+  active,
+  badge,
+  size = "md",
+}: {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  active: boolean;
+  badge?: { count: number; variant: "warning" | "danger" | "info" } | null;
+  size?: "md" | "sm";
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "flex items-center gap-3 transition-colors",
+        size === "sm" ? "pl-9 pr-4 py-2 text-sm" : "px-5 py-2.5 text-sm",
+        active
+          ? "bg-brand-50 text-brand-700 dark:bg-brand-200/30 dark:text-brand-700 font-medium border-r-2 border-brand-500"
+          : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+      )}
+    >
+      <Icon size={size === "sm" ? 15 : 18} />
+      <span className="flex-1 truncate">{label}</span>
+      {badge && <NavBadge count={badge.count} variant={badge.variant} />}
+    </Link>
+  );
+}
+
+function NavGroupSection({
+  group,
+  pathname,
+  navBadges,
+  defaultOpen,
+}: {
+  group: NavGroup;
+  pathname: string | null;
+  navBadges?: NavBadges;
+  defaultOpen: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  // Si on navigue vers un item du groupe, on l'ouvre
+  useEffect(() => {
+    if (defaultOpen) setOpen(true);
+  }, [defaultOpen]);
+
+  // Compteur cumulé sur le groupe (pour pastille à côté du label)
+  const groupBadgeCount = group.items.reduce((sum, it) => {
+    const b = getBadgeForHref(it.href, navBadges);
+    return sum + (b?.count ?? 0);
+  }, 0);
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-3 px-5 py-2 text-[11px] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+      >
+        <group.icon size={14} />
+        <span className="flex-1 text-left">{group.label}</span>
+        {!open && groupBadgeCount > 0 && (
+          <NavBadge count={groupBadgeCount} variant="warning" />
+        )}
+        <ChevronRight
+          size={12}
+          className={cn(
+            "transition-transform",
+            open ? "rotate-90" : "rotate-0"
+          )}
+        />
+      </button>
+      {open && (
+        <div>
+          {group.items.map(({ href, label, icon: Icon }) => {
+            const active =
+              pathname === href || pathname?.startsWith(href + "/");
+            const badge = getBadgeForHref(href, navBadges);
+            return (
+              <NavLeaf
+                key={href}
+                href={href}
+                label={label}
+                icon={Icon}
+                active={active ?? false}
+                badge={badge}
+                size="sm"
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function DesktopSidebar({
@@ -192,9 +342,28 @@ export function DesktopSidebar({
   const isAdmin = userRole === "ADMIN";
   const isClient = userRole === "CLIENT";
 
+  // Filtre des groupes selon rôle + filtre des items dans chaque groupe
+  const visibleGroups = useMemo(() => {
+    return groups
+      .filter((g) => (!g.adminOnly || isAdmin) && (!g.clientHidden || !isClient))
+      .map((g) => ({
+        ...g,
+        items: g.items.filter(
+          (it) =>
+            (!it.adminOnly || isAdmin) && (!it.clientHidden || !isClient)
+        ),
+      }))
+      .filter((g) => g.items.length > 0);
+  }, [isAdmin, isClient]);
+
+  const isOnDashboard = pathname === "/dashboard";
+  const isOnProfile = pathname?.startsWith("/profil");
+  const isOnAdmin =
+    pathname?.startsWith("/admin") || pathname?.startsWith("/parametres");
+
   return (
-    <aside className="hidden md:flex w-60 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-      <div className="px-4 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+    <aside className="hidden md:flex w-60 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 h-screen self-start">
+      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 shrink-0">
         <Link
           href="/profil"
           className="flex items-center gap-3 min-w-0 hover:bg-slate-50 dark:hover:bg-slate-800 -mx-2 px-2 py-1 rounded-md transition flex-1"
@@ -203,100 +372,78 @@ export function DesktopSidebar({
           <Image
             src="/brand/logo-icon.webp"
             alt="Autonhome"
-            width={36}
-            height={36}
+            width={32}
+            height={32}
             className="rounded-md object-contain shrink-0 bg-white"
           />
           <div className="min-w-0">
-            <div className="font-bold text-brand-700 dark:text-brand-700 leading-tight">
+            <div className="font-bold text-brand-700 dark:text-brand-700 leading-tight text-sm">
               Autonhome
             </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
-              <UserCircle size={11} />
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+              <UserCircle size={10} />
               {userName}
             </div>
           </div>
         </Link>
         {bell}
       </div>
-      <nav className="flex-1 overflow-y-auto py-3">
-        {items
-          .filter((it) => (!it.adminOnly || isAdmin) && (!it.clientHidden || !isClient))
-          .map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || pathname?.startsWith(href + "/");
-          const badge = getBadgeForHref(href, navBadges);
+
+      <nav className="flex-1 overflow-y-auto py-2 space-y-0.5">
+        {/* Tableau de bord — toujours en haut, isolé */}
+        <NavLeaf
+          href={dashboardItem.href}
+          label={dashboardItem.label}
+          icon={dashboardItem.icon}
+          active={isOnDashboard}
+        />
+
+        {/* Groupes */}
+        {visibleGroups.map((g) => {
+          // Le groupe est ouvert par défaut si on est dedans
+          const isInGroup = g.items.some(
+            (it) =>
+              pathname === it.href || pathname?.startsWith(it.href + "/")
+          );
           return (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "flex items-center gap-3 px-5 py-2.5 text-sm transition-colors",
-                active
-                  ? "bg-brand-50 text-brand-700 dark:bg-brand-200/30 dark:text-brand-700 font-medium border-r-2 border-brand-500"
-                  : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-              )}
-            >
-              <Icon size={18} />
-              <span className="flex-1">{label}</span>
-              {badge && (
-                <NavBadge count={badge.count} variant={badge.variant} />
-              )}
-            </Link>
+            <NavGroupSection
+              key={g.key}
+              group={g}
+              pathname={pathname}
+              navBadges={navBadges}
+              defaultOpen={isInGroup}
+            />
           );
         })}
 
+        {/* Section Administration (admin uniquement) */}
         {isAdmin && (
-          <>
-            <div className="mt-4 mb-1 px-5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-              Administration
-            </div>
-            <Link
-              href="/admin/users"
-              className={cn(
-                "flex items-center gap-3 px-5 py-2.5 text-sm transition-colors",
-                pathname?.startsWith("/admin")
-                  ? "bg-brand-50 text-brand-700 dark:bg-brand-200/30 dark:text-brand-700 font-medium border-r-2 border-brand-500"
-                  : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-              )}
-            >
-              <ShieldCheck size={18} />
-              <span className="flex-1">Utilisateurs</span>
-              {pendingUsersCount > 0 && (
-                <span className="bg-yellow-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                  {pendingUsersCount}
-                </span>
-              )}
-            </Link>
-            <Link
-              href="/parametres"
-              className={cn(
-                "flex items-center gap-3 px-5 py-2.5 text-sm transition-colors",
-                pathname?.startsWith("/parametres")
-                  ? "bg-brand-50 text-brand-700 dark:bg-brand-200/30 dark:text-brand-700 font-medium border-r-2 border-brand-500"
-                  : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-              )}
-            >
-              <Settings size={18} />
-              Paramètres
-            </Link>
-          </>
+          <NavGroupSection
+            key="admin-group"
+            group={{
+              key: "admin",
+              label: "Administration",
+              icon: ShieldCheck,
+              items: [
+                { href: "/admin/users", label: "Utilisateurs", icon: ShieldCheck },
+                { href: "/parametres", label: "Paramètres", icon: Settings },
+              ],
+            }}
+            pathname={pathname}
+            navBadges={{ ...navBadges, adminUsers: pendingUsersCount }}
+            defaultOpen={isOnAdmin ?? false}
+          />
         )}
 
-        <div className="mt-4 mb-1 px-5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-          Compte
+        {/* Compte — Mon profil isolé en bas */}
+        <div className="pt-2">
+          <NavLeaf
+            href="/profil"
+            label="Mon profil"
+            icon={UserCircle}
+            active={isOnProfile ?? false}
+          />
         </div>
-        <Link
-          href="/profil"
-          className={cn(
-            "flex items-center gap-3 px-5 py-2.5 text-sm transition-colors",
-            pathname?.startsWith("/profil")
-              ? "bg-brand-50 text-brand-700 dark:bg-brand-200/30 dark:text-brand-700 font-medium border-r-2 border-brand-500"
-              : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-          )}
-        >
-          <UserCircle size={18} />
-          Mon profil
-        </Link>
       </nav>
       <div className="border-t border-slate-200 dark:border-slate-800 p-3 space-y-2">
         <div className="flex justify-center">
