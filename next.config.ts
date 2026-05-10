@@ -20,9 +20,10 @@ const nextConfig: NextConfig = {
   ],
 
   experimental: {
-    // Permet aux Server Actions de recevoir des fichiers volumineux (photos)
+    // Permet aux Server Actions de recevoir des fichiers volumineux
+    // (photos, plans rastérisés depuis un PDF en haute résolution)
     serverActions: {
-      bodySizeLimit: "12mb",
+      bodySizeLimit: "50mb",
     },
   },
 

@@ -57,6 +57,44 @@ export async function saveUploadedPhoto(
   return `/uploads/${folder}/${filename}`;
 }
 
+/**
+ * Sauvegarde une image de plan (issue d'un PDF rastérisé ou d'une photo
+ * d'un plan). Contrairement à `saveUploadedPhoto`, on ne redimensionne
+ * pas : les plans doivent rester nets quand on zoome dessus pour placer
+ * les puces. Conversion en webp quand même pour gagner en taille
+ * disque, en haute qualité.
+ *
+ * Limite : 40 Mo (PDF haute résolution rastérisé en 300 dpi peut être
+ * volumineux).
+ */
+export async function saveUploadedPlanImage(file: File): Promise<string> {
+  if (!file || file.size === 0) {
+    throw new Error("Aucun fichier reçu");
+  }
+  if (file.size > 40 * 1024 * 1024) {
+    throw new Error("Fichier trop volumineux (max 40 Mo)");
+  }
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Le fichier doit être une image");
+  }
+
+  const dir = path.join(UPLOADS_ROOT, "pv");
+  await mkdir(dir, { recursive: true });
+
+  const id = randomUUID();
+  const filename = `${id}.webp`;
+  const fullPath = path.join(dir, filename);
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  await sharp(buffer, { limitInputPixels: 268_435_456 /* ~16k×16k */ })
+    .rotate()
+    .webp({ quality: 92 })
+    .toFile(fullPath);
+
+  return `/uploads/pv/${filename}`;
+}
+
 export async function deleteUploadedPhoto(relativePath: string | null | undefined): Promise<void> {
   if (!relativePath || !relativePath.startsWith("/uploads/")) return;
   const safePath = path.join(process.cwd(), "public", relativePath);

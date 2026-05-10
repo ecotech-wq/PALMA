@@ -10,7 +10,11 @@ import {
   requireChantierAccess,
 } from "@/lib/auth-helpers";
 import { notify } from "@/lib/notifications";
-import { saveUploadedPhoto, deleteUploadedPhoto } from "@/lib/upload";
+import {
+  saveUploadedPhoto,
+  saveUploadedPlanImage,
+  deleteUploadedPhoto,
+} from "@/lib/upload";
 
 /* -------------------------------------------------------------------------
  * PV : infos générales / cycle de vie
@@ -115,7 +119,8 @@ export async function ajouterPlan(chantierId: string, formData: FormData) {
     create: { chantierId, dateReception: new Date() },
   });
 
-  const url = await saveUploadedPhoto(file, "pv");
+  // Plans : on garde la pleine résolution (pas de resize), conversion webp
+  const url = await saveUploadedPlanImage(file);
   const lastOrdre = await db.pvPlan.aggregate({
     where: { pvId: pv.id },
     _max: { ordre: true },
