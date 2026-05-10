@@ -19,6 +19,7 @@ import { CommandeStatutBadge } from "@/app/(app)/commandes/CommandeStatutBadge";
 import { formatEuro, formatDate } from "@/lib/utils";
 import { getFinanceChantier } from "@/lib/finances-chantier";
 import { ChantierFinanceCard } from "./ChantierFinanceCard";
+import { TodayWidget } from "./TodayWidget";
 
 export default async function DashboardPage() {
   const debutMois = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -185,6 +186,9 @@ export default async function DashboardPage() {
           </p>
         </div>
       </div>
+
+      {/* Widget Aujourd'hui (vue temps réel) */}
+      <TodayWidget />
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
