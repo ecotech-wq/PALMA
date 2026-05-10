@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { saveUploadedPhoto, deleteUploadedPhoto } from "@/lib/upload";
 import { requireAuth } from "@/lib/auth-helpers";
+import { notify, notifyAdmins } from "@/lib/notifications";
 
 const categorieEnum = z.enum([
   "MATERIEL_MANQUANT",
@@ -66,6 +67,16 @@ export async function createIncident(formData: FormData) {
       photos,
     },
   });
+
+  // Notifie les admins (sauf si l'auteur est admin lui-même)
+  if (!me.isAdmin) {
+    await notifyAdmins(
+      "INCIDENT_OUVERT",
+      `Incident ${data.gravite === "URGENT" ? "URGENT" : "signalé"} — ${data.titre}`,
+      `${me.name} a remonté un problème (${data.categorie.replaceAll("_", " ").toLowerCase()}).`,
+      `/incidents/${incident.id}`
+    );
+  }
 
   revalidatePath("/incidents");
   if (data.chantierId) revalidatePath(`/chantiers/${data.chantierId}`);
@@ -146,6 +157,17 @@ export async function resolveIncident(id: string, formData: FormData) {
       resolverId: me.id,
     },
   });
+
+  // Notifie l'auteur que son incident est clos
+  if (existing.reporterId !== me.id) {
+    await notify(
+      existing.reporterId,
+      "INCIDENT_RESOLU",
+      `Incident résolu — ${existing.titre}`,
+      `${me.name} a clos l'incident.`,
+      `/incidents/${id}`
+    );
+  }
 
   revalidatePath("/incidents");
   revalidatePath(`/incidents/${id}`);

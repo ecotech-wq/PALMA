@@ -3,6 +3,7 @@ import { auth, signOut } from "@/auth";
 import { db } from "@/lib/db";
 import { DesktopSidebar, MobileBottomNav, MobileTopBar } from "@/components/NavSidebar";
 import { ToastProvider } from "@/components/Toast";
+import { NotificationBell } from "@/components/NotificationBell";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -46,6 +47,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     isAdmin ? db.demandeMateriel.count({ where: { statut: "DEMANDEE" } }) : 0,
   ]);
 
+  // Charge les notifications de l'utilisateur (non lues + 20 plus récentes
+  // pour le panel de la cloche)
+  const userId = session.user.id as string;
+  const [notifications, unreadNotifCount] = await Promise.all([
+    db.notification.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+    db.notification.count({ where: { userId, read: false } }),
+  ]);
+
   const navBadges = {
     paie: paiementsAVerser,
     locations: locationsEnRetard,
@@ -59,6 +72,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     await signOut({ redirectTo: "/login" });
   }
 
+  const bell = (
+    <NotificationBell
+      notifications={notifications.map((n) => ({
+        id: n.id,
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        link: n.link,
+        read: n.read,
+        createdAt: n.createdAt,
+      }))}
+      unreadCount={unreadNotifCount}
+    />
+  );
+
   return (
     <ToastProvider>
       <div className="min-h-screen flex bg-slate-50 dark:bg-slate-950">
@@ -68,9 +96,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           pendingUsersCount={pendingUsersCount}
           navBadges={navBadges}
           signOutAction={handleSignOut}
+          bell={bell}
         />
         <div className="flex-1 flex flex-col min-w-0">
-          <MobileTopBar userName={session.user.name} signOutAction={handleSignOut} />
+          <MobileTopBar
+            userName={session.user.name}
+            signOutAction={handleSignOut}
+            bell={bell}
+          />
           <main className="flex-1 pb-24 md:pb-0">
             <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-4 md:py-6">
               {children}

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAuth, requireAdmin } from "@/lib/auth-helpers";
+import { notify, notifyAdmins } from "@/lib/notifications";
 
 const urgenceEnum = z.enum(["INFO", "ATTENTION", "URGENT"]);
 
@@ -29,7 +30,7 @@ export async function createDemande(formData: FormData) {
     fournisseur: formData.get("fournisseur") || "",
   });
 
-  await db.demandeMateriel.create({
+  const created = await db.demandeMateriel.create({
     data: {
       chantierId: data.chantierId,
       requesterId: me.id,
@@ -39,7 +40,17 @@ export async function createDemande(formData: FormData) {
       urgence: data.urgence,
       fournisseur: data.fournisseur || null,
     },
+    include: { chantier: { select: { nom: true } } },
   });
+
+  if (!me.isAdmin) {
+    await notifyAdmins(
+      "DEMANDE_CREEE",
+      `Demande de matériel — ${created.chantier.nom}`,
+      `${me.name} demande : ${data.description.slice(0, 80)}`,
+      `/demandes/${created.id}`
+    );
+  }
 
   revalidatePath("/demandes");
   revalidatePath(`/chantiers/${data.chantierId}`);
@@ -106,6 +117,14 @@ export async function approveDemande(id: string, formData: FormData) {
     },
   });
 
+  await notify(
+    existing.requesterId,
+    "DEMANDE_APPROUVEE",
+    "Demande approuvée",
+    `${me.name} a approuvé : ${existing.description.slice(0, 80)}`,
+    `/demandes/${id}`
+  );
+
   revalidatePath("/demandes");
   revalidatePath(`/demandes/${id}`);
   revalidatePath(`/chantiers/${existing.chantierId}`);
@@ -129,6 +148,14 @@ export async function refuseDemande(id: string, formData: FormData) {
       approuveLe: new Date(),
     },
   });
+
+  await notify(
+    existing.requesterId,
+    "DEMANDE_REFUSEE",
+    "Demande refusée",
+    `${me.name} a refusé : ${existing.description.slice(0, 80)}`,
+    `/demandes/${id}`
+  );
 
   revalidatePath("/demandes");
   revalidatePath(`/demandes/${id}`);

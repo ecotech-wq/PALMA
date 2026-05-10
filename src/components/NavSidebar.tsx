@@ -168,22 +168,24 @@ export function DesktopSidebar({
   pendingUsersCount,
   navBadges,
   signOutAction,
+  bell,
 }: {
   userName: string;
   userRole: string;
   pendingUsersCount: number;
   navBadges?: NavBadges;
   signOutAction: () => Promise<void>;
+  bell?: React.ReactNode;
 }) {
   const pathname = usePathname();
   const isAdmin = userRole === "ADMIN";
 
   return (
     <aside className="hidden md:flex w-60 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-      <div className="px-4 py-4 border-b border-slate-200 dark:border-slate-800">
+      <div className="px-4 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
         <Link
           href="/profil"
-          className="flex items-center gap-3 min-w-0 hover:bg-slate-50 dark:hover:bg-slate-800 -mx-2 px-2 py-1 rounded-md transition"
+          className="flex items-center gap-3 min-w-0 hover:bg-slate-50 dark:hover:bg-slate-800 -mx-2 px-2 py-1 rounded-md transition flex-1"
           title="Mon profil"
         >
           <Image
@@ -203,6 +205,7 @@ export function DesktopSidebar({
             </div>
           </div>
         </Link>
+        {bell}
       </div>
       <nav className="flex-1 overflow-y-auto py-3">
         {items
@@ -504,14 +507,17 @@ export function MobileBottomNav({
 export function MobileTopBar({
   userName,
   signOutAction,
+  bell,
 }: {
   userName: string;
   signOutAction: () => Promise<void>;
+  bell?: React.ReactNode;
 }) {
   return (
     <header className="md:hidden sticky top-0 z-20 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-between gap-2">
       <BrandHeader subtitle={userName} href="/profil" />
       <div className="flex items-center gap-1">
+        {bell}
         <ThemeToggle compact />
         <form action={signOutAction}>
           <button

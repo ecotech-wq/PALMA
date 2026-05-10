@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { saveUploadedPhoto, deleteUploadedPhoto } from "@/lib/upload";
 import { requireAuth, requireAdmin } from "@/lib/auth-helpers";
+import { notifyAdmins } from "@/lib/notifications";
 
 const meteoEnum = z.enum([
   "SOLEIL",
@@ -69,7 +70,18 @@ export async function createRapport(formData: FormData) {
           ? data.nbOuvriers
           : null,
     },
+    include: { chantier: { select: { nom: true } } },
   });
+
+  // Si le rapport vient d'un chef, notifie les admins
+  if (!me.isAdmin) {
+    await notifyAdmins(
+      "RAPPORT_CREE",
+      `Nouveau rapport — ${rapport.chantier.nom}`,
+      `${me.name} a publié un compte-rendu pour le ${data.date}.`,
+      `/chantiers/${data.chantierId}#rapport-${rapport.id}`
+    );
+  }
 
   revalidatePath(`/chantiers/${data.chantierId}`);
   revalidatePath("/rapports");
