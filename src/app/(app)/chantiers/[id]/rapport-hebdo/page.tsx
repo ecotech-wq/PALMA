@@ -16,11 +16,11 @@ import { Field, Textarea } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import {
   getHebdoData,
-  lundiDeLaSemaine,
   updateRapportHebdoIntro,
   envoyerRapportHebdoAuClient,
   annulerEnvoiRapportHebdo,
 } from "@/app/(app)/rapports-hebdo/actions";
+import { lundiDeLaSemaine } from "@/lib/dates";
 import { HebdoMessageRow } from "@/app/(app)/rapports-hebdo/HebdoMessageRow";
 
 const dateFmt = new Intl.DateTimeFormat("fr-FR", {

@@ -9,16 +9,7 @@ import {
   requireChantierAccess,
 } from "@/lib/auth-helpers";
 import { notify } from "@/lib/notifications";
-
-/** Renvoie le lundi UTC de la semaine contenant `d`. */
-export function lundiDeLaSemaine(d: Date): Date {
-  const day = d.getUTCDay();
-  const offsetMon = day === 0 ? 6 : day - 1;
-  const monday = new Date(d);
-  monday.setUTCDate(monday.getUTCDate() - offsetMon);
-  monday.setUTCHours(0, 0, 0, 0);
-  return monday;
-}
+import { lundiDeLaSemaine } from "@/lib/dates";
 
 /**
  * Récupère ou crée le RapportHebdo pour un chantier × semaine.
