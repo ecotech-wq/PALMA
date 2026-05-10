@@ -2,6 +2,13 @@ import "server-only";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 
+export type ClientVisibility = {
+  showJournal: boolean;
+  showIncidents: boolean;
+  showPlans: boolean;
+  showRapportsHebdo: boolean;
+};
+
 export type CurrentUser = {
   id: string;
   name: string;
@@ -10,6 +17,8 @@ export type CurrentUser = {
   isAdmin: boolean;
   isChef: boolean;
   isClient: boolean;
+  // Visibility uniquement utile côté CLIENT. Pour ADMIN/CHEF tout est true.
+  visibility: ClientVisibility;
 };
 
 /**
@@ -25,6 +34,34 @@ export async function requireAuth(): Promise<CurrentUser> {
       : session.user.role === "CLIENT"
         ? "CLIENT"
         : "CHEF";
+
+  // Pour les clients on charge les flags depuis la DB (sinon defaults true)
+  let visibility: ClientVisibility = {
+    showJournal: true,
+    showIncidents: true,
+    showPlans: true,
+    showRapportsHebdo: true,
+  };
+  if (role === "CLIENT") {
+    const u = await db.user.findUnique({
+      where: { id: session.user.id as string },
+      select: {
+        showJournal: true,
+        showIncidents: true,
+        showPlans: true,
+        showRapportsHebdo: true,
+      },
+    });
+    if (u) {
+      visibility = {
+        showJournal: u.showJournal,
+        showIncidents: u.showIncidents,
+        showPlans: u.showPlans,
+        showRapportsHebdo: u.showRapportsHebdo,
+      };
+    }
+  }
+
   return {
     id: session.user.id as string,
     name: session.user.name as string,
@@ -33,6 +70,7 @@ export async function requireAuth(): Promise<CurrentUser> {
     isAdmin: role === "ADMIN",
     isChef: role === "CHEF",
     isClient: role === "CLIENT",
+    visibility,
   };
 }
 

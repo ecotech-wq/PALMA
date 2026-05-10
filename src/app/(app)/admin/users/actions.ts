@@ -144,6 +144,38 @@ export async function setClientChantiers(
   revalidatePath("/admin/users");
 }
 
+/**
+ * Met à jour les flags de visibilité d'un client (admin contrôle ce
+ * qu'il voit : journal, incidents, plans, rapports hebdo).
+ */
+export async function setClientVisibility(
+  userId: string,
+  flags: {
+    showJournal?: boolean;
+    showIncidents?: boolean;
+    showPlans?: boolean;
+    showRapportsHebdo?: boolean;
+  }
+) {
+  await ensureAdmin();
+  await db.user.update({
+    where: { id: userId },
+    data: {
+      ...(flags.showJournal !== undefined && {
+        showJournal: flags.showJournal,
+      }),
+      ...(flags.showIncidents !== undefined && {
+        showIncidents: flags.showIncidents,
+      }),
+      ...(flags.showPlans !== undefined && { showPlans: flags.showPlans }),
+      ...(flags.showRapportsHebdo !== undefined && {
+        showRapportsHebdo: flags.showRapportsHebdo,
+      }),
+    },
+  });
+  revalidatePath("/admin/users");
+}
+
 // =====================================================
 // Création d'un utilisateur par l'admin (avec invitation)
 // =====================================================

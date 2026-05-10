@@ -174,6 +174,24 @@ export type NavBadges = {
   adminUsers?: number;
 };
 
+export type ClientVisibility = {
+  showJournal: boolean;
+  showIncidents: boolean;
+  showPlans: boolean;
+  showRapportsHebdo: boolean;
+};
+
+/** Filtre les NavItem selon la visibilité du client (rôle CLIENT). */
+function applyClientVisibility(
+  item: NavItem,
+  vis?: ClientVisibility
+): boolean {
+  if (!vis) return true;
+  if (item.href === "/rapports" && !vis.showJournal) return false;
+  if (item.href === "/incidents" && !vis.showIncidents) return false;
+  return true;
+}
+
 function NavBadge({
   count,
   variant = "warning",
@@ -328,6 +346,7 @@ export function DesktopSidebar({
   userRole,
   pendingUsersCount,
   navBadges,
+  clientVisibility,
   signOutAction,
   bell,
 }: {
@@ -335,6 +354,7 @@ export function DesktopSidebar({
   userRole: string;
   pendingUsersCount: number;
   navBadges?: NavBadges;
+  clientVisibility?: ClientVisibility;
   signOutAction: () => Promise<void>;
   bell?: React.ReactNode;
 }) {
@@ -350,11 +370,13 @@ export function DesktopSidebar({
         ...g,
         items: g.items.filter(
           (it) =>
-            (!it.adminOnly || isAdmin) && (!it.clientHidden || !isClient)
+            (!it.adminOnly || isAdmin) &&
+            (!it.clientHidden || !isClient) &&
+            (!isClient || applyClientVisibility(it, clientVisibility))
         ),
       }))
       .filter((g) => g.items.length > 0);
-  }, [isAdmin, isClient]);
+  }, [isAdmin, isClient, clientVisibility]);
 
   const isOnDashboard = pathname === "/dashboard";
   const isOnProfile = pathname?.startsWith("/profil");
@@ -468,11 +490,13 @@ export function MobileBottomNav({
   isClient,
   pendingUsersCount,
   navBadges,
+  clientVisibility,
 }: {
   isAdmin?: boolean;
   isClient?: boolean;
   pendingUsersCount?: number;
   navBadges?: NavBadges;
+  clientVisibility?: ClientVisibility;
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -493,15 +517,22 @@ export function MobileBottomNav({
     }
   }, [moreOpen]);
 
-  const mobilePrimary = isClient
+  const mobilePrimaryRaw = isClient
     ? mobilePrimaryClient
     : isAdmin
       ? mobilePrimaryAdmin
       : mobilePrimaryChef;
 
+  // Filtre les items selon la visibilité du client
+  const mobilePrimary = isClient
+    ? mobilePrimaryRaw.filter((it) => applyClientVisibility(it, clientVisibility))
+    : mobilePrimaryRaw;
+
   // Filtre des items du drawer "Plus" pour le client
   const filteredMobileMore = mobileMore.filter(
-    (m) => !m.clientHidden || !isClient
+    (m) =>
+      (!m.clientHidden || !isClient) &&
+      (!isClient || applyClientVisibility(m, clientVisibility))
   );
 
   const moreActive = filteredMobileMore.some(

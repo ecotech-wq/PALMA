@@ -10,6 +10,9 @@ import {
   MessageSquare,
   FileText,
   CalendarRange,
+  Archive,
+  ArchiveRestore,
+  ClipboardCheck,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -18,7 +21,13 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { ChantierForm } from "../ChantierForm";
 import { ChantierStatutBadge } from "../ChantierStatutBadge";
-import { updateChantier, deleteChantier, affecterEquipeAuChantier } from "../actions";
+import {
+  updateChantier,
+  deleteChantier,
+  affecterEquipeAuChantier,
+  archiverChantier,
+  reouvrirChantier,
+} from "../actions";
 import { CommandeStatutBadge } from "@/app/(app)/commandes/CommandeStatutBadge";
 import { formatEuro, formatDate } from "@/lib/utils";
 import { getFinanceChantier } from "@/lib/finances-chantier";
@@ -72,6 +81,9 @@ export default async function ChantierDetailPage({
 
   const updateAction = updateChantier.bind(null, id);
   const deleteAction = deleteChantier.bind(null, id);
+  const archiverAction = archiverChantier.bind(null, id);
+  const reouvrirAction = reouvrirChantier.bind(null, id);
+  const isArchived = chantier.archivedAt !== null;
   const equipesNonAffectees = toutesEquipes.filter((e) => e.chantierId !== id);
 
   const consommePct =
@@ -89,6 +101,7 @@ export default async function ChantierDetailPage({
         action={
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <ChantierStatutBadge statut={chantier.statut} />
+            {isArchived && <Badge color="slate">Archivé</Badge>}
             <Link href={`/chantiers/${id}/journal`}>
               <Button size="sm">
                 <MessageSquare size={14} />
@@ -107,6 +120,28 @@ export default async function ChantierDetailPage({
                 <span className="hidden sm:inline">Rapport hebdo</span>
               </Button>
             </Link>
+            <Link href={`/chantiers/${id}/pv-reception`}>
+              <Button size="sm" variant="outline">
+                <ClipboardCheck size={14} />
+                <span className="hidden sm:inline">PV réception</span>
+              </Button>
+            </Link>
+            {me.isAdmin && !isArchived && (
+              <form action={archiverAction}>
+                <Button type="submit" variant="outline" size="sm">
+                  <Archive size={14} />
+                  <span className="hidden sm:inline">Archiver</span>
+                </Button>
+              </form>
+            )}
+            {me.isAdmin && isArchived && (
+              <form action={reouvrirAction}>
+                <Button type="submit" variant="outline" size="sm">
+                  <ArchiveRestore size={14} />
+                  <span className="hidden sm:inline">Réouvrir</span>
+                </Button>
+              </form>
+            )}
             {me.isAdmin && (
               <form action={deleteAction}>
                 <Button type="submit" variant="danger" size="sm">

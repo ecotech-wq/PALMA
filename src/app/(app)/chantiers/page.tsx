@@ -12,9 +12,10 @@ import { requireAuth } from "@/lib/auth-helpers";
 export default async function ChantiersListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; statut?: string }>;
+  searchParams: Promise<{ q?: string; statut?: string; archives?: string }>;
 }) {
-  const { q, statut } = await searchParams;
+  const { q, statut, archives } = await searchParams;
+  const showArchives = archives === "1";
   const me = await requireAuth();
   const accessibleIds = me.isClient
     ? (
@@ -29,6 +30,7 @@ export default async function ChantiersListPage({
     where: {
       AND: [
         accessibleIds !== null ? { id: { in: accessibleIds } } : {},
+        showArchives ? { archivedAt: { not: null } } : { archivedAt: null },
         statut ? { statut: statut as never } : {},
         q
           ? {
@@ -48,27 +50,42 @@ export default async function ChantiersListPage({
     orderBy: [{ statut: "asc" }, { updatedAt: "desc" }],
   });
 
-  const isFiltered = !!(q || statut);
+  const isFiltered = !!(q || statut || showArchives);
 
   return (
     <div>
       <PageHeader
-        title="Chantiers"
+        title={showArchives ? "Chantiers archivés" : "Chantiers"}
         description={
           me.isClient
             ? "Vos chantiers"
-            : "Tous les chantiers de l'entreprise"
+            : showArchives
+              ? "Chantiers archivés (terminés et rangés)"
+              : "Tous les chantiers de l'entreprise"
         }
         action={
-          me.isAdmin && (
-            <Link href="/chantiers/nouveau">
-              <Button>
-                <Plus size={16} />
-                <span className="hidden sm:inline">Nouveau chantier</span>
-                <span className="sm:hidden">Ajouter</span>
-              </Button>
-            </Link>
-          )
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {me.isAdmin && (
+              <Link
+                href={
+                  showArchives ? "/chantiers" : "/chantiers?archives=1"
+                }
+              >
+                <Button variant="outline" size="sm">
+                  {showArchives ? "Voir les actifs" : "Voir les archives"}
+                </Button>
+              </Link>
+            )}
+            {me.isAdmin && !showArchives && (
+              <Link href="/chantiers/nouveau">
+                <Button>
+                  <Plus size={16} />
+                  <span className="hidden sm:inline">Nouveau chantier</span>
+                  <span className="sm:hidden">Ajouter</span>
+                </Button>
+              </Link>
+            )}
+          </div>
         }
       />
 

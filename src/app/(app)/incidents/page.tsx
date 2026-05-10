@@ -32,6 +32,10 @@ export default async function IncidentsListPage({
   }>;
 }) {
   const me = await requireAuth();
+  if (me.isClient && !me.visibility.showIncidents) {
+    const { redirect } = await import("next/navigation");
+    redirect("/dashboard");
+  }
   const accessibleIds = await getAccessibleChantierIds(me);
   const { q, statut, chantier, gravite } = await searchParams;
 

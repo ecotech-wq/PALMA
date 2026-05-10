@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
@@ -24,6 +24,7 @@ import {
 } from "@/app/(app)/rapports-hebdo/actions";
 import { lundiDeLaSemaine } from "@/lib/dates";
 import { HebdoMessageRow } from "@/app/(app)/rapports-hebdo/HebdoMessageRow";
+import { HebdoSignBox } from "@/app/(app)/rapports-hebdo/HebdoSignBox";
 
 const dateFmt = new Intl.DateTimeFormat("fr-FR", {
   day: "numeric",
@@ -64,6 +65,9 @@ export default async function RapportHebdoPage({
     semaineDebut
   );
   if (!chantier) notFound();
+  if (me.isClient && !me.visibility.showRapportsHebdo) {
+    redirect(`/chantiers/${id}`);
+  }
 
   const semaineDebutStr = isoDay(semaineDebut);
   const isLundiCourant =
@@ -263,6 +267,17 @@ export default async function RapportHebdoPage({
               )}
             </CardBody>
           </Card>
+
+          {/* Encart signature client : visible pour le client (vrai ou en aperçu)
+              uniquement si le rapport a été envoyé. */}
+          {isViewingAsClient && envoyeAuClient && (
+            <HebdoSignBox
+              chantierId={id}
+              semaineDebutStr={semaineDebutStr}
+              alreadySignedUrl={hebdo?.signatureClientUrl ?? null}
+              signedAt={hebdo?.signatureClientLe ?? null}
+            />
+          )}
         </div>
 
         {/* Sidebar admin : envoi au client (cachée en mode preview) */}

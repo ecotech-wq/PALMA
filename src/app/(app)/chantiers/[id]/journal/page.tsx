@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { redirect } from "next/navigation";
 import {
   requireAuth,
   requireChantierAccess,
@@ -38,6 +39,9 @@ export default async function JournalChantierPage({
   const { id } = await params;
   const me = await requireAuth();
   await requireChantierAccess(me, id);
+  if (me.isClient && !me.visibility.showJournal) {
+    redirect(`/chantiers/${id}`);
+  }
   const { date: dateParam } = await searchParams;
 
   const date = dateParam || isoDay(new Date());

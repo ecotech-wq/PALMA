@@ -14,6 +14,33 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const isClient = session.user.role === "CLIENT";
   const today = new Date();
 
+  // Charge les flags de visibilité du client (utilisé pour filtrer la nav)
+  let clientVisibility = {
+    showJournal: true,
+    showIncidents: true,
+    showPlans: true,
+    showRapportsHebdo: true,
+  };
+  if (isClient) {
+    const u = await db.user.findUnique({
+      where: { id: session.user.id as string },
+      select: {
+        showJournal: true,
+        showIncidents: true,
+        showPlans: true,
+        showRapportsHebdo: true,
+      },
+    });
+    if (u) {
+      clientVisibility = {
+        showJournal: u.showJournal,
+        showIncidents: u.showIncidents,
+        showPlans: u.showPlans,
+        showRapportsHebdo: u.showRapportsHebdo,
+      };
+    }
+  }
+
   const [
     pendingUsersCount,
     paiementsAVerser,
@@ -96,6 +123,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           userRole={session.user.role}
           pendingUsersCount={pendingUsersCount}
           navBadges={navBadges}
+          clientVisibility={clientVisibility}
           signOutAction={handleSignOut}
           bell={bell}
         />
@@ -115,6 +143,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             isClient={isClient}
             pendingUsersCount={pendingUsersCount}
             navBadges={navBadges}
+            clientVisibility={clientVisibility}
           />
         </div>
       </div>

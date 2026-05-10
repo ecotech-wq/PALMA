@@ -79,6 +79,31 @@ export async function deleteChantier(id: string) {
   redirect("/chantiers");
 }
 
+/**
+ * Archive un chantier (soft delete). Le chantier reste en base mais
+ * disparaît des listes par défaut.
+ */
+export async function archiverChantier(id: string) {
+  await requireAdmin();
+  await db.chantier.update({
+    where: { id },
+    data: { archivedAt: new Date() },
+  });
+  revalidatePath("/chantiers");
+  revalidatePath(`/chantiers/${id}`);
+}
+
+/** Réouvre un chantier archivé. */
+export async function reouvrirChantier(id: string) {
+  await requireAdmin();
+  await db.chantier.update({
+    where: { id },
+    data: { archivedAt: null },
+  });
+  revalidatePath("/chantiers");
+  revalidatePath(`/chantiers/${id}`);
+}
+
 export async function affecterEquipeAuChantier(equipeId: string, chantierId: string | null) {
   await db.equipe.update({
     where: { id: equipeId },

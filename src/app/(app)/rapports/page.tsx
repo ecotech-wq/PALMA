@@ -43,6 +43,10 @@ export default async function RapportsListPage({
   searchParams: Promise<{ q?: string; chantier?: string }>;
 }) {
   const me = await requireAuth();
+  if (me.isClient && !me.visibility.showJournal) {
+    const { redirect } = await import("next/navigation");
+    redirect("/dashboard");
+  }
   const accessibleIds = await getAccessibleChantierIds(me);
   const { q, chantier } = await searchParams;
 

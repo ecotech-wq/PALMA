@@ -35,6 +35,13 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  // Visibilité côté CLIENT — l'admin contrôle ce que ce client voit.
+  // Pour ADMIN/CHEF, ces flags sont ignorés (ils voient tout).
+  showJournal       Boolean @default(true)
+  showIncidents     Boolean @default(true)
+  showPlans         Boolean @default(true)
+  showRapportsHebdo Boolean @default(true)
+
   chantiersGeres     Chantier[]           @relation("ChefChantier")
   chantiersClient    Chantier[]           @relation("ChantierClients")
   passwordResets     PasswordResetToken[]
@@ -91,6 +98,8 @@ model Chantier {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
+  archivedAt       DateTime?
+
   equipes          Equipe[]
   pointages        Pointage[]
   sortiesMateriel  SortieMateriel[]
@@ -104,6 +113,7 @@ model Chantier {
   journalMessages  JournalMessage[]
   plans            PlanChantier[]
   rapportsHebdo    RapportHebdo[]
+  pvReceptions     PvReception[]
 }
 
 model Equipe {
@@ -687,8 +697,48 @@ model RapportHebdo {
   hiddenMessageIds   String[] @default([])
   envoyeAuClient     Boolean  @default(false)
   envoyeLe           DateTime?
+  // Signature électronique : data URL de l'image (PNG du canvas).
+  // Le client signe via la page rapport-hebdo, on stocke la signature.
+  signatureClientUrl String?
+  signatureClientLe  DateTime?
+  signatureClientId  String?  // userId qui a signé
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   @@unique([chantierId, semaineDebut])
+}
+
+// =====================================================
+// PV de réception (livraison du chantier au client)
+// =====================================================
+
+enum StatutPvReception {
+  BROUILLON
+  ENVOYE_CLIENT
+  SIGNE_CLIENT
+  RESERVES_LEVEES
+}
+
+/// Procès-verbal de réception du chantier. Le client signe la
+/// réception, peut lister des réserves. Quand toutes les réserves sont
+/// levées, le PV passe en RESERVES_LEVEES et le chantier peut être
+/// archivé proprement.
+model PvReception {
+  id                  String           @id @default(cuid())
+  chantierId          String
+  chantier            Chantier         @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  dateReception       DateTime         @db.Date
+  reserves            String[]         @default([])
+  texteRecap          String?
+  signatureAdminUrl   String?
+  signatureAdminLe    DateTime?
+  signatureClientUrl  String?
+  signatureClientLe   DateTime?
+  statut              StatutPvReception @default(BROUILLON)
+  reservesLeveeUrl    String?  // signature finale après levée des réserves
+  reservesLeveeLe     DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@unique([chantierId])
 }

@@ -11,6 +11,7 @@ import {
   Hammer,
   ChevronDown,
   ChevronUp,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/Toast";
@@ -24,6 +25,13 @@ interface ResetResult {
 
 type ChantierLite = { id: string; nom: string };
 
+type Visibility = {
+  showJournal: boolean;
+  showIncidents: boolean;
+  showPlans: boolean;
+  showRapportsHebdo: boolean;
+};
+
 export function UserActions({
   userId,
   status,
@@ -31,12 +39,14 @@ export function UserActions({
   isMe,
   allChantiers,
   assignedChantierIds,
+  visibility,
   onApprove,
   onRevoke,
   onDelete,
   onChangeRole,
   onResetPassword,
   onSetClientChantiers,
+  onSetClientVisibility,
 }: {
   userId: string;
   status: string;
@@ -44,18 +54,29 @@ export function UserActions({
   isMe: boolean;
   allChantiers: ChantierLite[];
   assignedChantierIds: string[];
+  visibility: Visibility;
   onApprove: (id: string) => Promise<void>;
   onRevoke: (id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onChangeRole: (id: string, role: string) => Promise<void>;
   onResetPassword: (id: string) => Promise<ResetResult>;
   onSetClientChantiers: (id: string, chantierIds: string[]) => Promise<void>;
+  onSetClientVisibility: (
+    id: string,
+    flags: Partial<Visibility>
+  ) => Promise<void>;
 }) {
   const toast = useToast();
   const [showChantiers, setShowChantiers] = useState(false);
+  const [showVisibility, setShowVisibility] = useState(false);
   const [selectedChantiers, setSelectedChantiers] = useState<Set<string>>(
     new Set(assignedChantierIds)
   );
+  const [vis, setVis] = useState<Visibility>(visibility);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [resetResult, setResetResult] = useState<ResetResult | null>(null);
+  const [copied, setCopied] = useState(false);
 
   function toggleChantier(id: string) {
     setSelectedChantiers((prev) => {
@@ -77,10 +98,20 @@ export function UserActions({
       }
     });
   }
-  const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [resetResult, setResetResult] = useState<ResetResult | null>(null);
-  const [copied, setCopied] = useState(false);
+
+  function toggleVis(key: keyof Visibility) {
+    const next = { ...vis, [key]: !vis[key] };
+    setVis(next);
+    startTransition(async () => {
+      try {
+        await onSetClientVisibility(userId, { [key]: next[key] });
+        toast.success("Visibilité mise à jour");
+      } catch (e) {
+        setVis(vis);
+        toast.error(e instanceof Error ? e.message : "Erreur");
+      }
+    });
+  }
 
   function run(fn: () => Promise<void>) {
     setError(null);
@@ -239,19 +270,32 @@ export function UserActions({
         )}
 
         {role === "CLIENT" && !isMe && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setShowChantiers((v) => !v)}
-            disabled={pending}
-            title="Choisir les chantiers visibles par ce client"
-          >
-            <Hammer size={14} />
-            <span className="hidden md:inline">
-              Chantiers ({selectedChantiers.size})
-            </span>
-            {showChantiers ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          </Button>
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowChantiers((v) => !v)}
+              disabled={pending}
+              title="Choisir les chantiers visibles par ce client"
+            >
+              <Hammer size={14} />
+              <span className="hidden md:inline">
+                Chantiers ({selectedChantiers.size})
+              </span>
+              {showChantiers ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowVisibility((v) => !v)}
+              disabled={pending}
+              title="Choisir ce que ce client peut voir"
+            >
+              <Eye size={14} />
+              <span className="hidden md:inline">Visibilité</span>
+              {showVisibility ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </Button>
+          </>
         )}
 
         {!isMe && (
@@ -322,6 +366,45 @@ export function UserActions({
               Enregistrer
             </Button>
           </div>
+        </div>
+      )}
+
+      {/* Panneau de visibilité (CLIENT uniquement) */}
+      {role === "CLIENT" && showVisibility && (
+        <div className="w-full max-w-md mt-2 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3">
+          <div className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">
+            Que voit ce client ?
+          </div>
+          <div className="space-y-1">
+            {(
+              [
+                { key: "showRapportsHebdo", label: "Rapports hebdomadaires" },
+                { key: "showJournal", label: "Journal de chantier (chat)" },
+                { key: "showIncidents", label: "Incidents" },
+                { key: "showPlans", label: "Plans" },
+              ] as const
+            ).map(({ key, label }) => (
+              <label
+                key={key}
+                className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 px-1.5 py-1.5 rounded"
+              >
+                <input
+                  type="checkbox"
+                  checked={vis[key]}
+                  onChange={() => toggleVis(key)}
+                  disabled={pending}
+                  className="rounded border-slate-400 text-brand-600 focus:ring-brand-500"
+                />
+                <span className="text-slate-700 dark:text-slate-300">
+                  {label}
+                </span>
+              </label>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 italic">
+            Désactivé = le client ne voit pas la section et n&apos;y a pas
+            accès via l&apos;URL.
+          </p>
         </div>
       )}
     </div>

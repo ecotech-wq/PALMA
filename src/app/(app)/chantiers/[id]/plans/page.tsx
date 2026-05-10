@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { Card, CardBody } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -16,6 +16,9 @@ export default async function PlansChantierPage({
   const { id } = await params;
   const me = await requireAuth();
   await requireChantierAccess(me, id);
+  if (me.isClient && !me.visibility.showPlans) {
+    redirect(`/chantiers/${id}`);
+  }
 
   const [chantier, plans] = await Promise.all([
     db.chantier.findUnique({

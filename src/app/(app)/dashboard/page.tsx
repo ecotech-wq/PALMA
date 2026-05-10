@@ -20,10 +20,18 @@ import { formatEuro, formatDate } from "@/lib/utils";
 import { getFinanceChantier } from "@/lib/finances-chantier";
 import { ChantierFinanceCard } from "./ChantierFinanceCard";
 import { TodayWidget } from "./TodayWidget";
+import { ClientDashboard } from "./ClientDashboard";
 import { requireAuth } from "@/lib/auth-helpers";
 
 export default async function DashboardPage() {
   const me = await requireAuth();
+
+  // Les clients ont un dashboard minimal et isolé : pas de stats globales,
+  // pas de finance, pas de chantiers autres que les leurs.
+  if (me.isClient) {
+    return <ClientDashboard userId={me.id} userName={me.name} />;
+  }
+
   const debutMois = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   const today = new Date();
 

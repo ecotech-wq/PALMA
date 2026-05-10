@@ -133,6 +133,35 @@ export async function annulerEnvoiRapportHebdo(
   revalidatePath(`/chantiers/${chantierId}/rapport-hebdo`);
 }
 
+/**
+ * Le client signe le rapport hebdo. Sauvegarde la data URL PNG du
+ * canvas signature dans `signatureClientUrl`.
+ */
+export async function signRapportHebdo(
+  chantierId: string,
+  semaineDebutISO: string,
+  signatureDataUrl: string
+) {
+  const me = await requireAuth();
+  await requireChantierAccess(me, chantierId);
+  if (!me.isClient) {
+    throw new Error("Seul un client peut signer le rapport");
+  }
+  const semaineDebut = new Date(semaineDebutISO + "T00:00:00.000Z");
+  await ensureHebdo(chantierId, semaineDebut);
+  await db.rapportHebdo.update({
+    where: {
+      chantierId_semaineDebut: { chantierId, semaineDebut },
+    },
+    data: {
+      signatureClientUrl: signatureDataUrl,
+      signatureClientLe: new Date(),
+      signatureClientId: me.id,
+    },
+  });
+  revalidatePath(`/chantiers/${chantierId}/rapport-hebdo`);
+}
+
 /** Helper consultation : récupère tout pour la page hebdo. */
 export async function getHebdoData(chantierId: string, semaineDebut: Date) {
   const me = await requireAuth();

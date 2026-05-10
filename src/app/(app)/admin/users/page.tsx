@@ -13,6 +13,7 @@ import {
   changeUserRole,
   adminGenerateResetLink,
   setClientChantiers,
+  setClientVisibility,
 } from "./actions";
 
 const statusLabel: Record<string, string> = {
@@ -39,6 +40,7 @@ export default async function AdminUsersPage() {
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
     }),
     db.chantier.findMany({
+      where: { archivedAt: null },
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),
@@ -109,12 +111,19 @@ export default async function AdminUsersPage() {
                     isMe={isMe}
                     allChantiers={allChantiers}
                     assignedChantierIds={u.chantiersClient.map((c) => c.id)}
+                    visibility={{
+                      showJournal: u.showJournal,
+                      showIncidents: u.showIncidents,
+                      showPlans: u.showPlans,
+                      showRapportsHebdo: u.showRapportsHebdo,
+                    }}
                     onApprove={approveUser}
                     onRevoke={revokeUser}
                     onDelete={deleteUser}
                     onChangeRole={changeUserRole}
                     onResetPassword={adminGenerateResetLink}
                     onSetClientChantiers={setClientChantiers}
+                    onSetClientVisibility={setClientVisibility}
                   />
                 </li>
               );
