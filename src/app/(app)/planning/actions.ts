@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { parseQuickAdd, fuzzyMatch } from "@/lib/quick-add-parser";
 
 const tacheSchema = z.object({
   chantierId: z.string().min(1),
@@ -13,6 +14,8 @@ const tacheSchema = z.object({
   dateFin: z.string().min(1),
   avancement: z.coerce.number().int().min(0).max(100).default(0),
   statut: z.enum(["A_FAIRE", "EN_COURS", "TERMINEE", "BLOQUEE"]),
+  priorite: z.coerce.number().int().min(1).max(4).default(4),
+  parentId: z.string().optional().or(z.literal("")),
 });
 
 function parseTache(formData: FormData) {
@@ -25,6 +28,8 @@ function parseTache(formData: FormData) {
     dateFin: formData.get("dateFin"),
     avancement: formData.get("avancement") || 0,
     statut: formData.get("statut") || "A_FAIRE",
+    priorite: formData.get("priorite") || 4,
+    parentId: formData.get("parentId") || "",
   });
 
   return {
@@ -36,6 +41,8 @@ function parseTache(formData: FormData) {
     dateFin: new Date(data.dateFin),
     avancement: data.avancement,
     statut: data.statut,
+    priorite: data.priorite,
+    parentId: data.parentId || null,
   };
 }
 
@@ -44,9 +51,17 @@ function extractDependances(formData: FormData): string[] {
   return ids.map(String).filter(Boolean);
 }
 
+function extractLabelIds(formData: FormData): string[] {
+  return formData
+    .getAll("labelIds")
+    .map(String)
+    .filter(Boolean);
+}
+
 export async function createTache(formData: FormData) {
   const data = parseTache(formData);
   const dependances = extractDependances(formData);
+  const labelIds = extractLabelIds(formData);
   if (data.dateFin < data.dateDebut) {
     throw new Error("La date de fin doit être après la date de début");
   }
@@ -55,6 +70,11 @@ export async function createTache(formData: FormData) {
       ...data,
       ...(dependances.length > 0 && {
         dependances: { connect: dependances.map((id) => ({ id })) },
+      }),
+      ...(labelIds.length > 0 && {
+        labels: {
+          create: labelIds.map((labelId) => ({ labelId })),
+        },
       }),
     },
   });
@@ -65,19 +85,26 @@ export async function createTache(formData: FormData) {
 export async function updateTache(id: string, formData: FormData) {
   const data = parseTache(formData);
   const dependances = extractDependances(formData);
+  const labelIds = extractLabelIds(formData);
   if (data.dateFin < data.dateDebut) {
     throw new Error("La date de fin doit être après la date de début");
   }
-  // Empêche les auto-dépendances
   const filteredDeps = dependances.filter((depId) => depId !== id);
+  // Empêche de mettre la tâche comme parent d'elle-même
+  const safeParentId = data.parentId === id ? null : data.parentId;
 
   const existing = await db.tache.findUnique({ where: { id } });
   await db.tache.update({
     where: { id },
     data: {
       ...data,
+      parentId: safeParentId,
       dependances: {
         set: filteredDeps.map((depId) => ({ id: depId })),
+      },
+      labels: {
+        deleteMany: {},
+        create: labelIds.map((labelId) => ({ labelId })),
       },
     },
   });
@@ -110,4 +137,198 @@ export async function setAvancement(id: string, avancement: number) {
   });
   revalidatePath("/planning");
   revalidatePath(`/chantiers/${t.chantierId}`);
+}
+
+/** Toggle complete : passe à 100% (terminée) si pas, sinon 0%. */
+export async function toggleComplete(id: string) {
+  const t = await db.tache.findUnique({ where: { id } });
+  if (!t) return;
+  const isDone = t.statut === "TERMINEE" || t.avancement === 100;
+  await db.tache.update({
+    where: { id },
+    data: {
+      avancement: isDone ? 0 : 100,
+      statut: isDone ? "A_FAIRE" : "TERMINEE",
+    },
+  });
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${t.chantierId}`);
+}
+
+/** Met à jour la priorité (1..4) sans toucher au reste. */
+export async function setPriorite(id: string, priorite: 1 | 2 | 3 | 4) {
+  const t = await db.tache.update({
+    where: { id },
+    data: { priorite },
+  });
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${t.chantierId}`);
+}
+
+/**
+ * Drag-to-reschedule (Monday Gantt). On donne juste les nouvelles dates
+ * de début et de fin. Vérifie que dateFin >= dateDebut. Pas de touche
+ * statut/avancement.
+ */
+export async function deplacerTache(
+  id: string,
+  dateDebut: Date | string,
+  dateFin: Date | string
+) {
+  const dStart = new Date(dateDebut);
+  const dEnd = new Date(dateFin);
+  dStart.setHours(0, 0, 0, 0);
+  dEnd.setHours(0, 0, 0, 0);
+  if (dEnd < dStart) {
+    throw new Error("Date de fin avant date de début");
+  }
+  const t = await db.tache.update({
+    where: { id },
+    data: { dateDebut: dStart, dateFin: dEnd },
+  });
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${t.chantierId}`);
+}
+
+/**
+ * Création rapide à la Todoist : parse une phrase libre.
+ * Si pas de chantier reconnu, utilise `defaultChantierId`.
+ * Retourne la tâche créée.
+ */
+export async function quickAddTache(input: string, defaultChantierId?: string) {
+  const tokens = parseQuickAdd(input);
+  if (!tokens.nom) {
+    throw new Error("Tâche vide");
+  }
+
+  // Résolution chantier
+  const chantiers = await db.chantier.findMany({
+    where: { archivedAt: null },
+    select: { id: true, nom: true },
+  });
+  let chantierId: string | null = null;
+  if (tokens.chantierMatch) {
+    const m = fuzzyMatch(chantiers, tokens.chantierMatch);
+    if (m) chantierId = m.id;
+  }
+  if (!chantierId && defaultChantierId) {
+    chantierId = defaultChantierId;
+  }
+  if (!chantierId) {
+    throw new Error(
+      "Aucun chantier trouvé. Précisez avec #nom-du-chantier ou choisissez-en un par défaut."
+    );
+  }
+
+  // Résolution équipe (au sein du chantier seulement)
+  let equipeId: string | null = null;
+  if (tokens.equipeMatch) {
+    const equipes = await db.equipe.findMany({
+      where: { chantierId },
+      select: { id: true, nom: true },
+    });
+    const m = fuzzyMatch(equipes, tokens.equipeMatch);
+    if (m) equipeId = m.id;
+  }
+
+  // Résolution labels (créés à la volée s'ils n'existent pas)
+  const labelIds: string[] = [];
+  for (const labelName of tokens.labels) {
+    const cleaned = labelName.replace(/[-_]/g, " ").trim();
+    if (!cleaned) continue;
+    let lab = await db.label.findFirst({
+      where: {
+        nom: { equals: cleaned, mode: "insensitive" },
+        OR: [{ chantierId: null }, { chantierId }],
+      },
+    });
+    if (!lab) {
+      lab = await db.label.create({
+        data: { nom: cleaned, chantierId },
+      });
+    }
+    labelIds.push(lab.id);
+  }
+
+  // Dates par défaut : aujourd'hui + 1 jour de durée si non précisé
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dateDebut = tokens.dateDebut ?? today;
+  const dateFin = tokens.dateFin ?? dateDebut;
+
+  const created = await db.tache.create({
+    data: {
+      chantierId,
+      nom: tokens.nom,
+      equipeId,
+      priorite: tokens.priorite,
+      dateDebut,
+      dateFin,
+      ...(labelIds.length > 0 && {
+        labels: {
+          create: labelIds.map((labelId) => ({ labelId })),
+        },
+      }),
+    },
+  });
+
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${chantierId}`);
+  return created;
+}
+
+/** Création rapide d'une sous-tâche d'une tâche parente (UI Todoist). */
+export async function ajouterSousTache(
+  parentId: string,
+  nom: string,
+  priorite: 1 | 2 | 3 | 4 = 4
+) {
+  if (!nom.trim()) throw new Error("Nom requis");
+  const parent = await db.tache.findUnique({
+    where: { id: parentId },
+    select: {
+      chantierId: true,
+      equipeId: true,
+      dateDebut: true,
+      dateFin: true,
+    },
+  });
+  if (!parent) throw new Error("Tâche parente introuvable");
+
+  await db.tache.create({
+    data: {
+      chantierId: parent.chantierId,
+      equipeId: parent.equipeId,
+      nom: nom.trim(),
+      priorite,
+      parentId,
+      dateDebut: parent.dateDebut,
+      dateFin: parent.dateFin,
+    },
+  });
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${parent.chantierId}`);
+}
+
+/* -------------------- Labels (CRUD) -------------------- */
+
+export async function createLabel(input: {
+  nom: string;
+  couleur?: string;
+  chantierId?: string | null;
+}) {
+  if (!input.nom.trim()) throw new Error("Nom requis");
+  await db.label.create({
+    data: {
+      nom: input.nom.trim(),
+      couleur: input.couleur || "#3b82f6",
+      chantierId: input.chantierId || null,
+    },
+  });
+  revalidatePath("/planning");
+}
+
+export async function deleteLabel(labelId: string) {
+  await db.label.delete({ where: { id: labelId } });
+  revalidatePath("/planning");
 }

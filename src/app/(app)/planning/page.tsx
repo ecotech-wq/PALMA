@@ -3,10 +3,13 @@ import { Calendar } from "lucide-react";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
-import { GanttChart } from "./GanttChart";
+import { GanttChartV2 } from "./GanttChartV2";
 import { PertChart } from "./PertChart";
 import { CreateTacheForm } from "./TacheForm";
 import { TacheList } from "./TacheList";
+import { TacheListTodoist } from "./TacheListTodoist";
+import { QuickAddBar } from "./QuickAddBar";
+import { requireAuth } from "@/lib/auth-helpers";
 import { createTache, deleteTache, setAvancement, updateTache } from "./actions";
 
 type Vue = "gantt" | "liste" | "pert";
@@ -17,6 +20,8 @@ export default async function PlanningPage({
   searchParams: Promise<{ chantier?: string | string[]; vue?: string | string[] }>;
 }) {
   const sp = await searchParams;
+  const me = await requireAuth();
+  const canEdit = !me.isClient;
   const chantier = Array.isArray(sp.chantier) ? sp.chantier[0] : sp.chantier;
   const vueRaw = Array.isArray(sp.vue) ? sp.vue[0] : sp.vue;
   const view: Vue =
@@ -29,8 +34,13 @@ export default async function PlanningPage({
         chantier: { select: { id: true, nom: true } },
         equipe: { select: { id: true, nom: true } },
         dependances: { select: { id: true, nom: true } },
+        labels: {
+          include: {
+            label: { select: { id: true, nom: true, couleur: true } },
+          },
+        },
       },
-      orderBy: { dateDebut: "asc" },
+      orderBy: [{ priorite: "asc" }, { dateDebut: "asc" }],
     }),
     db.chantier.findMany({
       where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] } },
@@ -98,6 +108,16 @@ export default async function PlanningPage({
         title="Planning"
         description="Tâches, livraisons et restitutions"
       />
+
+      {/* Saisie rapide style Todoist */}
+      {canEdit && (
+        <div className="mb-4">
+          <QuickAddBar
+            chantiers={chantiers}
+            defaultChantierId={chantier}
+          />
+        </div>
+      )}
 
       <Card className="mb-5">
         <CardBody>
@@ -188,7 +208,11 @@ export default async function PlanningPage({
             </Card>
           ) : (
             <>
-              <GanttChart taches={taches} events={events} />
+              <GanttChartV2
+                taches={taches}
+                events={events}
+                canEdit={canEdit}
+              />
               <Legend />
             </>
           )}
@@ -198,13 +222,41 @@ export default async function PlanningPage({
       {view === "pert" && <PertChart taches={tachesPourPert} />}
 
       {view === "liste" && (
-        <TacheList
-          taches={taches}
-          equipes={equipes}
-          onSetAvancement={setAvancement}
-          onDelete={deleteTache}
-          onUpdate={updateTache}
-        />
+        <div className="space-y-4">
+          <TacheListTodoist
+            taches={taches.map((t) => ({
+              id: t.id,
+              nom: t.nom,
+              description: t.description,
+              dateDebut: t.dateDebut,
+              dateFin: t.dateFin,
+              avancement: t.avancement,
+              statut: t.statut,
+              priorite: t.priorite,
+              parentId: t.parentId,
+              equipe: t.equipe,
+              chantier: t.chantier,
+              labels: t.labels,
+            }))}
+          />
+          {/* Form complet en bas pour les éditions avancées */}
+          {canEdit && (
+            <details>
+              <summary className="text-xs text-slate-500 dark:text-slate-400 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 select-none">
+                Édition avancée (formulaire complet)
+              </summary>
+              <div className="mt-3">
+                <TacheList
+                  taches={taches}
+                  equipes={equipes}
+                  onSetAvancement={setAvancement}
+                  onDelete={deleteTache}
+                  onUpdate={updateTache}
+                />
+              </div>
+            </details>
+          )}
+        </div>
       )}
     </div>
   );

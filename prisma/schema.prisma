@@ -114,6 +114,7 @@ model Chantier {
   plans            PlanChantier[]
   rapportsHebdo    RapportHebdo[]
   pvReceptions     PvReception[]
+  labels           Label[]
 }
 
 model Equipe {
@@ -444,13 +445,49 @@ model Tache {
   dateFin     DateTime    @db.Date
   avancement  Int         @default(0)
   statut      StatutTache @default(A_FAIRE)
+  /// Priorité Todoist-style : 1 = P1 (urgent, rouge), 2 = P2 (haute, orange),
+  /// 3 = P3 (moyenne, bleu), 4 = P4 (par défaut, gris).
+  priorite    Int         @default(4)
+  /// Sous-tâche : pointe vers la tâche parente. Cascade delete.
+  parentId    String?
+  parent      Tache?      @relation("TacheSousTaches", fields: [parentId], references: [id], onDelete: Cascade)
+  enfants     Tache[]     @relation("TacheSousTaches")
+  /// Ordre manuel dans la liste (drag-to-reorder dans l'UI).
+  ordre       Int         @default(0)
   dependances Tache[]     @relation("TacheDependance")
   dependants  Tache[]     @relation("TacheDependance")
+  labels      TacheLabel[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   @@index([chantierId])
   @@index([dateDebut, dateFin])
+  @@index([parentId])
+}
+
+/// Étiquette / tag pour catégoriser les tâches (sécurité, urgent, livraison...).
+/// Globale par défaut (chantierId null) ou rattachée à un chantier.
+model Label {
+  id          String       @id @default(cuid())
+  nom         String
+  couleur     String       @default("#3b82f6") // hex
+  chantierId  String?
+  chantier    Chantier?    @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  taches      TacheLabel[]
+  createdAt   DateTime     @default(now())
+
+  @@index([chantierId])
+}
+
+/// Table de jointure many-to-many Tache ↔ Label.
+model TacheLabel {
+  tacheId String
+  labelId String
+  tache   Tache @relation(fields: [tacheId], references: [id], onDelete: Cascade)
+  label   Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([tacheId, labelId])
+  @@index([labelId])
 }
 
 // =====================================================
