@@ -3,8 +3,11 @@ import {
   ClipboardCheck,
   AlertTriangle,
   CheckCircle2,
-  X,
+  ImageIcon,
+  Plus,
+  Printer,
 } from "lucide-react";
+import Link from "next/link";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -12,12 +15,13 @@ import { Field, Input, Textarea } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { db } from "@/lib/db";
 import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
-import {
-  updatePvInfos,
-  ajouterReserve,
-  retirerReserve,
-} from "./actions";
+import { updatePvInfos } from "./actions";
 import { PvSignBox } from "./PvSignBox";
+import { PvPlanViewer } from "./PvPlanViewer";
+import { ReserveForm } from "./ReserveForm";
+import { ReserveList } from "./ReserveList";
+import { PlanUploadForm } from "./PlanUploadForm";
+import { PvAdminActions } from "./PvAdminActions";
 
 const dateFmt = new Intl.DateTimeFormat("fr-FR", {
   day: "2-digit",
@@ -68,19 +72,29 @@ export default async function PvReceptionPage({
   });
   if (!chantier) notFound();
 
-  let pv = await db.pvReception.findUnique({ where: { chantierId: id } });
+  let pv = await db.pvReception.findUnique({
+    where: { chantierId: id },
+    include: {
+      plans: { orderBy: { ordre: "asc" } },
+      reserves: { orderBy: { numero: "asc" } },
+    },
+  });
 
-  // Si admin et pas de PV → on en crée un brouillon vide à la volée
+  // Admin sans PV → on crée un brouillon vide à la volée
   if (!pv && me.isAdmin) {
-    pv = await db.pvReception.create({
-      data: {
-        chantierId: id,
-        dateReception: new Date(),
+    await db.pvReception.create({
+      data: { chantierId: id, dateReception: new Date() },
+    });
+    pv = await db.pvReception.findUnique({
+      where: { chantierId: id },
+      include: {
+        plans: { orderBy: { ordre: "asc" } },
+        reserves: { orderBy: { numero: "asc" } },
       },
     });
   }
 
-  // Si client et pas de PV → rien à signer
+  // Client sans PV → rien à signer
   if (!pv && me.isClient) {
     return (
       <div>
@@ -99,7 +113,7 @@ export default async function PvReceptionPage({
     );
   }
 
-  // Si client mais PV en brouillon → bloquer
+  // Client mais PV en brouillon → bloquer
   if (pv && me.isClient && pv.statut === "BROUILLON") {
     redirect(`/chantiers/${id}`);
   }
@@ -107,10 +121,10 @@ export default async function PvReceptionPage({
   if (!pv) notFound();
 
   const updateInfosAction = updatePvInfos.bind(null, id);
-  const ajouterReserveAction = ajouterReserve.bind(null, id);
 
   const isAdmin = me.isAdmin;
   const isClient = me.isClient;
+  const editable = isAdmin && pv.statut === "BROUILLON";
   const canAdminSign = isAdmin && pv.statut === "BROUILLON";
   const canClientSign =
     isClient && pv.statut === "ENVOYE_CLIENT" && !pv.signatureClientUrl;
@@ -119,6 +133,10 @@ export default async function PvReceptionPage({
     pv.statut === "SIGNE_CLIENT" &&
     pv.reserves.length > 0 &&
     !pv.reservesLeveeUrl;
+  const canReset = isAdmin && pv.statut !== "BROUILLON";
+
+  // Map des plans pour résoudre planId -> nom dans la liste des réserves
+  const planMap = new Map(pv.plans.map((p) => [p.id, p]));
 
   return (
     <div>
@@ -129,6 +147,15 @@ export default async function PvReceptionPage({
         action={
           <div className="flex items-center gap-2 flex-wrap justify-end">
             {statutBadge(pv.statut)}
+            <Link href={`/chantiers/${id}/pv-reception/print`} target="_blank">
+              <Button size="sm" variant="outline">
+                <Printer size={14} />
+                <span className="hidden sm:inline">Imprimer / PDF</span>
+              </Button>
+            </Link>
+            {isAdmin && (
+              <PvAdminActions chantierId={id} canReset={canReset} />
+            )}
           </div>
         }
       />
@@ -139,11 +166,12 @@ export default async function PvReceptionPage({
           <Card>
             <CardHeader>
               <CardTitle>
-                <ClipboardCheck size={16} className="inline mr-1" /> Procès-verbal
+                <ClipboardCheck size={16} className="inline mr-1" />
+                Informations
               </CardTitle>
             </CardHeader>
             <CardBody>
-              {isAdmin && pv.statut === "BROUILLON" ? (
+              {editable ? (
                 <form action={updateInfosAction} className="space-y-3">
                   <Field label="Date de réception">
                     <Input
@@ -159,9 +187,9 @@ export default async function PvReceptionPage({
                   >
                     <Textarea
                       name="texteRecap"
-                      rows={4}
+                      rows={3}
                       defaultValue={pv.texteRecap ?? ""}
-                      placeholder="Les travaux de gros œuvre sont terminés. La réception est prononcée..."
+                      placeholder="Les travaux de gros œuvre sont terminés..."
                     />
                   </Field>
                   <div className="flex justify-end">
@@ -195,63 +223,105 @@ export default async function PvReceptionPage({
             </CardBody>
           </Card>
 
-          {/* Réserves */}
+          {/* Plans avec puces */}
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                <ImageIcon size={16} className="inline mr-1" />
+                Plans ({pv.plans.length})
+              </CardTitle>
+            </CardHeader>
+            <CardBody className="space-y-4">
+              {pv.plans.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400 italic">
+                  {editable
+                    ? "Importez un plan pour pouvoir cliquer sur la zone du défaut et y placer une puce numérotée."
+                    : "Aucun plan importé."}
+                </p>
+              ) : (
+                pv.plans.map((plan) => {
+                  const pinsForPlan = pv!.reserves
+                    .filter(
+                      (r) =>
+                        r.planId === plan.id &&
+                        r.posX !== null &&
+                        r.posY !== null
+                    )
+                    .map((r) => ({
+                      id: r.id,
+                      numero: r.numero,
+                      posX: r.posX as number,
+                      posY: r.posY as number,
+                      texte: r.texte,
+                      leveLe: r.leveLe,
+                    }));
+                  return (
+                    <PvPlanViewer
+                      key={plan.id}
+                      chantierId={id}
+                      plan={{ id: plan.id, url: plan.url, nom: plan.nom }}
+                      pins={pinsForPlan}
+                      canEdit={editable}
+                    />
+                  );
+                })
+              )}
+              {editable && (
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Importer un nouveau plan
+                  </h4>
+                  <PlanUploadForm chantierId={id} />
+                </div>
+              )}
+            </CardBody>
+          </Card>
+
+          {/* Liste des réserves */}
           <Card>
             <CardHeader>
               <CardTitle>
                 <AlertTriangle size={16} className="inline mr-1" />
                 Réserves ({pv.reserves.length})
+                {pv.reserves.length > 0 && (
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-normal ml-2">
+                    {pv.reserves.filter((r) => r.leveLe).length} levée(s) /{" "}
+                    {pv.reserves.filter((r) => !r.leveLe).length} en attente
+                  </span>
+                )}
               </CardTitle>
             </CardHeader>
-            <CardBody className="space-y-3">
-              {pv.reserves.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400 italic">
-                  Aucune réserve. Réception sans réserve.
-                </p>
-              ) : (
-                <ul className="space-y-1.5">
-                  {pv.reserves.map((r, i) => {
-                    const removeAction = retirerReserve.bind(null, id, i);
-                    return (
-                      <li
-                        key={i}
-                        className="flex items-start gap-2 p-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900"
-                      >
-                        <span className="text-amber-700 dark:text-amber-400 text-xs font-mono pt-0.5">
-                          {i + 1}.
-                        </span>
-                        <span className="flex-1 text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words">
-                          {r}
-                        </span>
-                        {isAdmin && pv.statut === "BROUILLON" && (
-                          <form action={removeAction}>
-                            <button
-                              type="submit"
-                              aria-label="Retirer cette réserve"
-                              className="text-slate-400 hover:text-red-600"
-                            >
-                              <X size={14} />
-                            </button>
-                          </form>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+            <CardBody className="space-y-4">
+              <ReserveList
+                chantierId={id}
+                canEdit={isAdmin}
+                reserves={pv.reserves.map((r) => ({
+                  id: r.id,
+                  numero: r.numero,
+                  texte: r.texte,
+                  zone: r.zone,
+                  photos: r.photos,
+                  planNom: r.planId
+                    ? planMap.get(r.planId)?.nom ?? "Plan"
+                    : null,
+                  hasPosition: r.posX !== null && r.posY !== null,
+                  leveLe: r.leveLe,
+                  leveNote: r.leveNote,
+                }))}
+              />
 
-              {isAdmin && pv.statut === "BROUILLON" && (
-                <form action={ajouterReserveAction} className="flex gap-2">
-                  <Input
-                    type="text"
-                    name="reserve"
-                    placeholder="Décrire une réserve..."
-                    className="flex-1"
-                  />
-                  <Button type="submit" size="sm" variant="secondary">
-                    Ajouter
-                  </Button>
-                </form>
+              {editable && (
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    <Plus size={14} className="inline mr-1" />
+                    Ajouter une réserve sans plan
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 italic mb-2">
+                    Pour placer une puce sur un plan : cliquez directement sur
+                    l&apos;image du plan ci-dessus.
+                  </p>
+                  <ReserveForm chantierId={id} />
+                </div>
               )}
             </CardBody>
           </Card>
@@ -342,7 +412,7 @@ export default async function PvReceptionPage({
                 )}
               </div>
 
-              {/* Signature levée des réserves (uniquement si réserves) */}
+              {/* Levée des réserves (uniquement si réserves) */}
               {pv.reserves.length > 0 && (
                 <div>
                   <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">
@@ -396,14 +466,30 @@ export default async function PvReceptionPage({
             </CardHeader>
             <CardBody className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-600 dark:text-slate-400">Statut</span>
+                <span className="text-slate-600 dark:text-slate-400">
+                  Statut
+                </span>
                 <span>{statutBadge(pv.statut)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600 dark:text-slate-400">
+                  Plans
+                </span>
+                <strong>{pv.plans.length}</strong>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-600 dark:text-slate-400">
                   Réserves
                 </span>
                 <strong>{pv.reserves.length}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600 dark:text-slate-400">
+                  Levées
+                </span>
+                <strong className="text-green-700">
+                  {pv.reserves.filter((r) => r.leveLe).length}
+                </strong>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-600 dark:text-slate-400">
@@ -432,7 +518,7 @@ export default async function PvReceptionPage({
               {pv.reserves.length > 0 && (
                 <div className="flex justify-between">
                   <span className="text-slate-600 dark:text-slate-400">
-                    Levée des réserves
+                    Sig. levée
                   </span>
                   <span>
                     {pv.reservesLeveeUrl ? (

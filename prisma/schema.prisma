@@ -720,15 +720,14 @@ enum StatutPvReception {
 }
 
 /// Procès-verbal de réception du chantier. Le client signe la
-/// réception, peut lister des réserves. Quand toutes les réserves sont
-/// levées, le PV passe en RESERVES_LEVEES et le chantier peut être
-/// archivé proprement.
+/// réception, peut lister des réserves (avec photos, position sur plan,
+/// zone). Quand toutes les réserves sont levées, le PV passe en
+/// RESERVES_LEVEES et le chantier peut être archivé proprement.
 model PvReception {
   id                  String           @id @default(cuid())
   chantierId          String
   chantier            Chantier         @relation(fields: [chantierId], references: [id], onDelete: Cascade)
   dateReception       DateTime         @db.Date
-  reserves            String[]         @default([])
   texteRecap          String?
   signatureAdminUrl   String?
   signatureAdminLe    DateTime?
@@ -740,5 +739,51 @@ model PvReception {
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
 
+  plans               PvPlan[]
+  reserves            PvReserve[]
+
   @@unique([chantierId])
+}
+
+/// Plan attaché au PV (image PNG/JPG ou PDF). Sert à placer des puces
+/// numérotées correspondant aux réserves.
+model PvPlan {
+  id        String      @id @default(cuid())
+  pvId      String
+  pv        PvReception @relation(fields: [pvId], references: [id], onDelete: Cascade)
+  url       String
+  nom       String?
+  mimeType  String?
+  ordre     Int         @default(0)
+  createdAt DateTime    @default(now())
+
+  reserves  PvReserve[]
+}
+
+/// Une réserve (élément non-conforme constaté à la réception). Peut être
+/// liée à une position sur un plan (puce numérotée) ou simplement à une
+/// zone textuelle (ex: "Cuisine"). Photos + commentaire pour documenter.
+model PvReserve {
+  id        String      @id @default(cuid())
+  pvId      String
+  pv        PvReception @relation(fields: [pvId], references: [id], onDelete: Cascade)
+  numero    Int         // 1, 2, 3... — affiché sur le plan et dans le rapport
+  texte     String
+  photos    String[]    @default([])
+  zone      String?     // ex: "Cuisine", "Chambre 1" — utilisé sans plan ou en complément
+
+  // Position sur un plan (optionnelle)
+  planId    String?
+  plan      PvPlan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
+  posX      Float?      // 0..1 (relatif à la largeur du plan)
+  posY      Float?      // 0..1 (relatif à la hauteur du plan)
+
+  // Levée individuelle
+  leveLe    DateTime?
+  leveNote  String?
+
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([pvId, numero])
 }
