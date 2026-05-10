@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Pencil, Trash2, Save, X, Calendar } from "lucide-react";
+import Image from "next/image";
+import { useRef, useState, useTransition } from "react";
+import { Pencil, Trash2, Save, X, Calendar, Camera, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Field, Select } from "@/components/ui/Input";
+import { useToast } from "@/components/Toast";
 
 type Pointage = {
   id: string;
@@ -12,6 +14,7 @@ type Pointage = {
   chantierId: string | null;
   chantierNom: string | null;
   note: string | null;
+  photo?: string | null;
 };
 
 type Chantier = { id: string; nom: string };
@@ -34,11 +37,15 @@ export function PointageHistory({
   chantiers,
   onUpdate,
   onDelete,
+  onUploadPhoto,
+  onRemovePhoto,
 }: {
   pointages: Pointage[];
   chantiers: Chantier[];
   onUpdate: (id: string, formData: FormData) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onUploadPhoto?: (id: string, formData: FormData) => Promise<void>;
+  onRemovePhoto?: (id: string) => Promise<void>;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -68,6 +75,8 @@ export function PointageHistory({
             pointage={p}
             onEdit={() => setEditingId(p.id)}
             onDelete={onDelete}
+            onUploadPhoto={onUploadPhoto}
+            onRemovePhoto={onRemovePhoto}
           />
         )
       )}
@@ -79,59 +88,159 @@ function DisplayRow({
   pointage: p,
   onEdit,
   onDelete,
+  onUploadPhoto,
+  onRemovePhoto,
 }: {
   pointage: Pointage;
   onEdit: () => void;
   onDelete: (id: string) => Promise<void>;
+  onUploadPhoto?: (id: string, formData: FormData) => Promise<void>;
+  onRemovePhoto?: (id: string) => Promise<void>;
 }) {
   const [pending, startTransition] = useTransition();
+  const [showPhoto, setShowPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const toast = useToast();
+
+  function onPhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !onUploadPhoto) return;
+    const fd = new FormData();
+    fd.append("photo", file);
+    startTransition(async () => {
+      try {
+        await onUploadPhoto(p.id, fd);
+        toast.success("Photo ajoutée");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Erreur");
+      }
+    });
+    // Reset input pour pouvoir re-uploader le même fichier si besoin
+    e.target.value = "";
+  }
+
+  function onRemove() {
+    if (!onRemovePhoto || !p.photo) return;
+    if (!confirm("Retirer la photo de ce pointage ?")) return;
+    startTransition(async () => {
+      try {
+        await onRemovePhoto(p.id);
+        setShowPhoto(false);
+        toast.success("Photo retirée");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Erreur");
+      }
+    });
+  }
+
   return (
-    <li className="py-2.5 flex items-center gap-3">
-      <div className="w-7 h-7 shrink-0 rounded-full bg-brand-50 dark:bg-brand-200/20 text-brand-700 flex items-center justify-center">
-        <Calendar size={13} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-medium text-slate-900 dark:text-slate-100 capitalize">
-            {dateFmt.format(new Date(p.date))}
-          </span>
-          <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-            {joursLabel(p.joursTravailles)}
-          </span>
-          {p.chantierNom && (
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              · {p.chantierNom}
+    <li className="py-2.5">
+      <div className="flex items-center gap-3">
+        <div className="w-7 h-7 shrink-0 rounded-full bg-brand-50 dark:bg-brand-200/20 text-brand-700 flex items-center justify-center">
+          <Calendar size={13} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-slate-900 dark:text-slate-100 capitalize">
+              {dateFmt.format(new Date(p.date))}
             </span>
+            <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+              {joursLabel(p.joursTravailles)}
+            </span>
+            {p.chantierNom && (
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                · {p.chantierNom}
+              </span>
+            )}
+            {p.photo && (
+              <button
+                type="button"
+                onClick={() => setShowPhoto((v) => !v)}
+                className="text-xs text-brand-600 dark:text-brand-400 hover:underline inline-flex items-center gap-0.5"
+                title="Voir / cacher la photo"
+              >
+                <ImageIcon size={11} />
+                {showPhoto ? "Cacher" : "Voir photo"}
+              </button>
+            )}
+          </div>
+          {p.note && (
+            <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 italic truncate">
+              {p.note}
+            </div>
           )}
         </div>
-        {p.note && (
-          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 italic truncate">
-            {p.note}
-          </div>
+
+        {onUploadPhoto && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={onPhotoSelected}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={pending}
+              className={`p-1.5 ${p.photo ? "text-brand-600 dark:text-brand-400" : "text-slate-400 dark:text-slate-500 hover:text-brand-600"}`}
+              title={p.photo ? "Remplacer la photo" : "Ajouter une photo"}
+            >
+              <Camera size={14} />
+            </button>
+          </>
         )}
+        <button
+          onClick={onEdit}
+          disabled={pending}
+          className="text-slate-500 dark:text-slate-400 hover:text-brand-600 p-1.5"
+          title="Modifier"
+        >
+          <Pencil size={14} />
+        </button>
+        <button
+          onClick={() => {
+            if (
+              !confirm(
+                `Supprimer le pointage du ${dateFmt.format(new Date(p.date))} ?`
+              )
+            )
+              return;
+            startTransition(async () => {
+              await onDelete(p.id);
+            });
+          }}
+          disabled={pending}
+          className="text-slate-400 dark:text-slate-500 hover:text-red-600 p-1.5"
+          title="Supprimer"
+        >
+          <Trash2 size={14} />
+        </button>
       </div>
-      <button
-        onClick={onEdit}
-        disabled={pending}
-        className="text-slate-500 dark:text-slate-400 hover:text-brand-600 p-1.5"
-        title="Modifier"
-      >
-        <Pencil size={14} />
-      </button>
-      <button
-        onClick={() => {
-          if (!confirm(`Supprimer le pointage du ${dateFmt.format(new Date(p.date))} ?`))
-            return;
-          startTransition(async () => {
-            await onDelete(p.id);
-          });
-        }}
-        disabled={pending}
-        className="text-slate-400 dark:text-slate-500 hover:text-red-600 p-1.5"
-        title="Supprimer"
-      >
-        <Trash2 size={14} />
-      </button>
+
+      {/* Photo dépliée */}
+      {showPhoto && p.photo && (
+        <div className="mt-2 relative">
+          <Image
+            src={p.photo}
+            alt="Photo du pointage"
+            width={400}
+            height={400}
+            className="rounded-md border border-slate-200 dark:border-slate-800 max-w-full h-auto object-contain bg-slate-50 dark:bg-slate-900"
+          />
+          {onRemovePhoto && (
+            <button
+              type="button"
+              onClick={onRemove}
+              disabled={pending}
+              className="mt-1 text-[11px] text-red-600 dark:text-red-400 hover:underline inline-flex items-center gap-1"
+            >
+              <Trash2 size={11} /> Retirer la photo
+            </button>
+          )}
+        </div>
+      )}
     </li>
   );
 }

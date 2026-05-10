@@ -99,6 +99,60 @@ export async function updatePointage(id: string, formData: FormData) {
   revalidatePath("/dashboard");
 }
 
+/**
+ * Téléverse une photo (preuve de présence) attachée à un pointage.
+ * Si une photo existait déjà, elle est remplacée et l'ancienne supprimée
+ * du disque.
+ */
+export async function uploadPointagePhoto(id: string, formData: FormData) {
+  const file = formData.get("photo") as File | null;
+  if (!file || file.size === 0) {
+    throw new Error("Aucune photo reçue");
+  }
+  const { saveUploadedPhoto, deleteUploadedPhoto } = await import("@/lib/upload");
+
+  const existing = await db.pointage.findUnique({
+    where: { id },
+    select: { ouvrierId: true, photo: true },
+  });
+  if (!existing) throw new Error("Pointage introuvable");
+
+  if (existing.photo) {
+    await deleteUploadedPhoto(existing.photo);
+  }
+
+  const photoPath = await saveUploadedPhoto(file, "pointages");
+
+  await db.pointage.update({
+    where: { id },
+    data: { photo: photoPath },
+  });
+
+  revalidatePath("/pointage");
+  revalidatePath(`/ouvriers/${existing.ouvrierId}`);
+}
+
+/**
+ * Retire la photo d'un pointage (la supprime du disque + nettoie le champ).
+ */
+export async function removePointagePhoto(id: string) {
+  const { deleteUploadedPhoto } = await import("@/lib/upload");
+  const existing = await db.pointage.findUnique({
+    where: { id },
+    select: { ouvrierId: true, photo: true },
+  });
+  if (!existing) return;
+  if (existing.photo) {
+    await deleteUploadedPhoto(existing.photo);
+  }
+  await db.pointage.update({
+    where: { id },
+    data: { photo: null },
+  });
+  revalidatePath("/pointage");
+  revalidatePath(`/ouvriers/${existing.ouvrierId}`);
+}
+
 // =====================================================
 // Lecture des pointages d'un mois pour UN ouvrier (utilisé par le calendrier
 // pour charger à la volée les mois suivants/précédents sans recharger la page)
@@ -298,9 +352,14 @@ export async function addPointagesRange(formData: FormData) {
 export async function deletePointage(id: string) {
   const existing = await db.pointage.findUnique({
     where: { id },
-    select: { ouvrierId: true },
+    select: { ouvrierId: true, photo: true },
   });
   if (!existing) return;
+
+  if (existing.photo) {
+    const { deleteUploadedPhoto } = await import("@/lib/upload");
+    await deleteUploadedPhoto(existing.photo);
+  }
 
   await db.pointage.delete({ where: { id } });
 

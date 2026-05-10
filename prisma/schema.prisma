@@ -147,6 +147,7 @@ model Pointage {
   chantierId      String?
   chantier        Chantier? @relation(fields: [chantierId], references: [id], onDelete: SetNull)
   note            String?
+  photo           String?
   createdAt       DateTime @default(now())
 
   @@unique([ouvrierId, date])

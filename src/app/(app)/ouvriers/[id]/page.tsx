@@ -24,6 +24,8 @@ import {
   updatePointage,
   deletePointage,
   savePointageBatch,
+  uploadPointagePhoto,
+  removePointagePhoto,
 } from "../../pointage/actions";
 import { formatEuro, formatDate } from "@/lib/utils";
 
@@ -191,10 +193,13 @@ export default async function OuvrierDetailPage({
                   chantierId: p.chantierId,
                   chantierNom: p.chantier?.nom ?? null,
                   note: p.note,
+                  photo: p.photo,
                 }))}
                 chantiers={chantiers}
                 onUpdate={updatePointage}
                 onDelete={deletePointage}
+                onUploadPhoto={uploadPointagePhoto}
+                onRemovePhoto={removePointagePhoto}
               />
             </CardBody>
           </Card>
