@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Input, Field, Select } from "@/components/ui/Input";
+import { ResettingForm } from "@/components/ResettingForm";
 import { createEquipe } from "./actions";
 
 export default async function EquipesListPage() {
@@ -30,7 +31,11 @@ export default async function EquipesListPage() {
 
       <Card className="mb-5">
         <CardBody>
-          <form action={createEquipe} className="grid grid-cols-1 md:grid-cols-12 gap-3">
+          <ResettingForm
+            action={createEquipe}
+            successMessage="Équipe créée"
+            className="grid grid-cols-1 md:grid-cols-12 gap-3"
+          >
             <div className="md:col-span-5">
               <Field label="Nom de l'équipe" required>
                 <Input name="nom" placeholder="Équipe Maçonnerie A..." required />
@@ -53,7 +58,7 @@ export default async function EquipesListPage() {
                 <Plus size={16} /> Créer
               </Button>
             </div>
-          </form>
+          </ResettingForm>
         </CardBody>
       </Card>
 

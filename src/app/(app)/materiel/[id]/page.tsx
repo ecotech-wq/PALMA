@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { MaterielForm } from "../MaterielForm";
 import { MaterielStatutBadge } from "../MaterielStatutBadge";
+import { ResettingForm } from "@/components/ResettingForm";
 import { updateMateriel, deleteMateriel, addAccessoire, deleteAccessoire } from "../actions";
 import { formatDate } from "@/lib/utils";
 
@@ -145,9 +146,9 @@ export default async function MaterielDetailPage({
               </div>
             )}
 
-            <form
-              key={`acc-${materiel.accessoires.length}`}
+            <ResettingForm
               action={addAccAction}
+              successMessage="Accessoire ajouté"
               className="grid grid-cols-1 sm:grid-cols-12 gap-2"
             >
               <div className="sm:col-span-3">
@@ -167,7 +168,7 @@ export default async function MaterielDetailPage({
                   +
                 </Button>
               </div>
-            </form>
+            </ResettingForm>
           </CardBody>
         </Card>
 
