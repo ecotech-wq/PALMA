@@ -17,7 +17,7 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { requireAuth } from "@/lib/auth-helpers";
+import { requireAuth, getAccessibleChantierIds } from "@/lib/auth-helpers";
 
 const meteoIconMap = {
   SOLEIL: { Icon: Sun, color: "text-yellow-600" },
@@ -41,12 +41,16 @@ export default async function RapportsListPage({
 }: {
   searchParams: Promise<{ q?: string; chantier?: string }>;
 }) {
-  await requireAuth();
+  const me = await requireAuth();
+  const accessibleIds = await getAccessibleChantierIds(me);
   const { q, chantier } = await searchParams;
 
   const [rapports, chantiers] = await Promise.all([
     db.rapportChantier.findMany({
       where: {
+        ...(accessibleIds !== null
+          ? { chantierId: { in: accessibleIds } }
+          : {}),
         ...(chantier ? { chantierId: chantier } : {}),
         ...(q && q.trim().length > 0
           ? { texte: { contains: q, mode: "insensitive" } }
@@ -60,6 +64,7 @@ export default async function RapportsListPage({
       take: 100,
     }),
     db.chantier.findMany({
+      where: accessibleIds !== null ? { id: { in: accessibleIds } } : {},
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),

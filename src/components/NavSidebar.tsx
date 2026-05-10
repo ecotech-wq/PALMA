@@ -29,27 +29,32 @@ import {
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean };
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  adminOnly?: boolean;
+  clientHidden?: boolean;
+};
 
 const items: NavItem[] = [
   { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
-  { href: "/equipes", label: "Équipes", icon: Users },
-  { href: "/ouvriers", label: "Ouvriers", icon: HardHat },
-  { href: "/materiel", label: "Matériel", icon: Wrench },
-  { href: "/sorties", label: "Sorties / Retours", icon: ArrowLeftRight },
-  { href: "/locations", label: "Locations / Prêts", icon: Truck },
-  { href: "/commandes", label: "Commandes", icon: ShoppingCart },
-  { href: "/demandes", label: "Demandes matériel", icon: Package },
-  { href: "/pointage", label: "Pointage", icon: CheckSquare },
+  { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true },
+  { href: "/ouvriers", label: "Ouvriers", icon: HardHat, clientHidden: true },
+  { href: "/materiel", label: "Matériel", icon: Wrench, clientHidden: true },
+  { href: "/sorties", label: "Sorties / Retours", icon: ArrowLeftRight, clientHidden: true },
+  { href: "/locations", label: "Locations / Prêts", icon: Truck, clientHidden: true },
+  { href: "/commandes", label: "Commandes", icon: ShoppingCart, clientHidden: true },
+  { href: "/demandes", label: "Demandes matériel", icon: Package, clientHidden: true },
+  { href: "/pointage", label: "Pointage", icon: CheckSquare, clientHidden: true },
   { href: "/rapports", label: "Rapports", icon: FileText },
   { href: "/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/paie", label: "Paie", icon: Banknote, adminOnly: true },
-  { href: "/planning", label: "Planning", icon: Calendar },
+  { href: "/planning", label: "Planning", icon: Calendar, clientHidden: true },
 ];
 
-// Barre de tab mobile : Paie est admin-only, Chantiers prend sa place
-// pour les chefs
+// Barre de tab mobile, variante par rôle
 const mobilePrimaryAdmin: NavItem[] = [
   { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
@@ -62,19 +67,25 @@ const mobilePrimaryChef: NavItem[] = [
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
   { href: "/ouvriers", label: "Ouvriers", icon: HardHat },
 ];
-
-// Tout le reste, accessible via le bouton "Plus"
-const mobileMore = [
+const mobilePrimaryClient: NavItem[] = [
+  { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
-  { href: "/equipes", label: "Équipes", icon: Users },
-  { href: "/materiel", label: "Matériel", icon: Wrench },
-  { href: "/sorties", label: "Sorties / Retours", icon: ArrowLeftRight },
-  { href: "/locations", label: "Locations / Prêts", icon: Truck },
-  { href: "/commandes", label: "Commandes", icon: ShoppingCart },
-  { href: "/planning", label: "Planning", icon: Calendar },
   { href: "/rapports", label: "Rapports", icon: FileText },
   { href: "/incidents", label: "Incidents", icon: AlertTriangle },
-  { href: "/demandes", label: "Demandes matériel", icon: Package },
+];
+
+// Tout le reste, accessible via le bouton "Plus"
+const mobileMore: NavItem[] = [
+  { href: "/chantiers", label: "Chantiers", icon: Hammer },
+  { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true },
+  { href: "/materiel", label: "Matériel", icon: Wrench, clientHidden: true },
+  { href: "/sorties", label: "Sorties / Retours", icon: ArrowLeftRight, clientHidden: true },
+  { href: "/locations", label: "Locations / Prêts", icon: Truck, clientHidden: true },
+  { href: "/commandes", label: "Commandes", icon: ShoppingCart, clientHidden: true },
+  { href: "/planning", label: "Planning", icon: Calendar, clientHidden: true },
+  { href: "/rapports", label: "Rapports", icon: FileText },
+  { href: "/incidents", label: "Incidents", icon: AlertTriangle },
+  { href: "/demandes", label: "Demandes matériel", icon: Package, clientHidden: true },
   { href: "/profil", label: "Mon profil", icon: UserCircle },
 ];
 
@@ -179,6 +190,7 @@ export function DesktopSidebar({
 }) {
   const pathname = usePathname();
   const isAdmin = userRole === "ADMIN";
+  const isClient = userRole === "CLIENT";
 
   return (
     <aside className="hidden md:flex w-60 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
@@ -209,7 +221,7 @@ export function DesktopSidebar({
       </div>
       <nav className="flex-1 overflow-y-auto py-3">
         {items
-          .filter((it) => !it.adminOnly || isAdmin)
+          .filter((it) => (!it.adminOnly || isAdmin) && (!it.clientHidden || !isClient))
           .map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname?.startsWith(href + "/");
           const badge = getBadgeForHref(href, navBadges);
@@ -306,10 +318,12 @@ export function DesktopSidebar({
 
 export function MobileBottomNav({
   isAdmin,
+  isClient,
   pendingUsersCount,
   navBadges,
 }: {
   isAdmin?: boolean;
+  isClient?: boolean;
   pendingUsersCount?: number;
   navBadges?: NavBadges;
 }) {
@@ -332,9 +346,18 @@ export function MobileBottomNav({
     }
   }, [moreOpen]);
 
-  const mobilePrimary = isAdmin ? mobilePrimaryAdmin : mobilePrimaryChef;
+  const mobilePrimary = isClient
+    ? mobilePrimaryClient
+    : isAdmin
+      ? mobilePrimaryAdmin
+      : mobilePrimaryChef;
 
-  const moreActive = mobileMore.some(
+  // Filtre des items du drawer "Plus" pour le client
+  const filteredMobileMore = mobileMore.filter(
+    (m) => !m.clientHidden || !isClient
+  );
+
+  const moreActive = filteredMobileMore.some(
     (i) => pathname === i.href || pathname?.startsWith(i.href + "/")
   );
 
@@ -431,7 +454,7 @@ export function MobileBottomNav({
             </div>
 
             <nav className="p-2">
-              {mobileMore
+              {filteredMobileMore
                 .filter((m) => !mobilePrimary.some((p) => p.href === m.href))
                 .map(({ href, label, icon: Icon }) => {
                 const active =

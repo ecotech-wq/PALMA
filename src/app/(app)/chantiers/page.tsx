@@ -16,10 +16,19 @@ export default async function ChantiersListPage({
 }) {
   const { q, statut } = await searchParams;
   const me = await requireAuth();
+  const accessibleIds = me.isClient
+    ? (
+        await db.user.findUnique({
+          where: { id: me.id },
+          select: { chantiersClient: { select: { id: true } } },
+        })
+      )?.chantiersClient.map((c) => c.id) ?? []
+    : null;
 
   const chantiers = await db.chantier.findMany({
     where: {
       AND: [
+        accessibleIds !== null ? { id: { in: accessibleIds } } : {},
         statut ? { statut: statut as never } : {},
         q
           ? {
@@ -45,15 +54,21 @@ export default async function ChantiersListPage({
     <div>
       <PageHeader
         title="Chantiers"
-        description="Tous les chantiers de l'entreprise"
+        description={
+          me.isClient
+            ? "Vos chantiers"
+            : "Tous les chantiers de l'entreprise"
+        }
         action={
-          <Link href="/chantiers/nouveau">
-            <Button>
-              <Plus size={16} />
-              <span className="hidden sm:inline">Nouveau chantier</span>
-              <span className="sm:hidden">Ajouter</span>
-            </Button>
-          </Link>
+          me.isAdmin && (
+            <Link href="/chantiers/nouveau">
+              <Button>
+                <Plus size={16} />
+                <span className="hidden sm:inline">Nouveau chantier</span>
+                <span className="sm:hidden">Ajouter</span>
+              </Button>
+            </Link>
+          )
         }
       />
 

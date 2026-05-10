@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
-import { requireAuth } from "@/lib/auth-helpers";
+import { requireAuth, getAccessibleChantierIds } from "@/lib/auth-helpers";
 import {
   GraviteBadge,
   StatutBadge,
@@ -31,18 +31,22 @@ export default async function IncidentsListPage({
     gravite?: string;
   }>;
 }) {
-  await requireAuth();
+  const me = await requireAuth();
+  const accessibleIds = await getAccessibleChantierIds(me);
   const { q, statut, chantier, gravite } = await searchParams;
 
   const where: {
     statut?: "OUVERT" | "EN_COURS" | "RESOLU";
-    chantierId?: string;
+    chantierId?: string | { in: string[] };
     gravite?: "INFO" | "ATTENTION" | "URGENT";
     OR?: {
       titre?: { contains: string; mode: "insensitive" };
       description?: { contains: string; mode: "insensitive" };
     }[];
   } = {};
+  if (accessibleIds !== null) {
+    where.chantierId = { in: accessibleIds };
+  }
   if (statut && ["OUVERT", "EN_COURS", "RESOLU"].includes(statut)) {
     where.statut = statut as "OUVERT" | "EN_COURS" | "RESOLU";
   }
@@ -68,11 +72,13 @@ export default async function IncidentsListPage({
       take: 100,
     }),
     db.chantier.findMany({
+      where: accessibleIds !== null ? { id: { in: accessibleIds } } : {},
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),
     db.incident.groupBy({
       by: ["statut"],
+      where: accessibleIds !== null ? { chantierId: { in: accessibleIds } } : {},
       _count: true,
     }),
   ]);
@@ -87,13 +93,15 @@ export default async function IncidentsListPage({
         title="Incidents"
         description="Problèmes terrain remontés par les chefs de chantier"
         action={
-          <Link href="/incidents/nouveau">
-            <Button>
-              <Plus size={16} />
-              <span className="hidden sm:inline">Signaler un incident</span>
-              <span className="sm:hidden">Signaler</span>
-            </Button>
-          </Link>
+          !me.isClient && (
+            <Link href="/incidents/nouveau">
+              <Button>
+                <Plus size={16} />
+                <span className="hidden sm:inline">Signaler un incident</span>
+                <span className="sm:hidden">Signaler</span>
+              </Button>
+            </Link>
+          )
         }
       />
 

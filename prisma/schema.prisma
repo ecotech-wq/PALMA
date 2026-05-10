@@ -16,6 +16,7 @@ datasource db {
 enum Role {
   ADMIN
   CHEF
+  CLIENT
 }
 
 enum UserStatus {
@@ -35,6 +36,7 @@ model User {
   updatedAt    DateTime   @updatedAt
 
   chantiersGeres     Chantier[]           @relation("ChefChantier")
+  chantiersClient    Chantier[]           @relation("ChantierClients")
   passwordResets     PasswordResetToken[]
   rapportsCrees      RapportChantier[]
   incidentsRapportes Incident[]           @relation("IncidentReporter")
@@ -96,6 +98,7 @@ model Chantier {
   rapports         RapportChantier[]
   incidents        Incident[]
   demandesMateriel DemandeMateriel[]
+  clients          User[]            @relation("ChantierClients")
 }
 
 model Equipe {

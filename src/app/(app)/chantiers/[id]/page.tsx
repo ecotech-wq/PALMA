@@ -12,7 +12,7 @@ import { updateChantier, deleteChantier, affecterEquipeAuChantier } from "../act
 import { CommandeStatutBadge } from "@/app/(app)/commandes/CommandeStatutBadge";
 import { formatEuro, formatDate } from "@/lib/utils";
 import { getFinanceChantier } from "@/lib/finances-chantier";
-import { requireAuth } from "@/lib/auth-helpers";
+import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
 import { RapportsSection } from "@/app/(app)/rapports/RapportsSection";
 
 export default async function ChantierDetailPage({
@@ -22,6 +22,7 @@ export default async function ChantierDetailPage({
 }) {
   const { id } = await params;
   const me = await requireAuth();
+  await requireChantierAccess(me, id);
   const [chantier, chefs, toutesEquipes, commandes, locations, finance, rapports] = await Promise.all([
     db.chantier.findUnique({
       where: { id },
@@ -78,19 +79,38 @@ export default async function ChantierDetailPage({
         action={
           <div className="flex items-center gap-2">
             <ChantierStatutBadge statut={chantier.statut} />
-            <form action={deleteAction}>
-              <Button type="submit" variant="danger" size="sm">
-                <Trash2 size={14} />
-                <span className="hidden sm:inline">Supprimer</span>
-              </Button>
-            </form>
+            {me.isAdmin && (
+              <form action={deleteAction}>
+                <Button type="submit" variant="danger" size="sm">
+                  <Trash2 size={14} />
+                  <span className="hidden sm:inline">Supprimer</span>
+                </Button>
+              </form>
+            )}
           </div>
         }
       />
 
       <div className={`grid grid-cols-1 ${me.isAdmin ? "lg:grid-cols-3" : ""} gap-5`}>
         <div className={me.isAdmin ? "lg:col-span-2 space-y-5" : "space-y-5"}>
-          <Card>
+          {me.isClient && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Informations</CardTitle>
+              </CardHeader>
+              <CardBody className="text-sm text-slate-700 dark:text-slate-300 space-y-2">
+                {chantier.adresse && <div><strong className="text-xs uppercase tracking-wide text-slate-500">Adresse</strong><br/>{chantier.adresse}</div>}
+                {chantier.description && <div><strong className="text-xs uppercase tracking-wide text-slate-500">Description</strong><br/>{chantier.description}</div>}
+                {(chantier.dateDebut || chantier.dateFin) && (
+                  <div>
+                    <strong className="text-xs uppercase tracking-wide text-slate-500">Période</strong><br/>
+                    {chantier.dateDebut ? formatDate(chantier.dateDebut) : "?"} → {chantier.dateFin ? formatDate(chantier.dateFin) : "?"}
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          )}
+          {!me.isClient && <Card>
             <CardHeader>
               <CardTitle>Informations</CardTitle>
             </CardHeader>
@@ -113,9 +133,9 @@ export default async function ChantierDetailPage({
                 isAdmin={me.isAdmin}
               />
             </CardBody>
-          </Card>
+          </Card>}
 
-          <Card>
+          {!me.isClient && <Card>
             <CardHeader>
               <CardTitle>Équipes affectées</CardTitle>
             </CardHeader>
@@ -183,7 +203,7 @@ export default async function ChantierDetailPage({
                 </form>
               )}
             </CardBody>
-          </Card>
+          </Card>}
 
           {/* Rapports de chantier journaliers */}
           <Card>
@@ -211,7 +231,7 @@ export default async function ChantierDetailPage({
             </CardBody>
           </Card>
 
-          <Card>
+          {!me.isClient && <Card>
             <CardHeader className="flex items-center justify-between">
               <CardTitle>Commandes ({commandes.length})</CardTitle>
               <Link href={`/commandes/nouvelle?chantierId=${id}`}>
@@ -253,9 +273,9 @@ export default async function ChantierDetailPage({
                 </ul>
               )}
             </CardBody>
-          </Card>
+          </Card>}
 
-          <Card>
+          {!me.isClient && <Card>
             <CardHeader className="flex items-center justify-between">
               <CardTitle>Locations / prêts ({locations.length})</CardTitle>
               <Link href="/locations/nouvelle">
@@ -311,7 +331,7 @@ export default async function ChantierDetailPage({
                 </ul>
               )}
             </CardBody>
-          </Card>
+          </Card>}
         </div>
 
         {me.isAdmin && (

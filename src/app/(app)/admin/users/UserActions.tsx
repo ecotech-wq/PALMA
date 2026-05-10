@@ -5,13 +5,15 @@ import {
   Check,
   X,
   Trash2,
-  Shield,
-  ShieldOff,
   RotateCcw,
   KeyRound,
   Copy,
+  Hammer,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useToast } from "@/components/Toast";
 
 interface ResetResult {
   url: string;
@@ -20,27 +22,61 @@ interface ResetResult {
   userEmail: string;
 }
 
+type ChantierLite = { id: string; nom: string };
+
 export function UserActions({
   userId,
   status,
   role,
   isMe,
+  allChantiers,
+  assignedChantierIds,
   onApprove,
   onRevoke,
   onDelete,
   onChangeRole,
   onResetPassword,
+  onSetClientChantiers,
 }: {
   userId: string;
   status: string;
   role: string;
   isMe: boolean;
+  allChantiers: ChantierLite[];
+  assignedChantierIds: string[];
   onApprove: (id: string) => Promise<void>;
   onRevoke: (id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onChangeRole: (id: string, role: string) => Promise<void>;
   onResetPassword: (id: string) => Promise<ResetResult>;
+  onSetClientChantiers: (id: string, chantierIds: string[]) => Promise<void>;
 }) {
+  const toast = useToast();
+  const [showChantiers, setShowChantiers] = useState(false);
+  const [selectedChantiers, setSelectedChantiers] = useState<Set<string>>(
+    new Set(assignedChantierIds)
+  );
+
+  function toggleChantier(id: string) {
+    setSelectedChantiers((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function saveChantiers() {
+    startTransition(async () => {
+      try {
+        await onSetClientChantiers(userId, Array.from(selectedChantiers));
+        toast.success("Chantiers du client mis à jour");
+        setShowChantiers(false);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Erreur");
+      }
+    });
+  }
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [resetResult, setResetResult] = useState<ResetResult | null>(null);
@@ -187,23 +223,34 @@ export function UserActions({
         )}
 
         {!isMe && (
+          <select
+            value={role}
+            onChange={(e) =>
+              run(() => onChangeRole(userId, e.target.value))
+            }
+            disabled={pending}
+            className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
+            title="Rôle"
+          >
+            <option value="ADMIN">Admin</option>
+            <option value="CHEF">Chef de chantier</option>
+            <option value="CLIENT">Client</option>
+          </select>
+        )}
+
+        {role === "CLIENT" && !isMe && (
           <Button
             size="sm"
             variant="outline"
-            onClick={() =>
-              run(() => onChangeRole(userId, role === "ADMIN" ? "CHEF" : "ADMIN"))
-            }
+            onClick={() => setShowChantiers((v) => !v)}
             disabled={pending}
-            title={
-              role === "ADMIN"
-                ? "Rétrograder en chef de chantier"
-                : "Promouvoir en administrateur"
-            }
+            title="Choisir les chantiers visibles par ce client"
           >
-            {role === "ADMIN" ? <ShieldOff size={14} /> : <Shield size={14} />}
+            <Hammer size={14} />
             <span className="hidden md:inline">
-              {role === "ADMIN" ? "Retirer admin" : "Faire admin"}
+              Chantiers ({selectedChantiers.size})
             </span>
+            {showChantiers ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </Button>
         )}
 
@@ -222,6 +269,61 @@ export function UserActions({
           </Button>
         )}
       </div>
+
+      {/* Panneau d'assignation chantiers (visible uniquement pour CLIENT) */}
+      {role === "CLIENT" && showChantiers && (
+        <div className="w-full max-w-md mt-2 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3">
+          <div className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">
+            Chantiers visibles par ce client
+          </div>
+          {allChantiers.length === 0 ? (
+            <p className="text-xs text-slate-500 dark:text-slate-400 italic">
+              Aucun chantier dans le système.
+            </p>
+          ) : (
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {allChantiers.map((c) => (
+                <label
+                  key={c.id}
+                  className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 px-1.5 py-1 rounded"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedChantiers.has(c.id)}
+                    onChange={() => toggleChantier(c.id)}
+                    className="rounded border-slate-400 text-brand-600 focus:ring-brand-500"
+                  />
+                  <span className="text-slate-700 dark:text-slate-300 truncate">
+                    {c.nom}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 mt-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setSelectedChantiers(new Set(assignedChantierIds));
+                setShowChantiers(false);
+              }}
+              disabled={pending}
+            >
+              Annuler
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={saveChantiers}
+              disabled={pending}
+            >
+              Enregistrer
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

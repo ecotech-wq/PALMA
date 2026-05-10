@@ -45,7 +45,7 @@ export async function deleteUser(userId: string) {
   revalidatePath("/admin/users");
 }
 
-const roleSchema = z.enum(["ADMIN", "CHEF"]);
+const roleSchema = z.enum(["ADMIN", "CHEF", "CLIENT"]);
 
 export async function changeUserRole(userId: string, role: string) {
   const me = await ensureAdmin();
@@ -115,4 +115,29 @@ function escapeHtml(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/**
+ * Met à jour la liste des chantiers visibles par un client (M2M).
+ * Réservé aux admins. Le user doit avoir le rôle CLIENT pour que ça
+ * ait du sens, mais on n'empêche pas techniquement (admin peut aussi
+ * être lié, si un jour on veut une dimension "favoris").
+ */
+export async function setClientChantiers(
+  userId: string,
+  chantierIds: string[]
+) {
+  await ensureAdmin();
+  const safeIds = (chantierIds ?? []).filter(
+    (s) => typeof s === "string" && s.length > 0
+  );
+  await db.user.update({
+    where: { id: userId },
+    data: {
+      chantiersClient: {
+        set: safeIds.map((id) => ({ id })),
+      },
+    },
+  });
+  revalidatePath("/admin/users");
 }

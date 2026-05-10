@@ -11,6 +11,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // Compteurs pour les badges de notification dans la nav
   const isAdmin = session.user.role === "ADMIN";
+  const isClient = session.user.role === "CLIENT";
   const today = new Date();
 
   const [
@@ -111,6 +112,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </main>
           <MobileBottomNav
             isAdmin={isAdmin}
+            isClient={isClient}
             pendingUsersCount={pendingUsersCount}
             navBadges={navBadges}
           />

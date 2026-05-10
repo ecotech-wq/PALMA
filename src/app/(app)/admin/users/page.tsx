@@ -11,6 +11,7 @@ import {
   deleteUser,
   changeUserRole,
   adminGenerateResetLink,
+  setClientChantiers,
 } from "./actions";
 
 const statusLabel: Record<string, string> = {
@@ -29,9 +30,18 @@ export default async function AdminUsersPage() {
   const session = await auth();
   const meId = session?.user?.id ?? "";
 
-  const users = await db.user.findMany({
-    orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-  });
+  const [users, allChantiers] = await Promise.all([
+    db.user.findMany({
+      include: {
+        chantiersClient: { select: { id: true } },
+      },
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+    }),
+    db.chantier.findMany({
+      select: { id: true, nom: true },
+      orderBy: { nom: "asc" },
+    }),
+  ]);
 
   const pendingCount = users.filter((u) => u.status === "PENDING").length;
 
@@ -94,11 +104,14 @@ export default async function AdminUsersPage() {
                     status={u.status}
                     role={u.role}
                     isMe={isMe}
+                    allChantiers={allChantiers}
+                    assignedChantierIds={u.chantiersClient.map((c) => c.id)}
                     onApprove={approveUser}
                     onRevoke={revokeUser}
                     onDelete={deleteUser}
                     onChangeRole={changeUserRole}
                     onResetPassword={adminGenerateResetLink}
+                    onSetClientChantiers={setClientChantiers}
                   />
                 </li>
               );

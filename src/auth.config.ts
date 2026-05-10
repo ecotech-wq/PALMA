@@ -34,6 +34,25 @@ export const authConfig = {
         return NextResponse.redirect(new URL("/dashboard", request.nextUrl));
       }
 
+      // Restrictions CLIENT : un client ne peut voir que dashboard,
+      // chantiers, rapports, incidents et son profil. Tout le reste
+      // est bloqué.
+      if (role === "CLIENT") {
+        const clientAllowedRoots = [
+          "/dashboard",
+          "/chantiers",
+          "/rapports",
+          "/incidents",
+          "/profil",
+        ];
+        const isClientAllowed = clientAllowedRoots.some(
+          (r) => path === r || path.startsWith(r + "/")
+        );
+        if (!isClientAllowed) {
+          return NextResponse.redirect(new URL("/dashboard", request.nextUrl));
+        }
+      }
+
       return true;
     },
     jwt: ({ token, user }) => {
