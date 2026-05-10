@@ -8,6 +8,7 @@ import {
   Truck,
   Banknote,
   MessageSquare,
+  FileText,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -91,6 +92,12 @@ export default async function ChantierDetailPage({
               <Button size="sm">
                 <MessageSquare size={14} />
                 <span className="hidden sm:inline">Journal</span>
+              </Button>
+            </Link>
+            <Link href={`/chantiers/${id}/plans`}>
+              <Button size="sm" variant="outline">
+                <FileText size={14} />
+                <span className="hidden sm:inline">Plans</span>
               </Button>
             </Link>
             {me.isAdmin && (
