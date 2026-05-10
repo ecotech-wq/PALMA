@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Calendar, CalendarRange, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, CalendarRange, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -140,6 +140,25 @@ export default async function PointagePage({
             : isToday
               ? "Aujourd'hui"
               : "Pointage du jour sélectionné"
+        }
+        action={
+          <a
+            href={(() => {
+              // Export du mois en cours pour le mode jour, ou du mois affiché en mode plage
+              const m = mode === "plage"
+                ? new Date(Date.UTC(year, monthIdx, 1))
+                : new Date(date + "T00:00:00.000Z");
+              const start = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth(), 1));
+              const end = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 0));
+              return `/api/export/pointages?from=${start.toISOString().slice(0, 10)}&to=${end.toISOString().slice(0, 10)}`;
+            })()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+            title="Télécharger les pointages du mois en cours en CSV"
+          >
+            <Download size={14} />
+            <span className="hidden sm:inline">Export CSV</span>
+            <span className="sm:hidden">CSV</span>
+          </a>
         }
       />
 

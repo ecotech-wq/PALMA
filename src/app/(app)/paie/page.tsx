@@ -9,6 +9,7 @@ import {
   AlertCircle,
   Receipt,
   CalendarRange,
+  Download,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/Button";
@@ -252,13 +253,24 @@ export default async function PaieListPage({
               : `Tableau de bord — ${periodLabel}`
         }
         action={
-          <Link href="/paie/nouveau">
-            <Button>
-              <Plus size={16} />
-              <span className="hidden sm:inline">Nouveau paiement</span>
-              <span className="sm:hidden">Nouveau</span>
-            </Button>
-          </Link>
+          <>
+            <a
+              href={`/api/export/paiements?from=${from}&to=${to}`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+              title="Télécharger le CSV de la période"
+            >
+              <Download size={14} />
+              <span className="hidden sm:inline">Export CSV</span>
+              <span className="sm:hidden">CSV</span>
+            </a>
+            <Link href="/paie/nouveau">
+              <Button>
+                <Plus size={16} />
+                <span className="hidden sm:inline">Nouveau paiement</span>
+                <span className="sm:hidden">Nouveau</span>
+              </Button>
+            </Link>
+          </>
         }
       />
 
