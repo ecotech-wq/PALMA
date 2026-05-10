@@ -17,6 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     paiementsAVerser,
     locationsEnRetard,
     sortiesEnRetard,
+    incidentsOuverts,
   ] = await Promise.all([
     isAdmin ? db.user.count({ where: { status: "PENDING" } }) : 0,
     // Paiements en attente : badge réservé aux admins
@@ -34,12 +35,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         },
       },
     }),
+    // Incidents non résolus (OUVERT ou EN_COURS)
+    db.incident.count({
+      where: { statut: { in: ["OUVERT", "EN_COURS"] } },
+    }),
   ]);
 
   const navBadges = {
     paie: paiementsAVerser,
     locations: locationsEnRetard,
     sorties: sortiesEnRetard,
+    incidents: incidentsOuverts,
   };
 
   async function handleSignOut() {

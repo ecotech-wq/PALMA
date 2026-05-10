@@ -37,6 +37,8 @@ model User {
   chantiersGeres   Chantier[]           @relation("ChefChantier")
   passwordResets   PasswordResetToken[]
   rapportsCrees    RapportChantier[]
+  incidentsRapportes Incident[]         @relation("IncidentReporter")
+  incidentsResolus   Incident[]         @relation("IncidentResolver")
 }
 
 // Token à usage unique pour réinitialiser un mot de passe.
@@ -89,6 +91,7 @@ model Chantier {
   commandes       Commande[]
   taches          Tache[]
   rapports        RapportChantier[]
+  incidents       Incident[]
 }
 
 model Equipe {
@@ -462,4 +465,59 @@ model RapportChantier {
 
   @@index([chantierId, date(sort: Desc)])
   @@index([authorId])
+}
+
+// =====================================================
+// INCIDENTS / ISSUES (problèmes terrain)
+// =====================================================
+
+enum CategorieIncident {
+  MATERIEL_MANQUANT
+  PANNE
+  METEO
+  RETARD_FOURNISSEUR
+  SECURITE
+  ACCIDENT
+  CONFLIT
+  AUTRE
+}
+
+enum NiveauGravite {
+  INFO
+  ATTENTION
+  URGENT
+}
+
+enum StatutIncident {
+  OUVERT
+  EN_COURS
+  RESOLU
+}
+
+/// Incident remonté depuis le terrain : matériel manquant, panne,
+/// problème météo, retard fournisseur, sécurité, accident, etc.
+/// Permet aux chefs de signaler les blocages, et aux admins de suivre
+/// la résolution.
+model Incident {
+  id             String            @id @default(cuid())
+  chantierId     String?
+  chantier       Chantier?         @relation(fields: [chantierId], references: [id], onDelete: SetNull)
+  reporterId     String
+  reporter       User              @relation("IncidentReporter", fields: [reporterId], references: [id], onDelete: Restrict)
+  titre          String
+  description    String
+  categorie      CategorieIncident
+  gravite        NiveauGravite     @default(ATTENTION)
+  statut         StatutIncident    @default(OUVERT)
+  resolutionNote String?
+  resolvedAt     DateTime?
+  resolverId     String?
+  resolver       User?             @relation("IncidentResolver", fields: [resolverId], references: [id], onDelete: SetNull)
+  photos         String[]          @default([])
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([chantierId])
+  @@index([statut])
+  @@index([createdAt(sort: Desc)])
 }
