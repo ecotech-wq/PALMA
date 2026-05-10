@@ -83,9 +83,25 @@ function buildPeriodPresets() {
 export default async function PaieListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; from?: string; to?: string }>;
+  searchParams: Promise<{
+    month?: string;
+    from?: string;
+    to?: string;
+    q?: string;
+    contrat?: string;
+    chantier?: string;
+    mode?: string;
+  }>;
 }) {
-  const { month: monthParam, from: fromParam, to: toParam } = await searchParams;
+  const {
+    month: monthParam,
+    from: fromParam,
+    to: toParam,
+    q,
+    contrat,
+    chantier: chantierFilter,
+    mode: modeFilter,
+  } = await searchParams;
 
   const now = new Date();
   // Période courante : par défaut le mois en cours
@@ -123,19 +139,57 @@ export default async function PaieListPage({
   const presets = buildPeriodPresets();
   const activePresetKey = presets.find((p) => p.from === from && p.to === to)?.key;
 
-  const [ouvriers, recentPaiements] = await Promise.all([
+  // Filtre ouvriers : recherche + contrat
+  const ouvrierWhere: {
+    actif: true;
+    typeContrat?: "FIXE" | "JOUR" | "SEMAINE" | "MOIS" | "FORFAIT";
+    OR?: {
+      nom?: { contains: string; mode: "insensitive" };
+      prenom?: { contains: string; mode: "insensitive" };
+    }[];
+  } = { actif: true };
+  if (contrat && ["FIXE", "JOUR", "SEMAINE", "MOIS", "FORFAIT"].includes(contrat)) {
+    ouvrierWhere.typeContrat = contrat as
+      | "FIXE"
+      | "JOUR"
+      | "SEMAINE"
+      | "MOIS"
+      | "FORFAIT";
+  }
+  if (q && q.trim().length > 0) {
+    ouvrierWhere.OR = [
+      { nom: { contains: q, mode: "insensitive" } },
+      { prenom: { contains: q, mode: "insensitive" } },
+    ];
+  }
+
+  // Filtre chantier : on garde uniquement les ouvriers dont au moins un
+  // pointage du mois est rattaché au chantier (via leur équipe ou
+  // pointage explicite). Pour rester simple côté SQL, on filtre via
+  // l'équipe.
+  // Filtre mode : utilisé sur les paiements
+  const modeWhere = modeFilter && ["ESPECES", "VIREMENT"].includes(modeFilter)
+    ? (modeFilter as "ESPECES" | "VIREMENT")
+    : undefined;
+
+  const [ouvriersRaw, recentPaiements, chantiers] = await Promise.all([
     db.ouvrier.findMany({
-      where: { actif: true },
+      where: ouvrierWhere,
       include: {
+        equipe: { select: { chantierId: true } },
         pointages: {
-          where: { date: { gte: periodStart, lt: periodEndExclusive } },
-          select: { joursTravailles: true },
+          where: {
+            date: { gte: periodStart, lt: periodEndExclusive },
+            ...(chantierFilter ? { chantierId: chantierFilter } : {}),
+          },
+          select: { joursTravailles: true, chantierId: true },
         },
         paiements: {
           where: {
             periodeDebut: { lt: periodEndExclusive },
             periodeFin: { gte: periodStart },
             statut: { in: ["CALCULE", "PAYE"] },
+            ...(modeWhere ? { mode: modeWhere } : {}),
           },
           orderBy: { date: "desc" },
         },
@@ -143,13 +197,43 @@ export default async function PaieListPage({
       orderBy: [{ nom: "asc" }, { prenom: "asc" }],
     }),
     db.paiement.findMany({
+      where: {
+        ...(modeWhere ? { mode: modeWhere } : {}),
+        ...(q && q.trim().length > 0
+          ? {
+              ouvrier: {
+                OR: [
+                  { nom: { contains: q, mode: "insensitive" } },
+                  { prenom: { contains: q, mode: "insensitive" } },
+                ],
+              },
+            }
+          : {}),
+      },
       include: {
-        ouvrier: { select: { id: true, nom: true, prenom: true } },
+        ouvrier: {
+          select: { id: true, nom: true, prenom: true, typeContrat: true },
+        },
       },
       orderBy: { date: "desc" },
       take: 20,
     }),
+    db.chantier.findMany({
+      select: { id: true, nom: true },
+      orderBy: { nom: "asc" },
+    }),
   ]);
+
+  // Si on filtre par chantier, on garde uniquement les ouvriers avec
+  // au moins un pointage sur ce chantier ou rattachés à l'équipe du
+  // chantier (cas où ils n'ont pas encore pointé)
+  const ouvriers = chantierFilter
+    ? ouvriersRaw.filter(
+        (o) =>
+          o.equipe?.chantierId === chantierFilter ||
+          o.pointages.some((p) => p.chantierId === chantierFilter)
+      )
+    : ouvriersRaw;
 
   // Catégorisation par statut
   const aVerser: {
@@ -255,7 +339,12 @@ export default async function PaieListPage({
         action={
           <>
             <a
-              href={`/api/export/paiements?from=${from}&to=${to}`}
+              href={(() => {
+                const p = new URLSearchParams();
+                p.set("from", from);
+                p.set("to", to);
+                return `/api/export/paiements?${p.toString()}`;
+              })()}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
               title="Télécharger le CSV de la période"
             >
@@ -284,10 +373,17 @@ export default async function PaieListPage({
             </span>
             {presets.map((p) => {
               const isActive = activePresetKey === p.key;
+              const params = new URLSearchParams();
+              params.set("from", p.from);
+              params.set("to", p.to);
+              if (q) params.set("q", q);
+              if (contrat) params.set("contrat", contrat);
+              if (chantierFilter) params.set("chantier", chantierFilter);
+              if (modeFilter) params.set("mode", modeFilter);
               return (
                 <Link
                   key={p.key}
-                  href={`/paie?from=${p.from}&to=${p.to}`}
+                  href={`/paie?${params.toString()}`}
                   className={cn(
                     "text-xs px-2.5 py-1 rounded-md border transition",
                     isActive
@@ -301,42 +397,118 @@ export default async function PaieListPage({
             })}
           </div>
 
-          {/* Range personnalisé */}
+          {/* Range + filtres dans un seul form GET pour soumission unique */}
           <form
             method="get"
-            className="flex flex-col sm:flex-row sm:items-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800"
+            className="grid grid-cols-2 sm:grid-cols-12 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800"
           >
-            <div className="flex-1">
+            <div className="col-span-1 sm:col-span-3">
               <Field label="Du">
                 <Input type="date" name="from" defaultValue={from} />
               </Field>
             </div>
-            <div className="flex-1">
+            <div className="col-span-1 sm:col-span-3">
               <Field label="Au">
                 <Input type="date" name="to" defaultValue={to} />
               </Field>
             </div>
-            <Button type="submit" size="sm" variant="secondary">
-              Appliquer
-            </Button>
-            {activePresetKey !== "month" && (
-              <Link
-                href="/paie"
-                className="text-xs text-slate-500 dark:text-slate-400 hover:underline self-center"
-              >
-                Réinitialiser
-              </Link>
-            )}
+            <div className="col-span-2 sm:col-span-3">
+              <Field label="Recherche">
+                <Input
+                  type="search"
+                  name="q"
+                  defaultValue={q ?? ""}
+                  placeholder="Nom, prénom..."
+                />
+              </Field>
+            </div>
+            <div className="col-span-1 sm:col-span-3">
+              <Field label="Contrat">
+                <select
+                  name="contrat"
+                  defaultValue={contrat ?? ""}
+                  className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-base text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                >
+                  <option value="">Tous</option>
+                  <option value="FIXE">Fixe</option>
+                  <option value="MOIS">Au mois</option>
+                  <option value="SEMAINE">À la semaine</option>
+                  <option value="JOUR">À la journée</option>
+                  <option value="FORFAIT">Forfait</option>
+                </select>
+              </Field>
+            </div>
+            <div className="col-span-1 sm:col-span-4">
+              <Field label="Chantier">
+                <select
+                  name="chantier"
+                  defaultValue={chantierFilter ?? ""}
+                  className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-base text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                >
+                  <option value="">Tous</option>
+                  {chantiers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nom}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <div className="col-span-1 sm:col-span-3">
+              <Field label="Mode">
+                <select
+                  name="mode"
+                  defaultValue={modeFilter ?? ""}
+                  className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-base text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                >
+                  <option value="">Tous</option>
+                  <option value="ESPECES">Espèces</option>
+                  <option value="VIREMENT">Virement</option>
+                </select>
+              </Field>
+            </div>
+            <div className="col-span-2 sm:col-span-5 flex items-end gap-2">
+              <Button type="submit" size="sm" variant="secondary" className="flex-1">
+                Appliquer
+              </Button>
+              {(q || contrat || chantierFilter || modeFilter) && (
+                <Link
+                  href={`/paie?from=${from}&to=${to}`}
+                  className="text-xs text-slate-500 dark:text-slate-400 hover:underline self-center"
+                >
+                  Effacer filtres
+                </Link>
+              )}
+            </div>
           </form>
 
-          {/* Indicateur de période active */}
-          <div className="text-[11px] text-slate-500 dark:text-slate-500 flex items-center gap-1.5">
-            <span className="font-medium">Plage active :</span>
-            <span className="text-slate-700 dark:text-slate-300">
-              {isSingleDay
-                ? dateRangeFmt.format(periodStart)
-                : periodLabel}
+          {/* Indicateur de période + filtres actifs */}
+          <div className="text-[11px] text-slate-500 dark:text-slate-500 flex items-center gap-x-3 gap-y-1 flex-wrap">
+            <span>
+              <span className="font-medium">Période :</span>{" "}
+              <span className="text-slate-700 dark:text-slate-300">
+                {isSingleDay
+                  ? dateRangeFmt.format(periodStart)
+                  : periodLabel}
+              </span>
             </span>
+            {(q || contrat || chantierFilter || modeFilter) && (
+              <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-500">
+                Filtres :
+                {q && <Badge color="slate">« {q} »</Badge>}
+                {contrat && <Badge color="slate">{contrat}</Badge>}
+                {chantierFilter && (
+                  <Badge color="slate">
+                    {chantiers.find((c) => c.id === chantierFilter)?.nom ?? "?"}
+                  </Badge>
+                )}
+                {modeFilter && (
+                  <Badge color="slate">
+                    {modeFilter === "ESPECES" ? "Espèces" : "Virement"}
+                  </Badge>
+                )}
+              </span>
+            )}
           </div>
         </CardBody>
       </Card>
