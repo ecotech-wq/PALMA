@@ -34,8 +34,9 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  chantiersGeres Chantier[]           @relation("ChefChantier")
-  passwordResets PasswordResetToken[]
+  chantiersGeres   Chantier[]           @relation("ChefChantier")
+  passwordResets   PasswordResetToken[]
+  rapportsCrees    RapportChantier[]
 }
 
 // Token à usage unique pour réinitialiser un mot de passe.
@@ -87,6 +88,7 @@ model Chantier {
   locations       LocationPret[]
   commandes       Commande[]
   taches          Tache[]
+  rapports        RapportChantier[]
 }
 
 model Equipe {
@@ -424,4 +426,40 @@ model Tache {
 
   @@index([chantierId])
   @@index([dateDebut, dateFin])
+}
+
+// =====================================================
+// RAPPORTS DE CHANTIER (DSR — Daily Site Report)
+// =====================================================
+
+enum Meteo {
+  SOLEIL
+  NUAGEUX
+  PLUIE
+  ORAGE
+  NEIGE
+  GEL
+  VENT_FORT
+}
+
+/// Rapport journalier rédigé par un chef de chantier (ou admin) sur
+/// un chantier : ce qui a été fait, météo, photos prises sur site,
+/// nombre d'ouvriers présents. Permet à l'admin de suivre l'avancement
+/// sans être sur place.
+model RapportChantier {
+  id          String   @id @default(cuid())
+  chantierId  String
+  chantier    Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  date        DateTime @db.Date
+  meteo       Meteo?
+  texte       String
+  photos      String[] @default([])
+  nbOuvriers  Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([chantierId, date(sort: Desc)])
+  @@index([authorId])
 }

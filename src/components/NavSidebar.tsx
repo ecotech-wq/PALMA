@@ -22,6 +22,7 @@ import {
   Menu,
   X,
   Settings,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -38,6 +39,7 @@ const items: NavItem[] = [
   { href: "/locations", label: "Locations / Prêts", icon: Truck },
   { href: "/commandes", label: "Commandes", icon: ShoppingCart },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
+  { href: "/rapports", label: "Rapports", icon: FileText },
   { href: "/paie", label: "Paie", icon: Banknote, adminOnly: true },
   { href: "/planning", label: "Planning", icon: Calendar },
 ];
@@ -66,6 +68,7 @@ const mobileMore = [
   { href: "/locations", label: "Locations / Prêts", icon: Truck },
   { href: "/commandes", label: "Commandes", icon: ShoppingCart },
   { href: "/planning", label: "Planning", icon: Calendar },
+  { href: "/rapports", label: "Rapports", icon: FileText },
   { href: "/profil", label: "Mon profil", icon: UserCircle },
 ];
 

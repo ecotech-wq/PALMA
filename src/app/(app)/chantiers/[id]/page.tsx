@@ -13,6 +13,7 @@ import { CommandeStatutBadge } from "@/app/(app)/commandes/CommandeStatutBadge";
 import { formatEuro, formatDate } from "@/lib/utils";
 import { getFinanceChantier } from "@/lib/finances-chantier";
 import { requireAuth } from "@/lib/auth-helpers";
+import { RapportsSection } from "@/app/(app)/rapports/RapportsSection";
 
 export default async function ChantierDetailPage({
   params,
@@ -21,7 +22,7 @@ export default async function ChantierDetailPage({
 }) {
   const { id } = await params;
   const me = await requireAuth();
-  const [chantier, chefs, toutesEquipes, commandes, locations, finance] = await Promise.all([
+  const [chantier, chefs, toutesEquipes, commandes, locations, finance, rapports] = await Promise.all([
     db.chantier.findUnique({
       where: { id },
       include: {
@@ -49,6 +50,12 @@ export default async function ChantierDetailPage({
       take: 10,
     }),
     getFinanceChantier(id),
+    db.rapportChantier.findMany({
+      where: { chantierId: id },
+      include: { author: { select: { id: true, name: true } } },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      take: 30,
+    }),
   ]);
   if (!chantier) notFound();
 
@@ -175,6 +182,32 @@ export default async function ChantierDetailPage({
                   </Button>
                 </form>
               )}
+            </CardBody>
+          </Card>
+
+          {/* Rapports de chantier journaliers */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Rapports de chantier ({rapports.length})</CardTitle>
+            </CardHeader>
+            <CardBody>
+              <RapportsSection
+                chantierId={id}
+                currentUserId={me.id}
+                isAdmin={me.isAdmin}
+                rapports={rapports.map((r) => ({
+                  id: r.id,
+                  chantierId: r.chantierId,
+                  date: r.date,
+                  meteo: r.meteo,
+                  texte: r.texte,
+                  photos: r.photos,
+                  nbOuvriers: r.nbOuvriers,
+                  authorName: r.author.name,
+                  authorId: r.author.id,
+                  createdAt: r.createdAt,
+                }))}
+              />
             </CardBody>
           </Card>
 

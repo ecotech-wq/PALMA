@@ -8,7 +8,7 @@ const UPLOADS_ROOT = path.join(process.cwd(), "public", "uploads");
 
 export async function saveUploadedPhoto(
   file: File,
-  folder: "materiel" | "ouvriers" | "pointages"
+  folder: "materiel" | "ouvriers" | "pointages" | "rapports"
 ): Promise<string> {
   if (!file || file.size === 0) {
     throw new Error("Aucun fichier reçu");
