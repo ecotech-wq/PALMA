@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge, type BadgeColor } from "@/components/ui/Badge";
 import { formatDate } from "@/lib/utils";
 import { UserActions } from "./UserActions";
+import { CreateUserBox } from "./CreateUserBox";
 import {
   approveUser,
   revokeUser,
@@ -65,6 +66,8 @@ export default async function AdminUsersPage() {
           </CardBody>
         </Card>
       )}
+
+      <CreateUserBox chantiers={allChantiers} />
 
       <Card>
         <CardHeader>

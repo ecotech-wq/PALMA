@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { appUrl } from "@/lib/email";
 
 const TOKEN_BYTES = 32;
-const VALIDITY_HOURS = 2;
+const DEFAULT_VALIDITY_MINUTES = 120; // 2h pour reset auto-service
 
 export function generateRawToken(): string {
   return randomBytes(TOKEN_BYTES).toString("base64url");
@@ -18,7 +18,10 @@ export function hashToken(rawToken: string): string {
  * Crée un token de reset pour cet user (invalide les précédents non utilisés).
  * Retourne l'URL complète à envoyer (contient le token clair).
  */
-export async function createResetTokenForUser(userId: string): Promise<{
+export async function createResetTokenForUser(
+  userId: string,
+  validityMinutes: number = DEFAULT_VALIDITY_MINUTES
+): Promise<{
   url: string;
   expiresAt: Date;
 }> {
@@ -30,7 +33,7 @@ export async function createResetTokenForUser(userId: string): Promise<{
 
   const rawToken = generateRawToken();
   const tokenHash = hashToken(rawToken);
-  const expiresAt = new Date(Date.now() + VALIDITY_HOURS * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + validityMinutes * 60 * 1000);
 
   await db.passwordResetToken.create({
     data: { userId, tokenHash, expiresAt },

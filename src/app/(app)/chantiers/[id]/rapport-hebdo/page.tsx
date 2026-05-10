@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   Undo2,
   Save,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -44,10 +46,11 @@ export default async function RapportHebdoPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ w?: string }>;
+  searchParams: Promise<{ w?: string; preview?: string }>;
 }) {
   const { id } = await params;
-  const { w } = await searchParams;
+  const { w, preview } = await searchParams;
+  const previewAsClient = preview === "client";
 
   // Détermine le lundi de la semaine demandée
   const semaineDebut = w
@@ -75,8 +78,10 @@ export default async function RapportHebdoPage({
     (m) => !m.hiddenFromClient && !hiddenMessageIds.has(m.id)
   );
 
-  // Messages affichés à l'admin/chef = TOUS, avec indicateurs visuels
-  const messagesToShow = me.isClient ? visibleForClient : messages;
+  // Messages affichés : tous pour admin/chef en mode normal,
+  // version filtrée si client OU si admin a activé l'aperçu client.
+  const isViewingAsClient = me.isClient || (me.isAdmin && previewAsClient);
+  const messagesToShow = isViewingAsClient ? visibleForClient : messages;
 
   const updateIntroAction = updateRapportHebdoIntro.bind(
     null,
@@ -107,9 +112,38 @@ export default async function RapportHebdoPage({
             ) : (
               <Badge color="yellow">Brouillon</Badge>
             )}
+            {me.isAdmin && (
+              <Link
+                href={`/chantiers/${id}/rapport-hebdo?w=${semaineDebutStr}${previewAsClient ? "" : "&preview=client"}`}
+              >
+                <Button size="sm" variant="outline">
+                  {previewAsClient ? (
+                    <>
+                      <EyeOff size={14} />
+                      <span className="hidden sm:inline">Vue admin</span>
+                    </>
+                  ) : (
+                    <>
+                      <Eye size={14} />
+                      <span className="hidden sm:inline">Aperçu client</span>
+                    </>
+                  )}
+                </Button>
+              </Link>
+            )}
           </div>
         }
       />
+
+      {previewAsClient && me.isAdmin && (
+        <div className="mb-3 rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-sm text-amber-800 dark:text-amber-300 flex items-center gap-2">
+          <Eye size={14} />
+          <span>
+            <strong>Aperçu client</strong> — voici exactement ce que verra le
+            client. Les messages cachés ou exclus sont masqués.
+          </span>
+        </div>
+      )}
 
       {/* Navigation semaine */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-2 mb-3 flex items-center gap-2">
@@ -142,10 +176,10 @@ export default async function RapportHebdoPage({
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 space-y-4">
-          {/* Intro éditable par admin */}
-          {me.isAdmin && (
+      <div className={`grid grid-cols-1 ${me.isAdmin && !previewAsClient ? "lg:grid-cols-3" : ""} gap-5`}>
+        <div className={me.isAdmin && !previewAsClient ? "lg:col-span-2 space-y-4" : "space-y-4"}>
+          {/* Intro éditable par admin (hors preview) */}
+          {me.isAdmin && !previewAsClient && (
             <Card>
               <CardHeader>
                 <CardTitle>Introduction du rapport</CardTitle>
@@ -173,8 +207,8 @@ export default async function RapportHebdoPage({
             </Card>
           )}
 
-          {/* Si envoyé et qu'on est CLIENT, afficher l'intro */}
-          {me.isClient && hebdo?.texteIntro && (
+          {/* Pour un client (vrai ou en aperçu), afficher l'intro en lecture */}
+          {isViewingAsClient && hebdo?.texteIntro && (
             <Card>
               <CardBody>
                 <div className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
@@ -188,7 +222,7 @@ export default async function RapportHebdoPage({
           <Card>
             <CardHeader>
               <CardTitle>
-                {me.isClient
+                {isViewingAsClient
                   ? "Activité de la semaine"
                   : `Tous les messages (${messages.length} — ${visibleForClient.length} visibles client)`}
               </CardTitle>
@@ -220,8 +254,9 @@ export default async function RapportHebdoPage({
                         commandeId: m.commandeId,
                       }}
                       excluded={hiddenMessageIds.has(m.id)}
-                      isAdmin={me.isAdmin}
-                      isClient={me.isClient}
+                      // En aperçu client, on désactive les contrôles admin
+                      isAdmin={me.isAdmin && !previewAsClient}
+                      isClient={isViewingAsClient}
                     />
                   ))}
                 </ul>
@@ -230,8 +265,8 @@ export default async function RapportHebdoPage({
           </Card>
         </div>
 
-        {/* Sidebar admin : envoi au client */}
-        {me.isAdmin && (
+        {/* Sidebar admin : envoi au client (cachée en mode preview) */}
+        {me.isAdmin && !previewAsClient && (
           <div className="space-y-5">
             <Card>
               <CardHeader>

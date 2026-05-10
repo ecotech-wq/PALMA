@@ -10,7 +10,6 @@ import {
   Video,
   X,
   Trash2,
-  Pencil,
   AlertTriangle,
   Package,
   ShoppingCart,
@@ -18,6 +17,7 @@ import {
   Eye,
   EyeOff,
   ExternalLink,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Input";
@@ -424,7 +424,8 @@ function ComposeBox({
   const [pending, startTransition] = useTransition();
   const [files, setFiles] = useState<File[]>([]);
   const [texte, setTexte] = useState("");
-  const photoInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -483,16 +484,26 @@ function ComposeBox({
         </div>
       )}
 
-      <div className="flex items-end gap-1.5">
+      <div className="flex items-end gap-1.5 flex-wrap">
+        {/* Caméra : ouvre direct l'appareil photo (mobile) */}
         <input
-          ref={photoInputRef}
+          ref={cameraInputRef}
           type="file"
           accept="image/*"
-          multiple
           capture="environment"
           onChange={onPick}
           className="hidden"
         />
+        {/* Galerie : sélection depuis pellicule + multi */}
+        <input
+          ref={galleryInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={onPick}
+          className="hidden"
+        />
+        {/* Vidéo : caméra arrière */}
         <input
           ref={videoInputRef}
           type="file"
@@ -503,17 +514,25 @@ function ComposeBox({
         />
         <button
           type="button"
-          onClick={() => photoInputRef.current?.click()}
+          onClick={() => cameraInputRef.current?.click()}
           className="shrink-0 p-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
-          title="Ajouter une photo"
+          title="Prendre une photo"
         >
           <Camera size={16} />
         </button>
         <button
           type="button"
+          onClick={() => galleryInputRef.current?.click()}
+          className="shrink-0 p-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
+          title="Choisir depuis la galerie"
+        >
+          <ImageIcon size={16} />
+        </button>
+        <button
+          type="button"
           onClick={() => videoInputRef.current?.click()}
           className="shrink-0 p-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
-          title="Ajouter une vidéo"
+          title="Vidéo"
         >
           <Video size={16} />
         </button>

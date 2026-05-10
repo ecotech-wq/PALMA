@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { createResetTokenForUser } from "@/lib/password-reset";
@@ -140,4 +142,103 @@ export async function setClientChantiers(
     },
   });
   revalidatePath("/admin/users");
+}
+
+// =====================================================
+// Création d'un utilisateur par l'admin (avec invitation)
+// =====================================================
+
+const createUserSchema = z.object({
+  name: z.string().min(1, "Nom requis").max(100),
+  email: z.string().email("Email invalide").toLowerCase(),
+  role: z.enum(["ADMIN", "CHEF", "CLIENT"]),
+  chantierIds: z.array(z.string()).default([]),
+});
+
+/**
+ * Crée un compte utilisateur ACTIVE avec un mot de passe aléatoire,
+ * puis génère un lien de réinitialisation (valide 24h) qu'il pourra
+ * utiliser pour définir son propre mot de passe.
+ *
+ * Retour : { url, expiresAt, emailSent } pour que l'admin puisse
+ * copier le lien manuellement (et l'envoyer par WhatsApp/SMS) si
+ * SMTP n'est pas configuré.
+ */
+export async function adminCreateUser(formData: FormData): Promise<{
+  url: string;
+  expiresAt: Date;
+  emailSent: boolean;
+  userEmail: string;
+  userName: string;
+}> {
+  await ensureAdmin();
+
+  const data = createUserSchema.parse({
+    name: formData.get("name"),
+    email: formData.get("email"),
+    role: formData.get("role"),
+    chantierIds: (formData.getAll("chantierIds") as string[]).filter(
+      (s) => typeof s === "string" && s.length > 0
+    ),
+  });
+
+  // Vérifie qu'il n'y a pas déjà un compte avec cet email
+  const existing = await db.user.findUnique({
+    where: { email: data.email },
+  });
+  if (existing) {
+    throw new Error(`Un compte existe déjà pour ${data.email}`);
+  }
+
+  // Mot de passe random non-utilisable (l'utilisateur le redéfinira via le lien)
+  const tempPassword = randomBytes(16).toString("hex");
+  const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+  const user = await db.user.create({
+    data: {
+      name: data.name,
+      email: data.email,
+      role: data.role,
+      passwordHash,
+      status: "ACTIVE",
+      // Si CLIENT, on lie déjà les chantiers indiqués
+      chantiersClient:
+        data.role === "CLIENT" && data.chantierIds.length > 0
+          ? { connect: data.chantierIds.map((id) => ({ id })) }
+          : undefined,
+    },
+  });
+
+  // Génère le lien d'invitation (= reset password 24h)
+  const { url, expiresAt } = await createResetTokenForUser(user.id, 24 * 60);
+
+  // Tente l'envoi email si SMTP configuré
+  let emailSent = false;
+  if (isEmailConfigured()) {
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: "Invitation à rejoindre Autonhome",
+        html: `
+          <p>Bonjour ${escapeHtml(user.name)},</p>
+          <p>Un compte vient d'être créé pour toi sur l'application Autonhome (gestion de chantier) avec le rôle <strong>${user.role}</strong>.</p>
+          <p>Pour activer ton compte et définir ton mot de passe, clique sur le lien ci-dessous (valide 24h) :</p>
+          <p><a href="${url}">${url}</a></p>
+          <p>Une fois ton mot de passe défini, tu pourras te connecter avec l'email <strong>${escapeHtml(user.email)}</strong>.</p>
+        `,
+      });
+      emailSent = true;
+    } catch (e) {
+      console.error("Email invite failed:", e);
+    }
+  }
+
+  revalidatePath("/admin/users");
+  return {
+    url,
+    expiresAt,
+    emailSent,
+    userEmail: user.email,
+    userName: user.name,
+  };
 }
