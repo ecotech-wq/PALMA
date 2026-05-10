@@ -692,8 +692,11 @@ const PlanCanvas = forwardRef<PlanCanvasHandle, PlanCanvasProps>(
     const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
     const imgRef = useRef<HTMLImageElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
-    // Détection clic vs drag : on regarde si un panning a été initié
-    const wasPanning = useRef(false);
+    // Garde la dernière fonction onPlanClick dans une ref pour que le
+    // listener DOM (qui ne se ré-attache pas) appelle toujours la
+    // version courante.
+    const onPlanClickRef = useRef(onPlanClick);
+    onPlanClickRef.current = onPlanClick;
 
     useImperativeHandle(ref, () => ({
       focusPin: (reserveId: string) => {
@@ -703,25 +706,83 @@ const PlanCanvas = forwardRef<PlanCanvasHandle, PlanCanvasProps>(
           `[data-pin-id="${reserveId}"]`
         ) as HTMLElement | null;
         if (el && transformRef.current) {
-          // zoomToElement de react-zoom-pan-pinch : centre + zoom
           transformRef.current.zoomToElement(el, 3, 600);
         }
       },
     }));
 
-    function handleClick(e: React.MouseEvent<HTMLImageElement>) {
+    /**
+     * Détection click manuelle au niveau DOM, parce que :
+     * - react-zoom-pan-pinch utilise setPointerCapture sur son wrapper,
+     *   ce qui empêche le click event natif de fire sur l'image
+     *   (Chrome a un comportement strict avec le pointer capture).
+     * - Le React onClick est en plus souvent absorbé.
+     *
+     * Approche fiable :
+     * - pointerdown sur l'image : record (x, y, t)
+     * - pointerup sur la window (capture phase) : on regarde si le
+     *   point d'arrivée est dans l'image ET si la distance parcourue
+     *   est < 10 px (un vrai clic). Si oui, on calcule les coords
+     *   relatives et on appelle onPlanClick.
+     *
+     * Marche identiquement souris (Chrome desktop), trackpad, tactile.
+     */
+    useEffect(() => {
       if (!canEdit) return;
-      // Si un panning vient d'avoir lieu, on ignore le clic
-      if (wasPanning.current) return;
       const img = imgRef.current;
       if (!img) return;
-      const rect = img.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      const x = (e.clientX - rect.left) / rect.width;
-      const y = (e.clientY - rect.top) / rect.height;
-      if (x < 0 || x > 1 || y < 0 || y > 1) return;
-      onPlanClick(x, y);
-    }
+
+      let downX: number | null = null;
+      let downY: number | null = null;
+      let downTime = 0;
+
+      const onDown = (e: PointerEvent) => {
+        // Souris : seul le bouton gauche
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        downX = e.clientX;
+        downY = e.clientY;
+        downTime = Date.now();
+      };
+
+      const onUp = (e: PointerEvent) => {
+        if (downX === null || downY === null) return;
+        const dx = e.clientX - downX;
+        const dy = e.clientY - downY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const elapsed = Date.now() - downTime;
+        downX = null;
+        downY = null;
+
+        if (dist > 10) return; // c'était un drag
+        if (elapsed > 800) return; // long-press, on ignore
+
+        // Vérifie que le up est dans le rectangle de l'image
+        const rect = img.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+        if (
+          e.clientX < rect.left ||
+          e.clientX > rect.right ||
+          e.clientY < rect.top ||
+          e.clientY > rect.bottom
+        ) {
+          return;
+        }
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+        if (x < 0 || x > 1 || y < 0 || y > 1) return;
+        onPlanClickRef.current(x, y);
+      };
+
+      img.addEventListener("pointerdown", onDown);
+      // window + capture : pour intercepter même quand le pointer
+      // est captured par le wrapper de react-zoom-pan-pinch.
+      window.addEventListener("pointerup", onUp, { capture: true });
+
+      return () => {
+        img.removeEventListener("pointerdown", onDown);
+        window.removeEventListener("pointerup", onUp, { capture: true });
+      };
+    }, [canEdit, plan.url]);
 
     return (
       <div ref={wrapperRef} className="relative w-full bg-slate-100 dark:bg-slate-950">
@@ -747,16 +808,6 @@ const PlanCanvas = forwardRef<PlanCanvasHandle, PlanCanvasProps>(
             lockAxisX: false,
             lockAxisY: false,
           }}
-          onPanningStart={() => {
-            wasPanning.current = true;
-          }}
-          onPanningStop={() => {
-            // On laisse un petit délai pour que le click event qui suit
-            // soit ignoré (Chrome fire click APRÈS pointerup même sur drag).
-            window.setTimeout(() => {
-              wasPanning.current = false;
-            }, 80);
-          }}
         >
           <ZoomControls />
           <TransformComponent
@@ -779,8 +830,6 @@ const PlanCanvas = forwardRef<PlanCanvasHandle, PlanCanvasProps>(
                   canEdit ? "cursor-crosshair" : ""
                 }`}
                 draggable={false}
-                onClick={handleClick}
-                style={{ touchAction: "none" }}
               />
 
               {pins.map((p) => (
