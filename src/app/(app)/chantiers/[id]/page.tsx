@@ -9,6 +9,7 @@ import {
   Banknote,
   MessageSquare,
   FileText,
+  CalendarRange,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -98,6 +99,12 @@ export default async function ChantierDetailPage({
               <Button size="sm" variant="outline">
                 <FileText size={14} />
                 <span className="hidden sm:inline">Plans</span>
+              </Button>
+            </Link>
+            <Link href={`/chantiers/${id}/rapport-hebdo`}>
+              <Button size="sm" variant="outline">
+                <CalendarRange size={14} />
+                <span className="hidden sm:inline">Rapport hebdo</span>
               </Button>
             </Link>
             {me.isAdmin && (
