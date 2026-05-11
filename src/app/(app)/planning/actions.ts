@@ -16,6 +16,7 @@ const tacheSchema = z.object({
   statut: z.enum(["A_FAIRE", "EN_COURS", "TERMINEE", "BLOQUEE"]),
   priorite: z.coerce.number().int().min(1).max(4).default(4),
   parentId: z.string().optional().or(z.literal("")),
+  sectionId: z.string().optional().or(z.literal("")),
 });
 
 function parseTache(formData: FormData) {
@@ -30,6 +31,7 @@ function parseTache(formData: FormData) {
     statut: formData.get("statut") || "A_FAIRE",
     priorite: formData.get("priorite") || 4,
     parentId: formData.get("parentId") || "",
+    sectionId: formData.get("sectionId") || "",
   });
 
   return {
@@ -43,6 +45,7 @@ function parseTache(formData: FormData) {
     statut: data.statut,
     priorite: data.priorite,
     parentId: data.parentId || null,
+    sectionId: data.sectionId || null,
   };
 }
 

@@ -224,8 +224,11 @@ export function parseQuickAdd(input: string): QuickAddTokens {
       d.setDate(d.getDate() + days - 1);
       dateFin = d;
     } else {
-      // Par défaut : 1 jour (dateFin = dateDebut)
-      dateFin = new Date(dateDebut);
+      // Par défaut : 3 jours (lisibilité Gantt). L'utilisateur peut
+      // forcer 1 jour avec `x1j` s'il veut.
+      const d = new Date(dateDebut);
+      d.setDate(d.getDate() + 2);
+      dateFin = d;
     }
   }
 

@@ -99,9 +99,12 @@ function isLate(t: TacheKanban) {
 export function KanbanBoard({
   taches,
   canEdit,
+  onClickTask,
 }: {
   taches: TacheKanban[];
   canEdit: boolean;
+  /** Click court (sans drag) sur une card : ouvre l'édition. */
+  onClickTask?: (tacheId: string) => void;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -223,6 +226,7 @@ export function KanbanBoard({
                   pending={pending && draggingId === t.id}
                   onDragStart={(e) => handleDragStart(e, t.id)}
                   onDragEnd={handleDragEnd}
+                  onClick={() => onClickTask?.(t.id)}
                   canEdit={canEdit}
                 />
               ))
@@ -241,6 +245,7 @@ function KanbanCard({
   pending,
   onDragStart,
   onDragEnd,
+  onClick,
   canEdit,
 }: {
   tache: TacheKanban;
@@ -249,6 +254,7 @@ function KanbanCard({
   pending: boolean;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
+  onClick?: () => void;
   canEdit: boolean;
 }) {
   const router = useRouter();
@@ -272,9 +278,16 @@ function KanbanCard({
       draggable={draggable}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      onClick={(e) => {
+        // Évite le double-fire au lâcher d'un drag-end
+        if (isDragging) return;
+        onClick?.();
+      }}
       className={`bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 shadow-sm hover:shadow-md transition group ${
-        draggable ? "cursor-grab active:cursor-grabbing" : ""
-      } ${isDragging ? "opacity-30" : ""} ${pending ? "animate-pulse" : ""}`}
+        onClick ? "cursor-pointer" : ""
+      } ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${
+        isDragging ? "opacity-30" : ""
+      } ${pending ? "animate-pulse" : ""}`}
     >
       <div className="flex items-start gap-1.5">
         {t.priorite < 4 && (

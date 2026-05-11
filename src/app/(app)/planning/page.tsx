@@ -3,12 +3,10 @@ import { Calendar } from "lucide-react";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
-import { GanttChartV2 } from "./GanttChartV2";
 import { PertChart } from "./PertChart";
 import { CreateTacheForm } from "./TacheForm";
 import { TacheList } from "./TacheList";
-import { TacheListTodoist } from "./TacheListTodoist";
-import { KanbanBoard } from "./KanbanBoard";
+import { PlanningViews } from "./PlanningViews";
 import { QuickAddBar } from "./QuickAddBar";
 import { requireAuth } from "@/lib/auth-helpers";
 import { createTache, deleteTache, setAvancement, updateTache } from "./actions";
@@ -90,6 +88,14 @@ export default async function PlanningPage({
       orderBy: { ordre: "asc" },
     }),
   ]);
+
+  const allLabels = await db.label.findMany({
+    where: chantier
+      ? { OR: [{ chantierId: null }, { chantierId: chantier }] }
+      : {},
+    select: { id: true, nom: true, couleur: true },
+    orderBy: { nom: "asc" },
+  });
 
   const events: { id: string; type: "COMMANDE" | "LOCATION"; label: string; date: Date }[] = [
     ...commandes
@@ -222,72 +228,45 @@ export default async function PlanningPage({
         </CardBody>
       </Card>
 
-      {view === "gantt" && (
+      {view !== "pert" && taches.length === 0 && events.length === 0 ? (
+        <Card>
+          <CardBody className="text-center text-sm text-slate-500 dark:text-slate-500 py-10">
+            <Calendar size={32} className="mx-auto mb-3 text-slate-300" />
+            Aucune tâche pour cette sélection.
+          </CardBody>
+        </Card>
+      ) : view !== "pert" ? (
         <div className="space-y-3">
-          {taches.length === 0 && events.length === 0 ? (
-            <Card>
-              <CardBody className="text-center text-sm text-slate-500 dark:text-slate-500 py-10">
-                <Calendar size={32} className="mx-auto mb-3 text-slate-300" />
-                Aucune tâche pour cette sélection.
-              </CardBody>
-            </Card>
-          ) : (
-            <>
-              <GanttChartV2
-                taches={taches}
-                events={events}
-                canEdit={canEdit}
-              />
-              <Legend />
-            </>
-          )}
-        </div>
-      )}
-
-      {view === "kanban" && (
-        <KanbanBoard
-          canEdit={canEdit}
-          taches={taches.map((t) => ({
-            id: t.id,
-            nom: t.nom,
-            dateDebut: t.dateDebut,
-            dateFin: t.dateFin,
-            avancement: t.avancement,
-            statut: t.statut,
-            priorite: t.priorite,
-            parentId: t.parentId,
-            equipe: t.equipe,
-            chantier: t.chantier,
-            labels: t.labels,
-          }))}
-        />
-      )}
-
-      {view === "pert" && <PertChart taches={tachesPourPert} />}
-
-      {view === "liste" && (
-        <div className="space-y-4">
-          <TacheListTodoist
-            sections={sections}
-            defaultChantierId={chantier}
+          <PlanningViews
+            view={view as "gantt" | "kanban" | "liste"}
+            canEdit={canEdit}
             taches={taches.map((t) => ({
               id: t.id,
               nom: t.nom,
               description: t.description,
+              chantierId: t.chantierId,
+              equipeId: t.equipeId,
+              sectionId: t.sectionId,
+              parentId: t.parentId,
               dateDebut: t.dateDebut,
               dateFin: t.dateFin,
               avancement: t.avancement,
               statut: t.statut,
               priorite: t.priorite,
-              parentId: t.parentId,
-              sectionId: t.sectionId,
+              dependances: t.dependances,
+              labels: t.labels,
               equipe: t.equipe,
               chantier: t.chantier,
-              labels: t.labels,
             }))}
+            events={events}
+            sections={sections}
+            chantiers={chantiers}
+            equipes={equipes}
+            allLabels={allLabels}
+            defaultChantierId={chantier}
           />
-          {/* Form complet en bas pour les éditions avancées */}
-          {canEdit && (
+          {view === "gantt" && <Legend />}
+          {view === "liste" && canEdit && (
             <details>
               <summary className="text-xs text-slate-500 dark:text-slate-400 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 select-none">
                 Édition avancée (formulaire complet)
@@ -304,7 +283,9 @@ export default async function PlanningPage({
             </details>
           )}
         </div>
-      )}
+      ) : null}
+
+      {view === "pert" && <PertChart taches={tachesPourPert} />}
     </div>
   );
 }

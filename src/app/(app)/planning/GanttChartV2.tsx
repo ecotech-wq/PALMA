@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Flag } from "lucide-react";
 import { useToast } from "@/components/Toast";
@@ -84,13 +84,17 @@ export function GanttChartV2({
   taches,
   events,
   canEdit,
+  onClickTask,
 }: {
   taches: Tache[];
   events: ExtraEvent[];
   canEdit: boolean;
+  /** Click court sur une barre (sans drag) : ouvre l'édition. */
+  onClickTask?: (tacheId: string) => void;
 }) {
   const router = useRouter();
   const toast = useToast();
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [overrides, setOverrides] = useState<
     Record<string, { offset: number; duration: number }>
   >({});
@@ -163,6 +167,11 @@ export function GanttChartV2({
 
   /** Démarre un drag sur une barre.
    *  mode: "move" = déplacer entier, "left" = redim début, "right" = redim fin
+   *
+   *  Click vs drag :
+   *  - Si le pointer ne bouge pas de plus de 5 px ET que pointerup
+   *    intervient en moins de 350 ms → c'est un CLIC, on ouvre l'édition.
+   *  - Sinon → drag, on sauvegarde les nouvelles dates au pointerup.
    */
   function startDrag(
     tache: Tache,
@@ -174,11 +183,34 @@ export function GanttChartV2({
     e.stopPropagation();
 
     const startX = e.clientX;
+    const startY = e.clientY;
+    const startTime = Date.now();
     const initOffset = offsetFor(tache);
     const initDuration = durationFor(tache);
+    let moved = false;
 
     function onMove(ev: PointerEvent) {
       const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      // Seuil pour considérer que c'est un drag (pas un clic frémissant)
+      if (!moved && Math.hypot(dx, dy) > 5) {
+        moved = true;
+      }
+      if (!moved) return;
+
+      // Auto-scroll horizontal si le pointeur arrive près des bords
+      // du conteneur (style Monday.com pour drag long).
+      const scroller = scrollRef.current;
+      if (scroller) {
+        const rect = scroller.getBoundingClientRect();
+        const EDGE = 60;
+        if (ev.clientX > rect.right - EDGE) {
+          scroller.scrollLeft += 8;
+        } else if (ev.clientX < rect.left + EDGE) {
+          scroller.scrollLeft -= 8;
+        }
+      }
+
       const deltaDays = Math.round(dx / dayWidth);
       let nextOffset = initOffset;
       let nextDuration = initDuration;
@@ -202,33 +234,40 @@ export function GanttChartV2({
       }));
     }
 
-    async function onUp() {
+    function onUp() {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      const ov = overrides[tache.id];
-      // overrides peut être stale ; on recalcule depuis l'événement final
-      // via une closure : on s'appuie sur l'override courant via setOverrides
+
+      const elapsed = Date.now() - startTime;
+
+      // Cas CLIC : pas de mouvement (ou très peu) ET click rapide
+      if (!moved && elapsed < 600) {
+        // En mode "left" ou "right" on ne déclenche pas d'édition
+        // (le clic sur la poignée de redim est volontaire).
+        if (mode === "move" && onClickTask) {
+          onClickTask(tache.id);
+        }
+        return;
+      }
+
+      // Cas DRAG : sauvegarde si les dates ont changé
       setOverrides((prev) => {
         const cur = prev[tache.id];
         if (!cur) return prev;
         const newStart = addDays(minDate, cur.offset);
         const newEnd = addDays(newStart, cur.duration - 1);
-        // Vérifie si différent
         const origStart = new Date(tache.dateDebut);
         const origEnd = new Date(tache.dateFin);
         if (
           newStart.getTime() === startOfDay(origStart).getTime() &&
           newEnd.getTime() === startOfDay(origEnd).getTime()
         ) {
-          // pas de changement
           const next = { ...prev };
           delete next[tache.id];
           return next;
         }
-        // Save async (don't await dans setState)
         deplacerTache(tache.id, newStart, newEnd)
           .then(() => {
-            // L'override sera nettoyé via router.refresh
             router.refresh();
             setOverrides((p) => {
               const n = { ...p };
@@ -240,7 +279,6 @@ export function GanttChartV2({
             toast.error(
               err instanceof Error ? err.message : "Erreur de déplacement"
             );
-            // Annule l'override pour revenir aux dates serveur
             setOverrides((p) => {
               const n = { ...p };
               delete n[tache.id];
@@ -249,8 +287,6 @@ export function GanttChartV2({
           });
         return prev;
       });
-      // Pas besoin d'utiliser ov ici (on a recalculé via setOverrides)
-      void ov;
     }
 
     window.addEventListener("pointermove", onMove);
@@ -305,7 +341,8 @@ export function GanttChartV2({
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
       <div
-        className="overflow-x-auto"
+        ref={scrollRef}
+        className="overflow-x-auto overscroll-x-contain"
         style={{ WebkitOverflowScrolling: "touch" }}
       >
         <div style={{ minWidth: labelWidth + totalDays * dayWidth }}>
@@ -454,8 +491,12 @@ export function GanttChartV2({
                   className="flex border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/40 dark:hover:bg-slate-800/30 transition"
                 >
                   <div
-                    className="shrink-0 px-3 py-2 border-r border-slate-200 dark:border-slate-800 min-w-0 flex items-start gap-1.5"
+                    onClick={() => onClickTask?.(t.id)}
+                    className={`shrink-0 px-3 py-2 border-r border-slate-200 dark:border-slate-800 min-w-0 flex items-start gap-1.5 ${
+                      onClickTask ? "cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-800/50" : ""
+                    }`}
                     style={{ width: labelWidth }}
+                    title={onClickTask ? "Cliquer pour modifier" : undefined}
                   >
                     {t.priorite < 4 && (
                       <Flag
@@ -595,8 +636,9 @@ export function GanttChartV2({
       </div>
       {canEdit && (
         <div className="text-[11px] text-slate-500 dark:text-slate-400 px-3 py-2 border-t border-slate-100 dark:border-slate-800 italic">
-          Astuce : glisser une barre pour déplacer la tâche · glisser le
-          bord pour ajuster la durée. Ligne rouge = aujourd&apos;hui.
+          Cliquer une tâche pour la modifier · glisser pour déplacer ·
+          glisser les bords pour ajuster la durée · ligne rouge =
+          aujourd&apos;hui.
         </div>
       )}
     </div>
