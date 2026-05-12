@@ -88,12 +88,16 @@ export function GanttChartV2({
   events,
   canEdit,
   onClickTask,
+  onEmptyCellClick,
 }: {
   taches: Tache[];
   events: ExtraEvent[];
   canEdit: boolean;
   /** Click court sur une barre (sans drag) : ouvre l'édition. */
   onClickTask?: (tacheId: string) => void;
+  /** Click sur une case vide d'une ligne tâche : crée une nouvelle
+   *  tâche à cette date dans le même chantier. */
+  onEmptyCellClick?: (date: Date, chantierNom: string) => void;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -626,6 +630,22 @@ export function GanttChartV2({
                   <div
                     className="relative flex-1"
                     style={{ height: 44, width: totalDays * dayWidth }}
+                    onClick={(e) => {
+                      // Click sur empty cell : crée une tâche à la date cliquée.
+                      // On ne déclenche que si le clic est direct sur ce
+                      // conteneur (donc PAS sur une barre / poignée).
+                      if (e.target !== e.currentTarget) return;
+                      if (!canEdit || !onEmptyCellClick) return;
+                      const rect =
+                        e.currentTarget.getBoundingClientRect();
+                      const x = e.clientX - rect.left;
+                      const dayIndex = Math.floor(x / dayWidth);
+                      if (dayIndex < 0 || dayIndex >= totalDays) return;
+                      onEmptyCellClick(
+                        addDays(minDate, dayIndex),
+                        t.chantier.nom
+                      );
+                    }}
                   >
                     {days.map((d, i) => {
                       const dow = d.getDay();
@@ -634,7 +654,7 @@ export function GanttChartV2({
                         <div
                           key={i}
                           className={cn(
-                            "absolute top-0 bottom-0 border-r border-slate-100 dark:border-slate-800/50",
+                            "absolute top-0 bottom-0 border-r border-slate-100 dark:border-slate-800/50 pointer-events-none",
                             isWeekend && "bg-slate-50 dark:bg-slate-800/20"
                           )}
                           style={{ left: i * dayWidth, width: dayWidth }}
@@ -656,29 +676,35 @@ export function GanttChartV2({
                         width,
                         touchAction: "none",
                       }}
-                      title={`${t.nom} — ${t.avancement}%`}
+                      title={`${t.nom} — ${t.avancement}% · cliquer pour modifier · glisser les bords pour redimensionner`}
                     >
-                      {/* Poignée gauche (resize start) */}
+                      {/* Poignée gauche (resize start) — large, visible */}
                       {canEdit && (
                         <div
                           onPointerDown={(e) => {
                             e.stopPropagation();
                             startDrag(t, "left", e);
                           }}
-                          className="absolute left-0 top-0 bottom-0 w-1.5 hover:w-2 hover:bg-white/30 cursor-ew-resize transition-all"
+                          className="absolute left-0 top-0 bottom-0 w-3 flex items-center justify-center cursor-ew-resize bg-black/15 hover:bg-black/30 transition-colors"
                           style={{ touchAction: "none" }}
-                        />
+                          title="Glisser pour modifier la date de début"
+                        >
+                          <span className="block w-[2px] h-3 bg-white/80 rounded-full" />
+                        </div>
                       )}
-                      {/* Poignée droite (resize end) */}
+                      {/* Poignée droite (resize end) — large, visible */}
                       {canEdit && (
                         <div
                           onPointerDown={(e) => {
                             e.stopPropagation();
                             startDrag(t, "right", e);
                           }}
-                          className="absolute right-0 top-0 bottom-0 w-1.5 hover:w-2 hover:bg-white/30 cursor-ew-resize transition-all"
+                          className="absolute right-0 top-0 bottom-0 w-3 flex items-center justify-center cursor-ew-resize bg-black/15 hover:bg-black/30 transition-colors"
                           style={{ touchAction: "none" }}
-                        />
+                          title="Glisser pour modifier la date de fin"
+                        >
+                          <span className="block w-[2px] h-3 bg-white/80 rounded-full" />
+                        </div>
                       )}
                       {/* Avancement (overlay sombre) */}
                       <div
@@ -758,9 +784,11 @@ export function GanttChartV2({
       </div>
       {canEdit && (
         <div className="text-[11px] text-slate-500 dark:text-slate-400 px-3 py-2 border-t border-slate-100 dark:border-slate-800 italic leading-relaxed">
-          Tâches : cliquer = modifier · glisser = déplacer · bords =
-          ajuster la durée. Événements 📦🚚 : glisser pour replanifier.
-          Ligne rouge = aujourd&apos;hui. Scroll horizontal :{" "}
+          Tâches : cliquer = modifier · glisser barre = déplacer ·
+          glisser <strong>poignées sombres</strong> aux extrémités = ajuster la
+          durée d&apos;un seul côté · clic sur case vide = créer à cette
+          date. Événements 📦🚚 : glisser pour replanifier. Ligne rouge
+          = aujourd&apos;hui. Scroll horizontal :{" "}
           <kbd className="px-1 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800">
             Shift
           </kbd>{" "}

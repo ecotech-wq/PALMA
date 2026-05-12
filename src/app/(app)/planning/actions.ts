@@ -348,6 +348,40 @@ export async function quickAddTache(input: string, defaultChantierId?: string) {
   return created;
 }
 
+/**
+ * Création rapide à une date donnée et pour un chantier donné (clic
+ * sur case vide du Gantt). Retourne l'ID pour ouvrir directement la
+ * modale d'édition.
+ */
+export async function quickCreateAt({
+  chantierId,
+  date,
+  nom = "Nouvelle tâche",
+}: {
+  chantierId: string;
+  date: Date | string;
+  nom?: string;
+}): Promise<{ id: string }> {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const fin = new Date(d);
+  fin.setDate(fin.getDate() + 2); // 3 jours par défaut
+
+  const t = await db.tache.create({
+    data: {
+      chantierId,
+      nom,
+      dateDebut: d,
+      dateFin: fin,
+      priorite: 4,
+      statut: "A_FAIRE",
+    },
+  });
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${chantierId}`);
+  return { id: t.id };
+}
+
 /** Création rapide d'une sous-tâche d'une tâche parente (UI Todoist). */
 export async function ajouterSousTache(
   parentId: string,

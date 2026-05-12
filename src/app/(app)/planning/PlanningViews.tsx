@@ -1,10 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useToast } from "@/components/Toast";
 import { GanttChartV2 } from "./GanttChartV2";
 import { KanbanBoard } from "./KanbanBoard";
 import { TacheListTodoist, type SectionItem } from "./TacheListTodoist";
 import { TacheEditModal, type TacheForEdit } from "./TacheEditModal";
+import { quickCreateAt } from "./actions";
 
 type Vue = "gantt" | "liste" | "kanban";
 
@@ -50,6 +53,8 @@ export function PlanningViews({
   defaultChantierId?: string;
   canEdit: boolean;
 }) {
+  const router = useRouter();
+  const toast = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);
   const editing = useMemo(
     () => taches.find((t) => t.id === editingId) ?? null,
@@ -60,6 +65,32 @@ export function PlanningViews({
     () => taches.map((t) => ({ id: t.id, nom: t.nom, chantierId: t.chantierId })),
     [taches]
   );
+
+  // Map nom de chantier -> id (les barres Gantt ne portent que le nom)
+  const chantierByNom = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of chantiers) m.set(c.nom, c.id);
+    return m;
+  }, [chantiers]);
+
+  async function handleEmptyCellClick(date: Date, chantierNom: string) {
+    const chantierId = chantierByNom.get(chantierNom);
+    if (!chantierId) {
+      toast.error("Chantier introuvable");
+      return;
+    }
+    try {
+      const { id } = await quickCreateAt({ chantierId, date });
+      router.refresh();
+      // Ouvre directement la modale d'édition sur la nouvelle tâche.
+      // Délai pour laisser router.refresh peupler `taches` (sinon
+      // `editing` sera null car la liste ne contient pas encore le
+      // nouvel id).
+      setTimeout(() => setEditingId(id), 350);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    }
+  }
 
   return (
     <>
@@ -82,6 +113,7 @@ export function PlanningViews({
             events={events}
             canEdit={canEdit}
             onClickTask={canEdit ? (id) => setEditingId(id) : undefined}
+            onEmptyCellClick={canEdit ? handleEmptyCellClick : undefined}
           />
         </>
       )}
