@@ -16,7 +16,13 @@ type FullTache = TacheForEdit & {
 type Chantier = { id: string; nom: string };
 type Equipe = { id: string; nom: string; chantierId: string | null };
 type LabelRef = { id: string; nom: string; couleur: string };
-type Event = { id: string; type: "COMMANDE" | "LOCATION"; label: string; date: Date };
+type Event = {
+  id: string;
+  realId: string;
+  type: "COMMANDE" | "LOCATION";
+  label: string;
+  date: Date;
+};
 
 /**
  * Wrapper client qui partage l'état d'édition (modale) entre les trois

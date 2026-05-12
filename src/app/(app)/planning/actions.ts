@@ -169,6 +169,37 @@ export async function setPriorite(id: string, priorite: 1 | 2 | 3 | 4) {
 }
 
 /**
+ * Drag-to-reschedule pour les événements du Gantt :
+ *   - "COMMANDE" : déplace `dateLivraisonPrevue` de la Commande
+ *   - "LOCATION" : déplace `dateFinPrevue` de la LocationPret
+ *
+ * `id` est l'id réel de l'entité (sans le prefixe "cmd-" / "loc-").
+ */
+export async function deplacerEvenement(
+  type: "COMMANDE" | "LOCATION",
+  id: string,
+  newDate: Date | string
+) {
+  const date = new Date(newDate);
+  date.setHours(0, 0, 0, 0);
+  if (type === "COMMANDE") {
+    const c = await db.commande.update({
+      where: { id },
+      data: { dateLivraisonPrevue: date },
+    });
+    revalidatePath("/planning");
+    revalidatePath(`/chantiers/${c.chantierId}`);
+  } else {
+    const l = await db.locationPret.update({
+      where: { id },
+      data: { dateFinPrevue: date },
+    });
+    revalidatePath("/planning");
+    if (l.chantierId) revalidatePath(`/chantiers/${l.chantierId}`);
+  }
+}
+
+/**
  * Drag-to-reschedule (Monday Gantt). On donne juste les nouvelles dates
  * de début et de fin. Vérifie que dateFin >= dateDebut. Pas de touche
  * statut/avancement.

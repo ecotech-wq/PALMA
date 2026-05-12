@@ -97,17 +97,25 @@ export default async function PlanningPage({
     orderBy: { nom: "asc" },
   });
 
-  const events: { id: string; type: "COMMANDE" | "LOCATION"; label: string; date: Date }[] = [
+  const events: {
+    id: string;
+    realId: string;
+    type: "COMMANDE" | "LOCATION";
+    label: string;
+    date: Date;
+  }[] = [
     ...commandes
       .filter((c) => c.dateLivraisonPrevue)
       .map((c) => ({
         id: `cmd-${c.id}`,
+        realId: c.id,
         type: "COMMANDE" as const,
         label: `${c.fournisseur} (${c.chantier.nom})`,
         date: c.dateLivraisonPrevue!,
       })),
     ...locations.map((l) => ({
       id: `loc-${l.id}`,
+      realId: l.id,
       type: "LOCATION" as const,
       label: `${l.designation}${l.chantier ? ` (${l.chantier.nom})` : ""}`,
       date: l.dateFinPrevue,

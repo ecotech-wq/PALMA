@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Flag } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
-import { deplacerTache } from "./actions";
+import { deplacerTache, deplacerEvenement } from "./actions";
 
 type Tache = {
   id: string;
@@ -23,7 +23,10 @@ type Tache = {
 };
 
 type ExtraEvent = {
+  /** id composé "cmd-XYZ" / "loc-XYZ" pour la key React */
   id: string;
+  /** id réel sous-jacent (Commande.id ou LocationPret.id) pour les mutations */
+  realId: string;
   type: "COMMANDE" | "LOCATION";
   label: string;
   date: Date | string;
@@ -97,6 +100,10 @@ export function GanttChartV2({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [overrides, setOverrides] = useState<
     Record<string, { offset: number; duration: number }>
+  >({});
+  // Override visuel pour le drag d'un event (livraison/restitution)
+  const [eventOverrides, setEventOverrides] = useState<
+    Record<string, number>
   >({});
 
   // -- Calcul de l'échelle temporelle ---------------------------------------
@@ -293,6 +300,78 @@ export function GanttChartV2({
     window.addEventListener("pointerup", onUp);
   }
 
+  /** Drag d'un event (livraison commande / fin location). Plus simple
+   *  qu'une tâche : pas de resize, juste shift de la date. */
+  function startEventDrag(ev: ExtraEvent, e: React.PointerEvent) {
+    if (!canEdit) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const initOffset = daysBetween(minDate, new Date(ev.date));
+    let moved = false;
+
+    function onMove(mv: PointerEvent) {
+      const dx = mv.clientX - startX;
+      const dy = mv.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) > 5) moved = true;
+      if (!moved) return;
+      // Auto-scroll
+      const scroller = scrollRef.current;
+      if (scroller) {
+        const rect = scroller.getBoundingClientRect();
+        const EDGE = 60;
+        if (mv.clientX > rect.right - EDGE) scroller.scrollLeft += 8;
+        else if (mv.clientX < rect.left + EDGE) scroller.scrollLeft -= 8;
+      }
+      const deltaDays = Math.round(dx / dayWidth);
+      setEventOverrides((prev) => ({
+        ...prev,
+        [ev.id]: initOffset + deltaDays,
+      }));
+    }
+
+    function onUp() {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      if (!moved) return; // pas de save, juste un clic
+      setEventOverrides((prev) => {
+        const off = prev[ev.id];
+        if (off === undefined) return prev;
+        const newDate = addDays(minDate, off);
+        const origDate = startOfDay(new Date(ev.date));
+        if (newDate.getTime() === origDate.getTime()) {
+          const next = { ...prev };
+          delete next[ev.id];
+          return next;
+        }
+        deplacerEvenement(ev.type, ev.realId, newDate)
+          .then(() => {
+            router.refresh();
+            setEventOverrides((p) => {
+              const n = { ...p };
+              delete n[ev.id];
+              return n;
+            });
+          })
+          .catch((err: unknown) => {
+            toast.error(
+              err instanceof Error ? err.message : "Erreur de déplacement"
+            );
+            setEventOverrides((p) => {
+              const n = { ...p };
+              delete n[ev.id];
+              return n;
+            });
+          });
+        return prev;
+      });
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
   const todayOffset = daysBetween(minDate, startOfDay(new Date()));
   const todayLeft = todayOffset >= 0 && todayOffset < totalDays
     ? todayOffset * dayWidth + dayWidth / 2
@@ -338,10 +417,40 @@ export function GanttChartV2({
     }
   });
 
+  // Scroll horizontal molette (Shift+wheel ou trackpad horizontal)
+  function handleWheel(e: React.WheelEvent<HTMLDivElement>) {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Si l'utilisateur a un trackpad → deltaX peut être non-nul
+    // Si shift maintenu → on convertit deltaY en deltaX
+    if (e.shiftKey && e.deltaY !== 0) {
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    } else if (e.deltaX !== 0) {
+      el.scrollLeft += e.deltaX;
+    }
+  }
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+      {/* Empty state explicite quand 0 tâches mais des events */}
+      {taches.length === 0 && events.length > 0 && (
+        <div className="px-3 py-3 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-900 text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+          💡 Aucune <strong>tâche</strong> planifiée — seules les{" "}
+          <strong>livraisons</strong> (📦) et <strong>fins de location</strong>{" "}
+          (🚚) sont affichées (glissables aussi pour replanifier). Pour
+          ajouter une tâche avec une barre de durée, utilise la barre{" "}
+          <em>Quick Add</em> en haut, par exemple&nbsp;:
+          <code className="ml-1 px-1 rounded bg-amber-100 dark:bg-amber-900/50">
+            Couler dalle B demain p1 x5j
+          </code>
+          .
+        </div>
+      )}
+
       <div
         ref={scrollRef}
+        onWheel={handleWheel}
         className="overflow-x-auto overscroll-x-contain"
         style={{ WebkitOverflowScrolling: "touch" }}
       >
@@ -593,10 +702,15 @@ export function GanttChartV2({
               );
             })}
 
-            {/* Event markers */}
+            {/* Event markers (draggables si canEdit) */}
             {events.map((ev) => {
-              const offset = daysBetween(minDate, new Date(ev.date));
+              const ovOffset = eventOverrides[ev.id];
+              const offset =
+                ovOffset !== undefined
+                  ? ovOffset
+                  : daysBetween(minDate, new Date(ev.date));
               const left = offset * dayWidth;
+              const isDragging = ovOffset !== undefined;
               return (
                 <div
                   key={ev.id}
@@ -620,12 +734,23 @@ export function GanttChartV2({
                     style={{ height: 36, width: totalDays * dayWidth }}
                   >
                     <div
+                      onPointerDown={(e) => startEventDrag(ev, e)}
                       className={cn(
-                        "absolute top-1 bottom-1 w-3 rounded-sm flex items-center justify-center text-white text-[10px] font-bold",
-                        ev.type === "COMMANDE" ? "bg-orange-500" : "bg-purple-500"
+                        "absolute top-1 bottom-1 w-3 rounded-sm flex items-center justify-center text-white text-[10px] font-bold shadow-sm",
+                        ev.type === "COMMANDE"
+                          ? "bg-orange-500"
+                          : "bg-purple-500",
+                        canEdit
+                          ? "cursor-grab active:cursor-grabbing hover:w-4 transition-all"
+                          : "cursor-help",
+                        isDragging && "scale-125"
                       )}
-                      style={{ left }}
-                      title={ev.label}
+                      style={{ left, touchAction: "none" }}
+                      title={
+                        canEdit
+                          ? `${ev.type === "COMMANDE" ? "Livraison prévue" : "Fin de location"} : ${ev.label}\nGlisser pour replanifier.`
+                          : `${ev.type === "COMMANDE" ? "Livraison prévue" : "Fin de location"} : ${ev.label}`
+                      }
                     />
                   </div>
                 </div>
@@ -635,10 +760,14 @@ export function GanttChartV2({
         </div>
       </div>
       {canEdit && (
-        <div className="text-[11px] text-slate-500 dark:text-slate-400 px-3 py-2 border-t border-slate-100 dark:border-slate-800 italic">
-          Cliquer une tâche pour la modifier · glisser pour déplacer ·
-          glisser les bords pour ajuster la durée · ligne rouge =
-          aujourd&apos;hui.
+        <div className="text-[11px] text-slate-500 dark:text-slate-400 px-3 py-2 border-t border-slate-100 dark:border-slate-800 italic leading-relaxed">
+          Tâches : cliquer = modifier · glisser = déplacer · bords =
+          ajuster la durée. Événements 📦🚚 : glisser pour replanifier.
+          Ligne rouge = aujourd&apos;hui. Scroll horizontal :{" "}
+          <kbd className="px-1 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800">
+            Shift
+          </kbd>{" "}
+          + molette.
         </div>
       )}
     </div>
