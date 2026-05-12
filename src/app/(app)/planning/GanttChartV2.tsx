@@ -345,7 +345,9 @@ export function GanttChartV2({
           delete next[ev.id];
           return next;
         }
-        deplacerEvenement(ev.type, ev.realId, newDate)
+        // Fallback : si realId manque (cache stale), on envoie l'id préfixé,
+        // l'action server le strip côté serveur.
+        deplacerEvenement(ev.type, ev.realId ?? ev.id, newDate)
           .then(() => {
             router.refresh();
             setEventOverrides((p) => {

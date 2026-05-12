@@ -173,25 +173,32 @@ export async function setPriorite(id: string, priorite: 1 | 2 | 3 | 4) {
  *   - "COMMANDE" : déplace `dateLivraisonPrevue` de la Commande
  *   - "LOCATION" : déplace `dateFinPrevue` de la LocationPret
  *
- * `id` est l'id réel de l'entité (sans le prefixe "cmd-" / "loc-").
+ * `id` peut être l'ID brut (cuid) OU l'ID préfixé "cmd-XXX" / "loc-XXX"
+ * (forme utilisée comme key React dans le Gantt) — on strip le prefixe
+ * pour être robuste aux deux appels.
  */
 export async function deplacerEvenement(
   type: "COMMANDE" | "LOCATION",
   id: string,
   newDate: Date | string
 ) {
+  if (!id) throw new Error("ID manquant");
+  // Robustesse : accepte aussi bien "cmd-XYZ" / "loc-XYZ" que "XYZ"
+  const cleanId = id.replace(/^(cmd-|loc-)/, "");
+  if (!cleanId) throw new Error("ID invalide");
+
   const date = new Date(newDate);
   date.setHours(0, 0, 0, 0);
   if (type === "COMMANDE") {
     const c = await db.commande.update({
-      where: { id },
+      where: { id: cleanId },
       data: { dateLivraisonPrevue: date },
     });
     revalidatePath("/planning");
     revalidatePath(`/chantiers/${c.chantierId}`);
   } else {
     const l = await db.locationPret.update({
-      where: { id },
+      where: { id: cleanId },
       data: { dateFinPrevue: date },
     });
     revalidatePath("/planning");
