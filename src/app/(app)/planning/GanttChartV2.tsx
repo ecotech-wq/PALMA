@@ -195,18 +195,19 @@ export function GanttChartV2({
     const initOffset = offsetFor(tache);
     const initDuration = durationFor(tache);
     let moved = false;
+    // On suit la position courante via closure pour ne pas dépendre
+    // d'une lecture du state à l'intérieur d'un updater.
+    let lastOffset = initOffset;
+    let lastDuration = initDuration;
 
     function onMove(ev: PointerEvent) {
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
-      // Seuil pour considérer que c'est un drag (pas un clic frémissant)
       if (!moved && Math.hypot(dx, dy) > 5) {
         moved = true;
       }
       if (!moved) return;
 
-      // Auto-scroll horizontal si le pointeur arrive près des bords
-      // du conteneur (style Monday.com pour drag long).
       const scroller = scrollRef.current;
       if (scroller) {
         const rect = scroller.getBoundingClientRect();
@@ -235,10 +236,20 @@ export function GanttChartV2({
         nextDuration = initDuration + deltaDays;
         if (nextDuration < 1) nextDuration = 1;
       }
+      lastOffset = nextOffset;
+      lastDuration = nextDuration;
       setOverrides((prev) => ({
         ...prev,
         [tache.id]: { offset: nextOffset, duration: nextDuration },
       }));
+    }
+
+    function clearOverride() {
+      setOverrides((p) => {
+        const n = { ...p };
+        delete n[tache.id];
+        return n;
+      });
     }
 
     function onUp() {
@@ -249,51 +260,38 @@ export function GanttChartV2({
 
       // Cas CLIC : pas de mouvement (ou très peu) ET click rapide
       if (!moved && elapsed < 600) {
-        // En mode "left" ou "right" on ne déclenche pas d'édition
-        // (le clic sur la poignée de redim est volontaire).
         if (mode === "move" && onClickTask) {
           onClickTask(tache.id);
         }
         return;
       }
 
-      // Cas DRAG : sauvegarde si les dates ont changé
-      setOverrides((prev) => {
-        const cur = prev[tache.id];
-        if (!cur) return prev;
-        const newStart = addDays(minDate, cur.offset);
-        const newEnd = addDays(newStart, cur.duration - 1);
-        const origStart = new Date(tache.dateDebut);
-        const origEnd = new Date(tache.dateFin);
-        if (
-          newStart.getTime() === startOfDay(origStart).getTime() &&
-          newEnd.getTime() === startOfDay(origEnd).getTime()
-        ) {
-          const next = { ...prev };
-          delete next[tache.id];
-          return next;
-        }
-        deplacerTache(tache.id, newStart, newEnd)
-          .then(() => {
-            router.refresh();
-            setOverrides((p) => {
-              const n = { ...p };
-              delete n[tache.id];
-              return n;
-            });
-          })
-          .catch((err: unknown) => {
-            toast.error(
-              err instanceof Error ? err.message : "Erreur de déplacement"
-            );
-            setOverrides((p) => {
-              const n = { ...p };
-              delete n[tache.id];
-              return n;
-            });
-          });
-        return prev;
-      });
+      // Cas DRAG : sauvegarde si les dates ont changé.
+      // L'appel server action est HORS de tout updater pour éviter le
+      // warning React "Cannot update a component while rendering a
+      // different component".
+      const newStart = addDays(minDate, lastOffset);
+      const newEnd = addDays(newStart, lastDuration - 1);
+      const origStart = new Date(tache.dateDebut);
+      const origEnd = new Date(tache.dateFin);
+      if (
+        newStart.getTime() === startOfDay(origStart).getTime() &&
+        newEnd.getTime() === startOfDay(origEnd).getTime()
+      ) {
+        clearOverride();
+        return;
+      }
+      deplacerTache(tache.id, newStart, newEnd)
+        .then(() => {
+          router.refresh();
+          clearOverride();
+        })
+        .catch((err: unknown) => {
+          toast.error(
+            err instanceof Error ? err.message : "Erreur de déplacement"
+          );
+          clearOverride();
+        });
     }
 
     window.addEventListener("pointermove", onMove);
@@ -310,13 +308,15 @@ export function GanttChartV2({
     const startY = e.clientY;
     const initOffset = daysBetween(minDate, new Date(ev.date));
     let moved = false;
+    // On suit la position courante via closure plutôt qu'en lisant le
+    // state — évite d'appeler router.refresh() depuis un updater.
+    let lastOffset = initOffset;
 
     function onMove(mv: PointerEvent) {
       const dx = mv.clientX - startX;
       const dy = mv.clientY - startY;
       if (!moved && Math.hypot(dx, dy) > 5) moved = true;
       if (!moved) return;
-      // Auto-scroll
       const scroller = scrollRef.current;
       if (scroller) {
         const rect = scroller.getBoundingClientRect();
@@ -325,49 +325,44 @@ export function GanttChartV2({
         else if (mv.clientX < rect.left + EDGE) scroller.scrollLeft -= 8;
       }
       const deltaDays = Math.round(dx / dayWidth);
-      setEventOverrides((prev) => ({
-        ...prev,
-        [ev.id]: initOffset + deltaDays,
-      }));
+      lastOffset = initOffset + deltaDays;
+      setEventOverrides((prev) => ({ ...prev, [ev.id]: lastOffset }));
+    }
+
+    function clearOverride() {
+      setEventOverrides((p) => {
+        const n = { ...p };
+        delete n[ev.id];
+        return n;
+      });
     }
 
     function onUp() {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      if (!moved) return; // pas de save, juste un clic
-      setEventOverrides((prev) => {
-        const off = prev[ev.id];
-        if (off === undefined) return prev;
-        const newDate = addDays(minDate, off);
-        const origDate = startOfDay(new Date(ev.date));
-        if (newDate.getTime() === origDate.getTime()) {
-          const next = { ...prev };
-          delete next[ev.id];
-          return next;
-        }
-        // Fallback : si realId manque (cache stale), on envoie l'id préfixé,
-        // l'action server le strip côté serveur.
-        deplacerEvenement(ev.type, ev.realId ?? ev.id, newDate)
-          .then(() => {
-            router.refresh();
-            setEventOverrides((p) => {
-              const n = { ...p };
-              delete n[ev.id];
-              return n;
-            });
-          })
-          .catch((err: unknown) => {
-            toast.error(
-              err instanceof Error ? err.message : "Erreur de déplacement"
-            );
-            setEventOverrides((p) => {
-              const n = { ...p };
-              delete n[ev.id];
-              return n;
-            });
-          });
-        return prev;
-      });
+      if (!moved) return;
+
+      const newDate = addDays(minDate, lastOffset);
+      const origDate = startOfDay(new Date(ev.date));
+      if (newDate.getTime() === origDate.getTime()) {
+        clearOverride();
+        return;
+      }
+      // Fallback : si realId manque (cache stale), on envoie l'id préfixé,
+      // l'action server le strip côté serveur.
+      // L'appel est HORS de tout updater pour éviter le warning React
+      // "Cannot update a component while rendering a different component".
+      deplacerEvenement(ev.type, ev.realId ?? ev.id, newDate)
+        .then(() => {
+          router.refresh();
+          clearOverride();
+        })
+        .catch((err: unknown) => {
+          toast.error(
+            err instanceof Error ? err.message : "Erreur de déplacement"
+          );
+          clearOverride();
+        });
     }
 
     window.addEventListener("pointermove", onMove);
