@@ -74,6 +74,19 @@ function addDays(d: Date, n: number): Date {
   return x;
 }
 
+/** Numéro de semaine ISO (1..53) — utile en mode "semaine". */
+function getISOWeek(d: Date): number {
+  const target = new Date(d.valueOf());
+  const dayNr = (d.getDay() + 6) % 7; // 0 = lundi
+  target.setDate(target.getDate() - dayNr + 3);
+  const firstThursday = target.valueOf();
+  target.setMonth(0, 1);
+  if (target.getDay() !== 4) {
+    target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
+  }
+  return 1 + Math.ceil((firstThursday - target.valueOf()) / (7 * 24 * 3600 * 1000));
+}
+
 /**
  * Gantt interactif style Monday.com :
  *  - Drag du milieu de la barre = déplacer (shift)
@@ -109,14 +122,23 @@ export function GanttChartV2({
   const [eventOverrides, setEventOverrides] = useState<
     Record<string, number>
   >({});
+  // UI : échelle temporelle + visibilité des events
+  const [scale, setScale] = useState<"jour" | "semaine" | "mois">("jour");
+  const [showEvents, setShowEvents] = useState(false);
+
+  // Largeur d'un jour selon l'échelle
+  const dayWidth = scale === "jour" ? 32 : scale === "semaine" ? 10 : 4;
+
+  // Events filtrés (cachés par défaut, encombrent souvent la vue)
+  const visibleEvents = showEvents ? events : [];
 
   // -- Calcul de l'échelle temporelle ---------------------------------------
-  const { minDate, totalDays, dayWidth, labelWidth, days, months } = useMemo(() => {
+  const { minDate, totalDays, labelWidth, days, months, weeks } = useMemo(() => {
     const allDates: Date[] = [];
     taches.forEach((t) => {
       allDates.push(new Date(t.dateDebut), new Date(t.dateFin));
     });
-    events.forEach((e) => allDates.push(new Date(e.date)));
+    visibleEvents.forEach((e) => allDates.push(new Date(e.date)));
     if (allDates.length === 0) allDates.push(new Date());
     const minD = startOfDay(
       new Date(Math.min(...allDates.map((d) => d.getTime())))
@@ -128,7 +150,6 @@ export function GanttChartV2({
     const min = addDays(minD, -7);
     const max = addDays(maxD, 14);
     const total = Math.max(14, daysBetween(min, max) + 1);
-    const dw = 32; // px / jour - un peu plus large pour les barres rondies
     const lw = 200;
     const ds: Date[] = [];
     for (let i = 0; i < total; i++) ds.push(addDays(min, i));
@@ -142,15 +163,30 @@ export function GanttChartV2({
       if (last && last.label === label) last.daysCount++;
       else ms.push({ label, daysCount: 1 });
     }
+    // Groupement par semaine (utile en mode "semaine")
+    const ws: { label: string; daysCount: number; startIdx: number }[] = [];
+    let cur: typeof ws[number] | null = null;
+    ds.forEach((d, i) => {
+      // Lundi = nouveau segment (ou premier élément)
+      const isMonday = d.getDay() === 1;
+      if (!cur || isMonday) {
+        if (cur) ws.push(cur);
+        const wNum = getISOWeek(d);
+        cur = { label: `S${wNum}`, daysCount: 1, startIdx: i };
+      } else {
+        cur.daysCount++;
+      }
+    });
+    if (cur) ws.push(cur);
     return {
       minDate: min,
       totalDays: total,
-      dayWidth: dw,
       labelWidth: lw,
       days: ds,
       months: ms,
+      weeks: ws,
     };
-  }, [taches, events]);
+  }, [taches, visibleEvents]);
 
   if (taches.length === 0 && events.length === 0) {
     return (
@@ -434,18 +470,45 @@ export function GanttChartV2({
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-      {/* Empty state explicite quand 0 tâches mais des events */}
-      {taches.length === 0 && events.length > 0 && (
+      {/* Toolbar : échelle + visibilité events */}
+      <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 flex-wrap">
+        <div className="inline-flex rounded-md overflow-hidden border border-slate-300 dark:border-slate-700 text-xs">
+          {(["jour", "semaine", "mois"] as const).map((s, i) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setScale(s)}
+              className={`px-3 py-1 capitalize transition ${
+                i > 0 ? "border-l border-slate-300 dark:border-slate-700" : ""
+              } ${
+                scale === s
+                  ? "bg-brand-500 text-white"
+                  : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+        {events.length > 0 && (
+          <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showEvents}
+              onChange={(e) => setShowEvents(e.target.checked)}
+            />
+            Afficher livraisons &amp; fins de location ({events.length})
+          </label>
+        )}
+      </div>
+
+      {/* Empty state explicite quand 0 tâches mais des events visibles */}
+      {taches.length === 0 && visibleEvents.length > 0 && (
         <div className="px-3 py-3 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-900 text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-          💡 Aucune <strong>tâche</strong> planifiée — seules les{" "}
-          <strong>livraisons</strong> (📦) et <strong>fins de location</strong>{" "}
-          (🚚) sont affichées (glissables aussi pour replanifier). Pour
-          ajouter une tâche avec une barre de durée, utilise la barre{" "}
-          <em>Quick Add</em> en haut, par exemple&nbsp;:
-          <code className="ml-1 px-1 rounded bg-amber-100 dark:bg-amber-900/50">
-            Couler dalle B demain p1 x5j
-          </code>
-          .
+          💡 Aucune <strong>tâche</strong> planifiée — seules les
+          livraisons / fins de location sont affichées. Décoche la case
+          ci-dessus pour les masquer, ou crée une tâche via la barre{" "}
+          <em>Quick Add</em>.
         </div>
       )}
 
@@ -465,6 +528,7 @@ export function GanttChartV2({
               Tâche
             </div>
             <div className="flex-1 relative">
+              {/* Toujours : bandeau mois */}
               <div className="flex border-b border-slate-200 dark:border-slate-800">
                 {months.map((m, i) => (
                   <div
@@ -476,28 +540,45 @@ export function GanttChartV2({
                   </div>
                 ))}
               </div>
-              <div className="flex">
-                {days.map((d, i) => {
-                  const dow = d.getDay();
-                  const isWeekend = dow === 0 || dow === 6;
-                  const today =
-                    startOfDay(new Date()).getTime() === d.getTime();
-                  return (
+              {/* 2e bandeau : jours (jour) / semaines (semaine) / rien (mois) */}
+              {scale === "jour" && (
+                <div className="flex">
+                  {days.map((d, i) => {
+                    const dow = d.getDay();
+                    const isWeekend = dow === 0 || dow === 6;
+                    const today =
+                      startOfDay(new Date()).getTime() === d.getTime();
+                    return (
+                      <div
+                        key={i}
+                        className={cn(
+                          "text-[10px] text-center text-slate-500 py-1 border-r border-slate-100 dark:border-slate-800 last:border-r-0",
+                          isWeekend && "bg-slate-100 dark:bg-slate-800/40",
+                          today &&
+                            "bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-400 font-semibold"
+                        )}
+                        style={{ width: dayWidth }}
+                      >
+                        {d.getDate()}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {scale === "semaine" && (
+                <div className="flex">
+                  {weeks.map((w, i) => (
                     <div
                       key={i}
-                      className={cn(
-                        "text-[10px] text-center text-slate-500 py-1 border-r border-slate-100 dark:border-slate-800 last:border-r-0",
-                        isWeekend && "bg-slate-100 dark:bg-slate-800/40",
-                        today &&
-                          "bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-400 font-semibold"
-                      )}
-                      style={{ width: dayWidth }}
+                      className="text-[10px] text-center text-slate-500 py-1 border-r border-slate-200 dark:border-slate-800 last:border-r-0 truncate"
+                      style={{ width: w.daysCount * dayWidth }}
                     >
-                      {d.getDate()}
+                      {w.label}
                     </div>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
+              )}
+              {/* En mode "mois" : pas de 2e ligne, le bandeau mois fait office */}
             </div>
           </div>
 
@@ -725,8 +806,8 @@ export function GanttChartV2({
               );
             })}
 
-            {/* Event markers (draggables si canEdit) */}
-            {events.map((ev) => {
+            {/* Event markers (draggables si canEdit), filtrés par showEvents */}
+            {visibleEvents.map((ev) => {
               const ovOffset = eventOverrides[ev.id];
               const offset =
                 ovOffset !== undefined
