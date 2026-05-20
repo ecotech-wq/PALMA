@@ -7,6 +7,7 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { requireAuth, getAccessibleChantierIds } from "@/lib/auth-helpers";
+import { markResourceRead } from "@/lib/read-state";
 import {
   GraviteBadge,
   StatutBadge,
@@ -35,6 +36,10 @@ export default async function IncidentsListPage({
   if (me.isClient && !me.visibility.showIncidents) {
     const { redirect } = await import("next/navigation");
     redirect("/dashboard");
+  }
+  // Marque la liste comme lue pour cet utilisateur (badge sidebar →0)
+  if (!me.isClient) {
+    await markResourceRead(me.id, "incidents");
   }
   const accessibleIds = await getAccessibleChantierIds(me);
   const { q, statut, chantier, gravite } = await searchParams;

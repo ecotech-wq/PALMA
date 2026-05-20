@@ -9,6 +9,7 @@ import {
   requireAuth,
   getAccessibleChantierIds,
 } from "@/lib/auth-helpers";
+import { unreadMessagerieFor } from "@/lib/read-state";
 
 const timeFmt = new Intl.DateTimeFormat("fr-FR", {
   day: "2-digit",
@@ -53,6 +54,7 @@ export default async function MessagerieHubPage() {
   }
 
   const accessibleIds = await getAccessibleChantierIds(me);
+  const unread = await unreadMessagerieFor(me.id, accessibleIds);
   const chantiers = await db.chantier.findMany({
     where: {
       archivedAt: null,
@@ -195,11 +197,13 @@ export default async function MessagerieHubPage() {
                       </p>
                     )}
                   </div>
-                  {c._count.journalMessages > 0 && (
-                    <Badge color="slate">
-                      {c._count.journalMessages}
-                    </Badge>
-                  )}
+                  {(unread.byChantier[c.id] ?? 0) > 0 ? (
+                    <span className="shrink-0 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-brand-600 text-white text-[10px] font-bold leading-none">
+                      {unread.byChantier[c.id]}
+                    </span>
+                  ) : c._count.journalMessages > 0 ? (
+                    <Badge color="slate">{c._count.journalMessages}</Badge>
+                  ) : null}
                 </Link>
               </li>
             );

@@ -61,6 +61,7 @@ model User {
   notifications      Notification[]
   journalMessages    JournalMessage[]
   plansUploaded      PlanChantier[]
+  readStates         UserReadState[]
 }
 
 // Token à usage unique pour réinitialiser un mot de passe.
@@ -705,6 +706,26 @@ enum JournalMessageType {
 /// Auto-inséré quand un incident, une demande ou une commande est créé(e).
 /// Permet aux équipes terrain et aux admins de communiquer au fil de la
 /// journée avec photos et vidéos.
+/// Suivi de lecture par utilisateur et par "ressource" (un chantier
+/// pour la messagerie, "incidents"/"demandes" globalement, etc.).
+/// Sert à calculer les badges "non lu" dans la sidebar : un événement
+/// créé après `lastReadAt` compte comme non lu.
+///
+/// Exemples de clés `resource` :
+///   - "chantier:<chantierId>"  → la messagerie d'un chantier
+///   - "incidents"              → la liste globale des incidents
+///   - "demandes"               → les demandes matériel à valider
+model UserReadState {
+  userId     String
+  resource   String
+  lastReadAt DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, resource])
+  @@index([userId])
+}
+
 model JournalMessage {
   id           String             @id @default(cuid())
   chantierId   String

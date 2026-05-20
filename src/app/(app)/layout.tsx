@@ -42,13 +42,29 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     }
   }
 
+  const userId = session.user.id as string;
+
+  // Pré-calcul des IDs de chantiers accessibles (pour le badge messagerie)
+  let accessibleChantierIds: string[] | null = null;
+  if (isClient) {
+    const u = await db.user.findUnique({
+      where: { id: userId },
+      select: { chantiersClient: { select: { id: true } } },
+    });
+    accessibleChantierIds = (u?.chantiersClient ?? []).map((c) => c.id);
+  }
+
+  const { unreadMessagerieFor, unreadIncidentsFor, unreadDemandesFor } =
+    await import("@/lib/read-state");
+
   const [
     pendingUsersCount,
     paiementsAVerser,
     locationsEnRetard,
     sortiesEnRetard,
-    incidentsOuverts,
-    demandesEnAttente,
+    incidentsUnread,
+    demandesUnread,
+    messagerieUnread,
   ] = await Promise.all([
     isAdmin ? db.user.count({ where: { status: "PENDING" } }) : 0,
     // Paiements en attente : badge réservé aux admins
@@ -66,21 +82,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         },
       },
     }),
-    // Incidents non résolus (OUVERT ou EN_COURS)
-    db.incident.count({
-      where: { statut: { in: ["OUVERT", "EN_COURS"] } },
-    }),
-    // Demandes de matériel en attente : admin + conducteur de travaux
-    // (les CHEF voient leurs propres demandes mais le badge sert au
-    // pilotage pour valider rapidement)
-    isAdmin || isConducteur
-      ? db.demandeMateriel.count({ where: { statut: "DEMANDEE" } })
-      : 0,
+    // Incidents non lus (ouverts/en cours + créés après last-read)
+    isClient ? 0 : unreadIncidentsFor(userId),
+    // Demandes non lues (en attente + créées après last-read) :
+    // pertinent pour admin + conducteur qui doivent valider
+    isAdmin || isConducteur ? unreadDemandesFor(userId) : 0,
+    // Messagerie : nb total de nouveaux messages depuis dernière ouverture
+    isClient
+      ? { total: 0, byChantier: {} }
+      : unreadMessagerieFor(userId, accessibleChantierIds),
   ]);
 
   // Charge les notifications de l'utilisateur (non lues + 20 plus récentes
   // pour le panel de la cloche)
-  const userId = session.user.id as string;
   const [notifications, unreadNotifCount] = await Promise.all([
     db.notification.findMany({
       where: { userId },
@@ -94,8 +108,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     paie: paiementsAVerser,
     locations: locationsEnRetard,
     sorties: sortiesEnRetard,
-    incidents: incidentsOuverts,
-    demandes: demandesEnAttente,
+    incidents: incidentsUnread,
+    demandes: demandesUnread,
+    messagerie: messagerieUnread.total,
   };
 
   async function handleSignOut() {

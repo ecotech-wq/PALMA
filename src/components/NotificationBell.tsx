@@ -142,7 +142,16 @@ export function NotificationBell({
       {open && (
         <div
           data-notif-panel
-          className="absolute right-0 top-full mt-2 w-80 sm:w-96 max-h-[70vh] flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xl z-50"
+          /**
+           * Positionnement intelligent :
+           *  - Mobile (< md) : bell est en haut à droite → ancre à droite,
+           *    le panneau s'étend vers la gauche.
+           *  - Desktop (≥ md) : bell est dans la sidebar à gauche → ancre
+           *    à gauche, le panneau s'étend vers la droite (sinon il
+           *    déborde hors viewport et le texte est tronqué).
+           *  - max-w sécurité pour ne jamais dépasser le viewport.
+           */
+          className="absolute top-full mt-2 right-0 md:right-auto md:left-0 w-80 sm:w-96 max-w-[calc(100vw-1rem)] max-h-[70vh] flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xl z-50"
         >
           <div className="flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-800">
             <h3 className="font-semibold text-slate-900 dark:text-slate-100">

@@ -27,6 +27,9 @@ import {
   Package,
   ChevronRight,
   MessageSquare,
+  CalendarRange,
+  ClipboardCheck,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -81,7 +84,20 @@ const groups: NavGroup[] = [
       { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true },
       // Fiche ouvrier expose tarifs : admin + conducteur seulement
       { href: "/ouvriers", label: "Ouvriers", icon: HardHat, clientHidden: true, pilotOnly: true },
-      { href: "/planning", label: "Planning", icon: Calendar, clientHidden: true },
+    ],
+  },
+  // OPC = ordonnancement, pilotage, coordination. Réservé admin +
+  // conducteur de travaux. C'est là qu'on gère le planning, les
+  // rapports hebdo envoyés au client et les PV de réception (OPR).
+  {
+    key: "opc",
+    label: "OPC",
+    icon: ClipboardList,
+    pilotOnly: true,
+    items: [
+      { href: "/planning", label: "Planning", icon: Calendar },
+      { href: "/rapports-hebdo", label: "Rapports hebdo", icon: CalendarRange },
+      { href: "/pv-reception", label: "PV de réception", icon: ClipboardCheck },
     ],
   },
   {
@@ -90,7 +106,7 @@ const groups: NavGroup[] = [
     icon: FileText,
     items: [
       { href: "/pointage", label: "Pointage", icon: CheckSquare, clientHidden: true },
-      { href: "/rapports", label: "Rapports", icon: FileText },
+      { href: "/rapports", label: "Rapports quotidiens", icon: FileText },
       { href: "/incidents", label: "Incidents", icon: AlertTriangle },
     ],
   },
@@ -154,8 +170,12 @@ const mobileMore: NavItem[] = [
   // Prix sensibles : admin + conducteur uniquement
   { href: "/locations", label: "Locations / Prêts", icon: Truck, clientHidden: true, pilotOnly: true },
   { href: "/commandes", label: "Commandes", icon: ShoppingCart, clientHidden: true, pilotOnly: true },
-  { href: "/planning", label: "Planning", icon: Calendar, clientHidden: true },
-  { href: "/rapports", label: "Rapports", icon: FileText },
+  // OPC : admin + conducteur
+  { href: "/planning", label: "Planning", icon: Calendar, clientHidden: true, pilotOnly: true },
+  { href: "/rapports-hebdo", label: "Rapports hebdo", icon: CalendarRange, pilotOnly: true },
+  { href: "/pv-reception", label: "PV de réception", icon: ClipboardCheck, pilotOnly: true },
+  // Suivi terrain (visible CHEF)
+  { href: "/rapports", label: "Rapports quotidiens", icon: FileText },
   { href: "/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/demandes", label: "Demandes matériel", icon: Package, clientHidden: true },
   { href: "/profil", label: "Mon profil", icon: UserCircle },
@@ -198,6 +218,7 @@ export type NavBadges = {
   incidents?: number;
   demandes?: number;
   adminUsers?: number;
+  messagerie?: number;
 };
 
 export type ClientVisibility = {
@@ -260,6 +281,9 @@ function getBadgeForHref(
   }
   if (href === "/demandes" && (badges.demandes ?? 0) > 0) {
     return { count: badges.demandes!, variant: "warning" };
+  }
+  if (href === "/messagerie" && (badges.messagerie ?? 0) > 0) {
+    return { count: badges.messagerie!, variant: "info" };
   }
   if (href === "/admin/users" && (badges.adminUsers ?? 0) > 0) {
     return { count: badges.adminUsers!, variant: "warning" };
@@ -465,6 +489,7 @@ export function DesktopSidebar({
               pathname?.startsWith(messagerieItem.href + "/") ||
               false
             }
+            badge={getBadgeForHref(messagerieItem.href, navBadges)}
           />
         )}
 

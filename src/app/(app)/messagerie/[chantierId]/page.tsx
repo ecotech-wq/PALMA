@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { ChantierComposer } from "../ChantierComposer";
 import { ChantierFeed } from "../ChantierFeed";
 import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
+import { markResourceRead } from "@/lib/read-state";
 
 /**
  * Le fil d'un chantier — vue chat WhatsApp-like. Affiche les N derniers
@@ -22,6 +23,8 @@ export default async function MessagerieChantierPage({
   const me = await requireAuth();
   if (me.isClient) redirect("/dashboard");
   await requireChantierAccess(me, chantierId);
+  // Marque le fil comme lu (badge sidebar décrémenté à la prochaine nav)
+  await markResourceRead(me.id, `chantier:${chantierId}`);
 
   // Fenêtre par défaut : 14 derniers jours
   const now = new Date();

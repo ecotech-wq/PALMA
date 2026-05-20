@@ -7,6 +7,7 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { requireAuth } from "@/lib/auth-helpers";
+import { markResourceRead } from "@/lib/read-state";
 import { DemandeStatutBadge } from "./DemandeBadges";
 
 const dateFmt = new Intl.DateTimeFormat("fr-FR", {
@@ -27,6 +28,10 @@ export default async function DemandesPage({
   searchParams: Promise<{ statut?: string }>;
 }) {
   const me = await requireAuth();
+  // Marque la liste comme lue (badge sidebar → 0)
+  if (me.isAdmin || me.isConducteur || me.isChef) {
+    await markResourceRead(me.id, "demandes");
+  }
   const { statut } = await searchParams;
 
   const where: { statut?: "DEMANDEE" | "APPROUVEE" | "REFUSEE" | "COMMANDEE" } =

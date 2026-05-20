@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -124,6 +124,13 @@ export function ChantierFeed({
   currentUserId: string;
   canEdit: boolean;
 }) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  // Au montage et à chaque ajout/changement, on ramène la vue sur
+  // le dernier message (comportement WhatsApp).
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+  }, [messages.length]);
+
   if (messages.length === 0) {
     return (
       <div className="p-10 text-center text-sm text-slate-500 dark:text-slate-400 italic">
@@ -163,6 +170,8 @@ export function ChantierFeed({
           </ul>
         </div>
       ))}
+      {/* Sentinel pour le scroll auto vers le bas */}
+      <div ref={bottomRef} />
     </div>
   );
 }
