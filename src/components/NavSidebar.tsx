@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   Package,
   ChevronRight,
+  MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -58,6 +59,15 @@ const dashboardItem: NavItem = {
   href: "/dashboard",
   label: "Tableau de bord",
   icon: LayoutDashboard,
+};
+
+// Item solo Messagerie — entrée principale du fil chantier (chat-first).
+// Cachée pour les clients (lecture rapport seulement).
+const messagerieItem: NavItem = {
+  href: "/messagerie",
+  label: "Messagerie",
+  icon: MessageSquare,
+  clientHidden: true,
 };
 
 // Groupes thématiques pour la sidebar — repliables, pré-ouverts si on est dedans
@@ -108,23 +118,24 @@ const groups: NavGroup[] = [
   },
 ];
 
-// Barre de tab mobile, variante par rôle
+// Barre de tab mobile, variante par rôle. Messagerie est promue en
+// onglet primaire pour tous les rôles non-client (entrée chat-first).
 const mobilePrimaryAdmin: NavItem[] = [
   { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
+  { href: "/messagerie", label: "Messagerie", icon: MessageSquare },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
   { href: "/paie", label: "Paie", icon: Banknote, adminOnly: true },
-  { href: "/ouvriers", label: "Ouvriers", icon: HardHat },
 ];
 const mobilePrimaryConducteur: NavItem[] = [
   { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
+  { href: "/messagerie", label: "Messagerie", icon: MessageSquare },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
   { href: "/planning", label: "Planning", icon: Calendar },
-  { href: "/ouvriers", label: "Ouvriers", icon: HardHat },
 ];
 const mobilePrimaryChef: NavItem[] = [
   { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
+  { href: "/messagerie", label: "Messagerie", icon: MessageSquare },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
-  { href: "/chantiers", label: "Chantiers", icon: Hammer },
   { href: "/rapports", label: "Rapports", icon: FileText },
 ];
 const mobilePrimaryClient: NavItem[] = [
@@ -442,6 +453,20 @@ export function DesktopSidebar({
           icon={dashboardItem.icon}
           active={isOnDashboard}
         />
+
+        {/* Messagerie — entrée principale du chat-first, cachée client */}
+        {!isClient && (
+          <NavLeaf
+            href={messagerieItem.href}
+            label={messagerieItem.label}
+            icon={messagerieItem.icon}
+            active={
+              pathname === messagerieItem.href ||
+              pathname?.startsWith(messagerieItem.href + "/") ||
+              false
+            }
+          />
+        )}
 
         {/* Groupes */}
         {visibleGroups.map((g) => {

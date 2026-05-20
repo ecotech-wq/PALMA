@@ -195,14 +195,22 @@ export async function toggleHiddenFromClient(id: string) {
 export async function insertSystemMessage(opts: {
   chantierId: string;
   date?: Date;
-  type: "SYSTEM_INCIDENT" | "SYSTEM_DEMANDE" | "SYSTEM_COMMANDE" | "SYSTEM_RAPPORT";
+  type:
+    | "SYSTEM_INCIDENT"
+    | "SYSTEM_DEMANDE"
+    | "SYSTEM_COMMANDE"
+    | "SYSTEM_RAPPORT"
+    | "SYSTEM_SORTIE"
+    | "SYSTEM_RETOUR";
   texte: string;
   authorId?: string;
   incidentId?: string;
   demandeId?: string;
   commandeId?: string;
   rapportId?: string;
+  sortieId?: string;
   photos?: string[];
+  videos?: string[];
 }) {
   try {
     const date = opts.date ?? new Date();
@@ -217,10 +225,12 @@ export async function insertSystemMessage(opts: {
         type: opts.type,
         texte: opts.texte,
         photos: opts.photos ?? [],
+        videos: opts.videos ?? [],
         incidentId: opts.incidentId,
         demandeId: opts.demandeId,
         commandeId: opts.commandeId,
         rapportId: opts.rapportId,
+        sortieId: opts.sortieId,
       },
     });
   } catch (e) {

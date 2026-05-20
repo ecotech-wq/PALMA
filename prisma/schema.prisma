@@ -694,6 +694,10 @@ enum JournalMessageType {
   SYSTEM_DEMANDE
   SYSTEM_COMMANDE
   SYSTEM_RAPPORT
+  /// Sortie de matériel postée depuis la messagerie (lien sortieId)
+  SYSTEM_SORTIE
+  /// Retour de matériel — met à jour la sortie liée
+  SYSTEM_RETOUR
   BILAN_JOURNEE
 }
 
@@ -717,6 +721,7 @@ model JournalMessage {
   demandeId    String?
   commandeId   String?
   rapportId    String?
+  sortieId     String?
   // Filtrage avant envoi au client (admin coche/décoche)
   hiddenFromClient Boolean        @default(false)
   // Auteur peut éditer dans les 5 min, admin tout le temps
