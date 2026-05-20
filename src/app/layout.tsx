@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { PwaRegister } from "@/components/PwaRegister";
@@ -42,27 +43,31 @@ export const viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  /*
+   * Theme handling 100% côté serveur (zero JS / zero <script>).
+   * Le cookie `ogc-theme` stocke la valeur EFFECTIVE ("dark" ou "light")
+   * écrite par ThemeToggle quand l'utilisateur change le thème ou quand
+   * le système change de mode (en "auto").
+   *
+   * 1er visit sans cookie → light par défaut. ThemeToggle ajustera
+   * juste après l'hydratation si le user est en mode auto + OS dark.
+   * C'est un FOUC très bref (un seul render) sur le tout premier accès.
+   */
+  const cookieStore = await cookies();
+  const themeEffective = cookieStore.get("ogc-theme")?.value;
+  const isDark = themeEffective === "dark";
+
   return (
     <html
       lang="fr"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased ${isDark ? "dark" : ""}`}
       suppressHydrationWarning
     >
-      <head>
-        {/*
-          Script anti-FOUC servi depuis /public (statique). Avec un
-          attribut `src`, React 19 ne déclenche PAS le warning sur les
-          scripts dans les composants (qui ne concerne que les scripts
-          inline via dangerouslySetInnerHTML). Le navigateur l'exécute
-          pendant le parsing HTML, avant le premier paint.
-        */}
-        <script src="/theme-init.js" />
-      </head>
       <body className="min-h-full flex flex-col bg-background text-foreground">
         {children}
         <PwaRegister />

@@ -6,29 +6,34 @@ import { cn } from "@/lib/utils";
 
 type Mode = "light" | "dark" | "system";
 
-const STORAGE_KEY = "ogc-theme";
+const MODE_KEY = "ogc-theme-mode"; // localStorage : "light" / "dark" / "system"
+const EFFECTIVE_COOKIE = "ogc-theme"; // cookie : "light" / "dark" (lu par le serveur)
 
-function applyTheme(mode: Mode) {
-  const root = document.documentElement;
-  const dark =
-    mode === "dark" ||
-    (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  root.classList.toggle("dark", dark);
+/** Calcule la valeur effective ("dark" ou "light") d'un mode donné. */
+function computeEffective(mode: Mode): "dark" | "light" {
+  if (mode === "dark") return "dark";
+  if (mode === "light") return "light";
+  // system : suit la préférence OS
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
 }
 
-/** Sauvegarde la préférence dans localStorage (legacy) ET dans un
- *  cookie 1 an (lu par /theme-init.js au prochain chargement). */
-function persistMode(mode: Mode) {
+/** Applique la classe `dark` sur <html> et écrit le cookie EFFECTIVE
+ *  pour que le serveur fasse le bon SSR au prochain chargement. */
+function applyAndPersist(mode: Mode) {
+  const effective = computeEffective(mode);
+  document.documentElement.classList.toggle("dark", effective === "dark");
   try {
-    window.localStorage.setItem(STORAGE_KEY, mode);
+    window.localStorage.setItem(MODE_KEY, mode);
   } catch {}
-  // Cookie : 1 an, path=/, SameSite=Lax
-  document.cookie = `${STORAGE_KEY}=${encodeURIComponent(mode)}; max-age=${60 * 60 * 24 * 365}; path=/; SameSite=Lax`;
+  // Cookie 1 an, path=/, SameSite=Lax — lu par RootLayout côté serveur
+  document.cookie = `${EFFECTIVE_COOKIE}=${effective}; max-age=${60 * 60 * 24 * 365}; path=/; SameSite=Lax`;
 }
 
 function readMode(): Mode {
   if (typeof window === "undefined") return "system";
-  const v = window.localStorage.getItem(STORAGE_KEY);
+  const v = window.localStorage.getItem(MODE_KEY);
   return v === "light" || v === "dark" || v === "system" ? v : "system";
 }
 
@@ -37,13 +42,18 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMode(readMode());
+    const current = readMode();
+    setMode(current);
     setMounted(true);
+    // Sync le DOM + le cookie avec le mode courant (utile au premier
+    // chargement quand on était en "system" et que la pref OS a changé,
+    // ou pour réparer un éventuel mismatch SSR/client).
+    applyAndPersist(current);
 
-    // Re-apply on system change if mode === "system"
+    // Re-applique quand l'OS change (mode "system" uniquement)
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = () => {
-      if (readMode() === "system") applyTheme("system");
+      if (readMode() === "system") applyAndPersist("system");
     };
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
@@ -51,8 +61,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
 
   function setAndApply(next: Mode) {
     setMode(next);
-    persistMode(next);
-    applyTheme(next);
+    applyAndPersist(next);
   }
 
   if (!mounted) {
