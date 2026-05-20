@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { saveUploadedPhoto, deleteUploadedPhoto } from "@/lib/upload";
+import { requireAdminOrConducteur } from "@/lib/auth-helpers";
 
 const materielSchema = z.object({
   nomCommun: z.string().min(1, "Nom requis"),
@@ -44,6 +45,7 @@ function parseMaterielForm(formData: FormData) {
 }
 
 export async function createMateriel(formData: FormData) {
+  await requireAdminOrConducteur();
   const parsed = parseMaterielForm(formData);
   const photoFile = formData.get("photo") as File | null;
 
@@ -61,6 +63,7 @@ export async function createMateriel(formData: FormData) {
 }
 
 export async function updateMateriel(id: string, formData: FormData) {
+  await requireAdminOrConducteur();
   const parsed = parseMaterielForm(formData);
   const photoFile = formData.get("photo") as File | null;
   const removePhoto = formData.get("removePhoto") === "1";
@@ -90,6 +93,7 @@ export async function updateMateriel(id: string, formData: FormData) {
 }
 
 export async function deleteMateriel(id: string) {
+  await requireAdminOrConducteur();
   const existing = await db.materiel.findUnique({ where: { id } });
   if (existing?.photo) await deleteUploadedPhoto(existing.photo);
   await db.materiel.delete({ where: { id } });

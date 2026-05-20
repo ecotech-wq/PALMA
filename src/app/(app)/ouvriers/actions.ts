@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { saveUploadedPhoto, deleteUploadedPhoto } from "@/lib/upload";
-import { requireAdmin, requireAuth } from "@/lib/auth-helpers";
+import { requireAdmin, requireAuth, requireAdminOrConducteur } from "@/lib/auth-helpers";
 
 const ouvrierSchema = z.object({
   nom: z.string().min(1, "Nom requis"),
@@ -46,6 +46,7 @@ function parseOuvrier(formData: FormData) {
 }
 
 export async function createOuvrier(formData: FormData) {
+  await requireAdminOrConducteur();
   const data = parseOuvrier(formData);
   const photoFile = formData.get("photo") as File | null;
   let photo: string | null = null;
@@ -58,7 +59,7 @@ export async function createOuvrier(formData: FormData) {
 }
 
 export async function updateOuvrier(id: string, formData: FormData) {
-  const me = await requireAuth();
+  const me = await requireAdminOrConducteur();
   const data = parseOuvrier(formData);
   const photoFile = formData.get("photo") as File | null;
   const removePhoto = formData.get("removePhoto") === "1";
@@ -66,8 +67,8 @@ export async function updateOuvrier(id: string, formData: FormData) {
   const existing = await db.ouvrier.findUnique({ where: { id } });
   if (!existing) throw new Error("Ouvrier introuvable");
 
-  // Sécurité : un CHEF ne peut PAS modifier le tarif. On force la
-  // valeur existante dans la DB, ignorant ce qu'envoie le client.
+  // Sécurité : seul l'ADMIN peut modifier le tarif (les conducteurs ne
+  // voient pas la paie complète). On force la valeur existante sinon.
   if (!me.isAdmin) {
     data.tarifBase = Number(existing.tarifBase);
   }

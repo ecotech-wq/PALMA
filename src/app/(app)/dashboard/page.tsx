@@ -223,7 +223,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Budget global agrégé sur tous les chantiers actifs */}
-      {me.isAdmin && budgetTotal > 0 && (
+      {me.canSeePrices && budgetTotal > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Budget global — chantiers actifs</CardTitle>
@@ -278,8 +278,8 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      {/* Détail budget par chantier (admin uniquement) */}
-      {me.isAdmin && chantiersActifsList.length > 0 && (
+      {/* Détail budget par chantier (admin + conducteur) */}
+      {me.canSeePrices && chantiersActifsList.length > 0 && (
         <Card>
           <CardHeader className="flex items-center justify-between">
             <CardTitle>Détail par chantier</CardTitle>
@@ -301,8 +301,8 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      {/* Pour les CHEFs, version simple sans finance des chantiers actifs */}
-      {!me.isAdmin && chantiersActifsList.length > 0 && (
+      {/* Pour les CHEFs (sans prix), version simple des chantiers actifs */}
+      {!me.canSeePrices && chantiersActifsList.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Chantiers en cours ({chantiersActifsList.length})</CardTitle>
@@ -352,7 +352,7 @@ export default async function DashboardPage() {
                         <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
                           {c.nom}
                         </div>
-                        {me.isAdmin && (
+                        {me.canSeePrices && (
                           <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                             Budget prévu : {formatEuro(budget)}
                           </div>
@@ -386,8 +386,16 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      {/* Mini cards : pointage, à verser (admin), locations (admin) */}
-      <div className={`grid grid-cols-1 ${me.isAdmin ? "lg:grid-cols-3" : ""} gap-3 md:gap-4`}>
+      {/* Mini cards : pointage (tous), locations (canSeePrices), paie (admin) */}
+      <div
+        className={`grid grid-cols-1 ${
+          me.isAdmin
+            ? "lg:grid-cols-3"
+            : me.canSeePrices
+              ? "lg:grid-cols-2"
+              : ""
+        } gap-3 md:gap-4`}
+      >
         <Link
           href="/pointage"
           className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4"
@@ -405,42 +413,44 @@ export default async function DashboardPage() {
         </Link>
 
         {me.isAdmin && (
-          <>
-            <Link
-              href="/paie"
-              className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4"
-            >
-              <div className="flex items-center gap-2 text-amber-600">
-                <Banknote size={18} />
-                <span className="text-sm font-medium">À verser (paiements calculés)</span>
-              </div>
-              <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
-                {formatEuro(totalACalculer)}
-              </div>
-              <div className="text-xs text-slate-400 dark:text-slate-500">
-                {paiementsCalcules._count} paiement{paiementsCalcules._count > 1 ? "s" : ""} en
-                attente
-              </div>
-            </Link>
+          <Link
+            href="/paie"
+            className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4"
+          >
+            <div className="flex items-center gap-2 text-amber-600">
+              <Banknote size={18} />
+              <span className="text-sm font-medium">À verser (paiements calculés)</span>
+            </div>
+            <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
+              {formatEuro(totalACalculer)}
+            </div>
+            <div className="text-xs text-slate-400 dark:text-slate-500">
+              {paiementsCalcules._count} paiement{paiementsCalcules._count > 1 ? "s" : ""} en
+              attente
+            </div>
+          </Link>
+        )}
 
-            <Link
-              href="/locations"
-              className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4"
-            >
-              <div className="flex items-center gap-2 text-purple-600">
-                <Truck size={18} />
-                <span className="text-sm font-medium">Locations en cours</span>
-              </div>
-              <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
-                {formatEuro(totalLocations)}
-              </div>
+        {me.canSeePrices && (
+          <Link
+            href="/locations"
+            className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4"
+          >
+            <div className="flex items-center gap-2 text-purple-600">
+              <Truck size={18} />
+              <span className="text-sm font-medium">Locations en cours</span>
+            </div>
+            <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
+              {formatEuro(totalLocations)}
+            </div>
+            {me.isAdmin && (
               <div className="text-xs text-slate-400 dark:text-slate-500">
                 {totalAvances > 0 && `Avances : ${formatEuro(totalAvances)} · `}
                 {totalOutilsRestant > 0 && `Outils dus : ${formatEuro(totalOutilsRestant)}`}
                 {totalAvances === 0 && totalOutilsRestant === 0 && "Aucune avance ouverte"}
               </div>
-            </Link>
-          </>
+            )}
+          </Link>
         )}
       </div>
 
@@ -479,7 +489,7 @@ export default async function DashboardPage() {
                         </div>
                       </div>
                       <CommandeStatutBadge statut={c.statut} />
-                      {me.isAdmin && (
+                      {me.canSeePrices && (
                         <div className="font-semibold w-20 text-right shrink-0">
                           {formatEuro(c.coutTotal.toString())}
                         </div>

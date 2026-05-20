@@ -9,15 +9,35 @@ export type ClientVisibility = {
   showRapportsHebdo: boolean;
 };
 
+export type Role = "ADMIN" | "CONDUCTEUR" | "CHEF" | "CLIENT";
+
 export type CurrentUser = {
   id: string;
   name: string;
   email: string;
-  role: "ADMIN" | "CHEF" | "CLIENT";
+  role: Role;
   isAdmin: boolean;
+  /** Conducteur de travaux : voit prix matériel / loc / cmd, fait OPC/OPR */
+  isConducteur: boolean;
+  /** Chef de chantier = ouvrier de terrain. Aucun prix visible. */
   isChef: boolean;
   isClient: boolean;
-  // Visibility uniquement utile côté CLIENT. Pour ADMIN/CHEF tout est true.
+  /**
+   * Peut voir les prix matériel / locations / commandes / budgets ?
+   * → ADMIN et CONDUCTEUR uniquement. CHEF jamais.
+   */
+  canSeePrices: boolean;
+  /**
+   * Peut voir la paie complète (salaires, avances, retenues) ?
+   * → ADMIN uniquement.
+   */
+  canSeePaie: boolean;
+  /**
+   * Peut piloter (créer chantiers, planning, OPC, valider demandes, etc.) ?
+   * → ADMIN ou CONDUCTEUR.
+   */
+  canPilot: boolean;
+  // Visibility uniquement utile côté CLIENT. Pour les autres, tout est true.
   visibility: ClientVisibility;
 };
 
@@ -28,12 +48,15 @@ export type CurrentUser = {
 export async function requireAuth(): Promise<CurrentUser> {
   const session = await auth();
   if (!session?.user) throw new Error("Non authentifié");
-  const role =
-    session.user.role === "ADMIN"
+  const raw = session.user.role;
+  const role: Role =
+    raw === "ADMIN"
       ? "ADMIN"
-      : session.user.role === "CLIENT"
-        ? "CLIENT"
-        : "CHEF";
+      : raw === "CONDUCTEUR"
+        ? "CONDUCTEUR"
+        : raw === "CLIENT"
+          ? "CLIENT"
+          : "CHEF";
 
   // Pour les clients on charge les flags depuis la DB (sinon defaults true)
   let visibility: ClientVisibility = {
@@ -62,22 +85,30 @@ export async function requireAuth(): Promise<CurrentUser> {
     }
   }
 
+  const isAdmin = role === "ADMIN";
+  const isConducteur = role === "CONDUCTEUR";
+  const isChef = role === "CHEF";
+  const isClient = role === "CLIENT";
+
   return {
     id: session.user.id as string,
     name: session.user.name as string,
     email: session.user.email as string,
     role,
-    isAdmin: role === "ADMIN",
-    isChef: role === "CHEF",
-    isClient: role === "CLIENT",
+    isAdmin,
+    isConducteur,
+    isChef,
+    isClient,
+    canSeePrices: isAdmin || isConducteur,
+    canSeePaie: isAdmin,
+    canPilot: isAdmin || isConducteur,
     visibility,
   };
 }
 
 /**
- * À utiliser au début d'une server action sensible (paie, paramètres,
- * gestion users, modifs financières). Lève si l'utilisateur n'est pas
- * admin — la mention apparaît côté client via le toast d'erreur.
+ * À utiliser au début d'une server action réservée aux admins (paie,
+ * paramètres globaux, gestion users). Lève sinon.
  */
 export async function requireAdmin(): Promise<CurrentUser> {
   const user = await requireAuth();
@@ -88,17 +119,31 @@ export async function requireAdmin(): Promise<CurrentUser> {
 }
 
 /**
+ * À utiliser au début d'une server action de pilotage : création/édition
+ * de chantiers, planning, OPC, validation demandes, commandes, locations.
+ * Autorise ADMIN + CONDUCTEUR. Refuse CHEF et CLIENT.
+ */
+export async function requireAdminOrConducteur(): Promise<CurrentUser> {
+  const user = await requireAuth();
+  if (!user.canPilot) {
+    throw new Error(
+      "Action réservée aux administrateurs et conducteurs de travaux"
+    );
+  }
+  return user;
+}
+
+/**
  * Renvoie la liste des chantiers auxquels l'utilisateur peut accéder.
- * - ADMIN / CHEF : tous les chantiers
+ * - ADMIN / CONDUCTEUR : tous les chantiers (null = pas de filtre)
+ * - CHEF : tous les chantiers pour l'instant (à restreindre si besoin
+ *   plus tard — il faudrait une table de mapping chantier ↔ chef)
  * - CLIENT : seulement ceux où il est rattaché en tant que client
- *
- * Renvoie un tableau d'IDs ou null si "tous".
  */
 export async function getAccessibleChantierIds(
   user: CurrentUser
 ): Promise<string[] | null> {
-  if (user.isAdmin || user.isChef) return null;
-  // CLIENT : on récupère les chantiers où il est associé
+  if (user.isAdmin || user.isConducteur || user.isChef) return null;
   const u = await db.user.findUnique({
     where: { id: user.id },
     select: { chantiersClient: { select: { id: true } } },
@@ -108,13 +153,13 @@ export async function getAccessibleChantierIds(
 
 /**
  * Vérifie qu'un utilisateur peut accéder à un chantier précis.
- * Lève sinon. Pour ADMIN/CHEF : toujours true.
+ * Lève sinon. Pour ADMIN/CONDUCTEUR/CHEF : toujours true.
  */
 export async function requireChantierAccess(
   user: CurrentUser,
   chantierId: string
 ): Promise<void> {
-  if (user.isAdmin || user.isChef) return;
+  if (user.isAdmin || user.isConducteur || user.isChef) return;
   const u = await db.user.findUnique({
     where: { id: user.id },
     select: {

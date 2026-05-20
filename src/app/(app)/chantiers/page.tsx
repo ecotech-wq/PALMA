@@ -165,8 +165,8 @@ export default async function ChantiersListPage({
                   </div>
                 )}
 
-                <div className={`grid ${me.isAdmin ? "grid-cols-2" : "grid-cols-1"} gap-2 text-xs pt-2 border-t border-slate-100 dark:border-slate-800`}>
-                  {me.isAdmin && (
+                <div className={`grid ${me.canSeePrices ? "grid-cols-2" : "grid-cols-1"} gap-2 text-xs pt-2 border-t border-slate-100 dark:border-slate-800`}>
+                  {me.canSeePrices && (
                     <div>
                       <div className="text-slate-400 dark:text-slate-500">Budget</div>
                       <div className="font-medium text-slate-900 dark:text-slate-100">

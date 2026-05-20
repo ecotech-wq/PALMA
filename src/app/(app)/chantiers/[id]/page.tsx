@@ -154,8 +154,8 @@ export default async function ChantierDetailPage({
         }
       />
 
-      <div className={`grid grid-cols-1 ${me.isAdmin ? "lg:grid-cols-3" : ""} gap-5`}>
-        <div className={me.isAdmin ? "lg:col-span-2 space-y-5" : "space-y-5"}>
+      <div className={`grid grid-cols-1 ${me.canSeePrices ? "lg:grid-cols-3" : ""} gap-5`}>
+        <div className={me.canSeePrices ? "lg:col-span-2 space-y-5" : "space-y-5"}>
           {me.isClient && (
             <Card>
               <CardHeader>
@@ -193,7 +193,7 @@ export default async function ChantierDetailPage({
                 chefs={chefs}
                 action={updateAction}
                 submitLabel="Enregistrer"
-                isAdmin={me.isAdmin}
+                isAdmin={me.canSeePrices}
               />
             </CardBody>
           </Card>}
@@ -319,7 +319,7 @@ export default async function ChantierDetailPage({
                             <span className="font-medium truncate">
                               {c.fournisseur}
                             </span>
-                            {me.isAdmin && (
+                            {me.canSeePrices && (
                               <span className="font-semibold shrink-0">
                                 {formatEuro(c.coutTotal.toString())}
                               </span>
@@ -363,7 +363,7 @@ export default async function ChantierDetailPage({
                             <span className="font-medium truncate">
                               {l.designation}
                             </span>
-                            {me.isAdmin && l.type === "LOCATION" && (
+                            {me.canSeePrices && l.type === "LOCATION" && (
                               <span className="font-semibold shrink-0">
                                 {formatEuro(l.coutTotal.toString())}
                               </span>
@@ -397,7 +397,7 @@ export default async function ChantierDetailPage({
           </Card>}
         </div>
 
-        {me.isAdmin && (
+        {me.canSeePrices && (
         <div className="space-y-5">
           <Card>
             <CardHeader>

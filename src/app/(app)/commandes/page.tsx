@@ -74,14 +74,16 @@ export default async function CommandesListPage() {
                         {c.reference && ` · ${c.reference}`}
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <div className="font-semibold">{formatEuro(c.coutTotal.toString())}</div>
-                      {me.isAdmin && (
-                        <div className="text-xs text-slate-400 dark:text-slate-500">
-                          {c.mode === "ESPECES" ? "Espèces" : "Virement"}
-                        </div>
-                      )}
-                    </div>
+                    {me.canSeePrices && (
+                      <div className="text-right shrink-0">
+                        <div className="font-semibold">{formatEuro(c.coutTotal.toString())}</div>
+                        {me.isAdmin && (
+                          <div className="text-xs text-slate-400 dark:text-slate-500">
+                            {c.mode === "ESPECES" ? "Espèces" : "Virement"}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <ChevronRight size={16} className="text-slate-300" />
                   </Link>
                 </li>

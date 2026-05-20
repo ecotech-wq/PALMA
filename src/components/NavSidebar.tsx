@@ -34,7 +34,11 @@ type NavItem = {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
+  /** Visible uniquement par ADMIN (ex : /paie) */
   adminOnly?: boolean;
+  /** Visible par ADMIN + CONDUCTEUR (ex : /ouvriers, /commandes, /locations) */
+  pilotOnly?: boolean;
+  /** Caché pour le rôle CLIENT */
   clientHidden?: boolean;
 };
 
@@ -46,6 +50,7 @@ type NavGroup = {
   /** Cache tout le groupe pour le rôle CLIENT */
   clientHidden?: boolean;
   adminOnly?: boolean;
+  pilotOnly?: boolean;
 };
 
 // Item solo (Tableau de bord = toujours en haut, jamais dans un groupe)
@@ -64,7 +69,8 @@ const groups: NavGroup[] = [
     items: [
       { href: "/chantiers", label: "Chantiers", icon: Hammer },
       { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true },
-      { href: "/ouvriers", label: "Ouvriers", icon: HardHat, clientHidden: true },
+      // Fiche ouvrier expose tarifs : admin + conducteur seulement
+      { href: "/ouvriers", label: "Ouvriers", icon: HardHat, clientHidden: true, pilotOnly: true },
       { href: "/planning", label: "Planning", icon: Calendar, clientHidden: true },
     ],
   },
@@ -84,10 +90,12 @@ const groups: NavGroup[] = [
     icon: Wrench,
     clientHidden: true,
     items: [
+      // Matériel & sorties : tout le monde (prix masqués pour CHEF)
       { href: "/materiel", label: "Matériel", icon: Wrench },
       { href: "/sorties", label: "Sorties / Retours", icon: ArrowLeftRight },
-      { href: "/locations", label: "Locations / Prêts", icon: Truck },
-      { href: "/commandes", label: "Commandes", icon: ShoppingCart },
+      // Locations & commandes : admin + conducteur seulement (prix sensibles)
+      { href: "/locations", label: "Locations / Prêts", icon: Truck, pilotOnly: true },
+      { href: "/commandes", label: "Commandes", icon: ShoppingCart, pilotOnly: true },
       { href: "/demandes", label: "Demandes matériel", icon: Package },
     ],
   },
@@ -107,11 +115,17 @@ const mobilePrimaryAdmin: NavItem[] = [
   { href: "/paie", label: "Paie", icon: Banknote, adminOnly: true },
   { href: "/ouvriers", label: "Ouvriers", icon: HardHat },
 ];
+const mobilePrimaryConducteur: NavItem[] = [
+  { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
+  { href: "/pointage", label: "Pointage", icon: CheckSquare },
+  { href: "/planning", label: "Planning", icon: Calendar },
+  { href: "/ouvriers", label: "Ouvriers", icon: HardHat },
+];
 const mobilePrimaryChef: NavItem[] = [
   { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
-  { href: "/ouvriers", label: "Ouvriers", icon: HardHat },
+  { href: "/rapports", label: "Rapports", icon: FileText },
 ];
 const mobilePrimaryClient: NavItem[] = [
   { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
@@ -126,8 +140,9 @@ const mobileMore: NavItem[] = [
   { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true },
   { href: "/materiel", label: "Matériel", icon: Wrench, clientHidden: true },
   { href: "/sorties", label: "Sorties / Retours", icon: ArrowLeftRight, clientHidden: true },
-  { href: "/locations", label: "Locations / Prêts", icon: Truck, clientHidden: true },
-  { href: "/commandes", label: "Commandes", icon: ShoppingCart, clientHidden: true },
+  // Prix sensibles : admin + conducteur uniquement
+  { href: "/locations", label: "Locations / Prêts", icon: Truck, clientHidden: true, pilotOnly: true },
+  { href: "/commandes", label: "Commandes", icon: ShoppingCart, clientHidden: true, pilotOnly: true },
   { href: "/planning", label: "Planning", icon: Calendar, clientHidden: true },
   { href: "/rapports", label: "Rapports", icon: FileText },
   { href: "/incidents", label: "Incidents", icon: AlertTriangle },
@@ -360,23 +375,31 @@ export function DesktopSidebar({
 }) {
   const pathname = usePathname();
   const isAdmin = userRole === "ADMIN";
+  const isConducteur = userRole === "CONDUCTEUR";
   const isClient = userRole === "CLIENT";
+  const canPilot = isAdmin || isConducteur;
 
   // Filtre des groupes selon rôle + filtre des items dans chaque groupe
   const visibleGroups = useMemo(() => {
     return groups
-      .filter((g) => (!g.adminOnly || isAdmin) && (!g.clientHidden || !isClient))
+      .filter(
+        (g) =>
+          (!g.adminOnly || isAdmin) &&
+          (!g.pilotOnly || canPilot) &&
+          (!g.clientHidden || !isClient)
+      )
       .map((g) => ({
         ...g,
         items: g.items.filter(
           (it) =>
             (!it.adminOnly || isAdmin) &&
+            (!it.pilotOnly || canPilot) &&
             (!it.clientHidden || !isClient) &&
             (!isClient || applyClientVisibility(it, clientVisibility))
         ),
       }))
       .filter((g) => g.items.length > 0);
-  }, [isAdmin, isClient, clientVisibility]);
+  }, [isAdmin, isConducteur, canPilot, isClient, clientVisibility]);
 
   const isOnDashboard = pathname === "/dashboard";
   const isOnProfile = pathname?.startsWith("/profil");
@@ -487,12 +510,14 @@ export function DesktopSidebar({
 
 export function MobileBottomNav({
   isAdmin,
+  isConducteur,
   isClient,
   pendingUsersCount,
   navBadges,
   clientVisibility,
 }: {
   isAdmin?: boolean;
+  isConducteur?: boolean;
   isClient?: boolean;
   pendingUsersCount?: number;
   navBadges?: NavBadges;
@@ -500,6 +525,7 @@ export function MobileBottomNav({
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const canPilot = !!isAdmin || !!isConducteur;
 
   // Ferme le drawer quand on navigue
   useEffect(() => {
@@ -521,16 +547,20 @@ export function MobileBottomNav({
     ? mobilePrimaryClient
     : isAdmin
       ? mobilePrimaryAdmin
-      : mobilePrimaryChef;
+      : isConducteur
+        ? mobilePrimaryConducteur
+        : mobilePrimaryChef;
 
   // Filtre les items selon la visibilité du client
   const mobilePrimary = isClient
     ? mobilePrimaryRaw.filter((it) => applyClientVisibility(it, clientVisibility))
     : mobilePrimaryRaw;
 
-  // Filtre des items du drawer "Plus" pour le client
+  // Filtre des items du drawer "Plus" : rôle + visibilité client
   const filteredMobileMore = mobileMore.filter(
     (m) =>
+      (!m.adminOnly || isAdmin) &&
+      (!m.pilotOnly || canPilot) &&
       (!m.clientHidden || !isClient) &&
       (!isClient || applyClientVisibility(m, clientVisibility))
   );

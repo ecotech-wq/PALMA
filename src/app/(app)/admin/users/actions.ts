@@ -47,7 +47,7 @@ export async function deleteUser(userId: string) {
   revalidatePath("/admin/users");
 }
 
-const roleSchema = z.enum(["ADMIN", "CHEF", "CLIENT"]);
+const roleSchema = z.enum(["ADMIN", "CONDUCTEUR", "CHEF", "CLIENT"]);
 
 export async function changeUserRole(userId: string, role: string) {
   const me = await ensureAdmin();
@@ -183,7 +183,7 @@ export async function setClientVisibility(
 const createUserSchema = z.object({
   name: z.string().min(1, "Nom requis").max(100),
   email: z.string().email("Email invalide").toLowerCase(),
-  role: z.enum(["ADMIN", "CHEF", "CLIENT"]),
+  role: z.enum(["ADMIN", "CONDUCTEUR", "CHEF", "CLIENT"]),
   chantierIds: z.array(z.string()).default([]),
 });
 

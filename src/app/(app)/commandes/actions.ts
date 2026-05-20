@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { insertSystemMessage } from "@/app/(app)/journal/actions";
+import { requireAdminOrConducteur } from "@/lib/auth-helpers";
 
 const ligneSchema = z.object({
   designation: z.string().min(1),
@@ -75,6 +76,7 @@ function parseCommande(formData: FormData) {
 }
 
 export async function createCommande(formData: FormData) {
+  await requireAdminOrConducteur();
   const data = parseCommande(formData);
   const lignes = extractLignes(formData);
   if (lignes.length === 0) throw new Error("Au moins une ligne de commande est requise");
@@ -123,6 +125,7 @@ export async function createCommande(formData: FormData) {
 }
 
 export async function updateCommande(id: string, formData: FormData) {
+  await requireAdminOrConducteur();
   const data = parseCommande(formData);
   const lignes = extractLignes(formData);
   if (lignes.length === 0) throw new Error("Au moins une ligne de commande est requise");
@@ -158,6 +161,7 @@ export async function changerStatutCommande(
   statut: StatutCommande,
   dateLivraisonReelle?: Date
 ) {
+  await requireAdminOrConducteur();
   const data: { statut: StatutCommande; dateLivraisonReelle?: Date } = { statut };
   if (statut === "LIVREE" && !dateLivraisonReelle) {
     data.dateLivraisonReelle = new Date();
@@ -171,6 +175,7 @@ export async function changerStatutCommande(
 }
 
 export async function deleteCommande(id: string) {
+  await requireAdminOrConducteur();
   const existing = await db.commande.findUnique({ where: { id } });
   await db.commande.delete({ where: { id } });
   revalidatePath("/commandes");

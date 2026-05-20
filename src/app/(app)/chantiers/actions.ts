@@ -55,9 +55,10 @@ export async function createChantier(formData: FormData) {
 export async function updateChantier(id: string, formData: FormData) {
   const me = await requireAuth();
   const data = parseChantier(formData);
-  // Sécurité : un CHEF ne peut PAS modifier le budget. On force les
-  // valeurs existantes en DB, ignorant le payload.
-  if (!me.isAdmin) {
+  // Sécurité : seul ADMIN ou CONDUCTEUR peut modifier le budget. Si
+  // l'appelant ne voit pas les prix (CHEF, CLIENT), on force les valeurs
+  // existantes en DB pour ignorer le payload.
+  if (!me.canSeePrices) {
     const existing = await db.chantier.findUnique({
       where: { id },
       select: { budgetEspeces: true, budgetVirement: true },

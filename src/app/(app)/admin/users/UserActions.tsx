@@ -264,6 +264,7 @@ export function UserActions({
             title="Rôle"
           >
             <option value="ADMIN">Admin</option>
+            <option value="CONDUCTEUR">Conducteur de travaux</option>
             <option value="CHEF">Chef de chantier</option>
             <option value="CLIENT">Client</option>
           </select>

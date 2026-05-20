@@ -36,7 +36,7 @@ export function CreateUserBox({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<InviteResult | null>(null);
-  const [role, setRole] = useState<"ADMIN" | "CHEF" | "CLIENT">("CHEF");
+  const [role, setRole] = useState<"ADMIN" | "CONDUCTEUR" | "CHEF" | "CLIENT">("CHEF");
   const [selectedChantiers, setSelectedChantiers] = useState<Set<string>>(
     new Set()
   );
@@ -149,11 +149,12 @@ export function CreateUserBox({
                   name="role"
                   value={role}
                   onChange={(e) =>
-                    setRole(e.target.value as "ADMIN" | "CHEF" | "CLIENT")
+                    setRole(e.target.value as "ADMIN" | "CONDUCTEUR" | "CHEF" | "CLIENT")
                   }
                   required
                 >
                   <option value="CHEF">Chef de chantier</option>
+                  <option value="CONDUCTEUR">Conducteur de travaux</option>
                   <option value="ADMIN">Administrateur</option>
                   <option value="CLIENT">Client</option>
                 </Select>

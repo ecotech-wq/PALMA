@@ -15,6 +15,14 @@ datasource db {
 
 enum Role {
   ADMIN
+  /// Conducteur de travaux : voit les prix matériel / locations / commandes,
+  /// fait OPC / OPR, valide les demandes, pilote le planning. Ne voit pas
+  /// la paie complète. Intermédiaire entre ADMIN et CHEF.
+  CONDUCTEUR
+  /// Chef de chantier = ouvrier de terrain. Voit son(ses) chantier(s),
+  /// son fil, son équipe. Aucun prix nulle part. Peut : pointer, déclarer
+  /// incidents, demander matériel, faire rapports avec photos, gérer
+  /// sorties/retours matériel.
   CHEF
   CLIENT
 }

@@ -25,10 +25,13 @@ export function MaterielForm({
   materiel,
   action,
   submitLabel,
+  canSeePrices = true,
 }: {
   materiel?: Materiel;
   action: (formData: FormData) => Promise<void>;
   submitLabel: string;
+  /** Si false, masque le champ « Prix d'achat » (cas CHEF). */
+  canSeePrices?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -153,16 +156,18 @@ export function MaterielForm({
             </Field>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Prix d'achat (€)">
-              <Input
-                name="prixAchat"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={materiel?.prixAchat ? String(materiel.prixAchat) : ""}
-              />
-            </Field>
+          <div className={`grid grid-cols-1 ${canSeePrices ? "sm:grid-cols-2" : ""} gap-4`}>
+            {canSeePrices && (
+              <Field label="Prix d'achat (€)">
+                <Input
+                  name="prixAchat"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={materiel?.prixAchat ? String(materiel.prixAchat) : ""}
+                />
+              </Field>
+            )}
             <Field label="Date d'achat">
               <Input
                 name="dateAchat"

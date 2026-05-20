@@ -12,6 +12,7 @@ import { MaterielStatutBadge } from "../MaterielStatutBadge";
 import { ResettingForm } from "@/components/ResettingForm";
 import { updateMateriel, deleteMateriel, addAccessoire, deleteAccessoire } from "../actions";
 import { formatDate } from "@/lib/utils";
+import { requireAuth } from "@/lib/auth-helpers";
 
 const etatLabel: Record<string, string> = {
   BON: "Bon",
@@ -26,6 +27,7 @@ export default async function MaterielDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const me = await requireAuth();
   const materiel = await db.materiel.findUnique({
     where: { id },
     include: {
@@ -100,6 +102,7 @@ export default async function MaterielDetailPage({
               }}
               action={updateAction}
               submitLabel="Enregistrer"
+              canSeePrices={me.canSeePrices}
             />
           </CardBody>
         </Card>

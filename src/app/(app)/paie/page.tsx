@@ -11,7 +11,9 @@ import {
   CalendarRange,
   Download,
 } from "lucide-react";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/auth-helpers";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -93,6 +95,10 @@ export default async function PaieListPage({
     mode?: string;
   }>;
 }) {
+  // Réservé aux admins (la paie contient salaires, avances, retenues)
+  const me = await requireAuth();
+  if (!me.canSeePaie) redirect("/dashboard");
+
   const {
     month: monthParam,
     from: fromParam,

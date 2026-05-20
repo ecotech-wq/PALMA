@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { requireAdminOrConducteur } from "@/lib/auth-helpers";
 
 const locationSchema = z.object({
   designation: z.string().min(1, "Désignation requise"),
@@ -44,6 +45,7 @@ function parseLocation(formData: FormData) {
 }
 
 export async function createLocation(formData: FormData) {
+  await requireAdminOrConducteur();
   const data = parseLocation(formData);
   const created = await db.locationPret.create({ data });
   revalidatePath("/locations");
@@ -52,6 +54,7 @@ export async function createLocation(formData: FormData) {
 }
 
 export async function updateLocation(id: string, formData: FormData) {
+  await requireAdminOrConducteur();
   const data = parseLocation(formData);
   const existing = await db.locationPret.findUnique({ where: { id } });
   await db.locationPret.update({ where: { id }, data });
@@ -70,6 +73,7 @@ const cloturerSchema = z.object({
 });
 
 export async function cloturerLocation(id: string, formData: FormData) {
+  await requireAdminOrConducteur();
   const data = cloturerSchema.parse({
     dateRetourReel: formData.get("dateRetourReel"),
     coutTotalFinal: formData.get("coutTotalFinal"),
@@ -104,6 +108,7 @@ export async function cloturerLocation(id: string, formData: FormData) {
 }
 
 export async function deleteLocation(id: string) {
+  await requireAdminOrConducteur();
   const existing = await db.locationPret.findUnique({ where: { id } });
   await db.locationPret.delete({ where: { id } });
   revalidatePath("/locations");

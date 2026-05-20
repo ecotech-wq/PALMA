@@ -11,6 +11,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // Compteurs pour les badges de notification dans la nav
   const isAdmin = session.user.role === "ADMIN";
+  const isConducteur = session.user.role === "CONDUCTEUR";
   const isClient = session.user.role === "CLIENT";
   const today = new Date();
 
@@ -69,10 +70,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     db.incident.count({
       where: { statut: { in: ["OUVERT", "EN_COURS"] } },
     }),
-    // Demandes de matériel en attente : pertinent pour l'admin
-    // (les chefs voient leurs demandes mais le badge sert à l'admin
-    // pour valider rapidement)
-    isAdmin ? db.demandeMateriel.count({ where: { statut: "DEMANDEE" } }) : 0,
+    // Demandes de matériel en attente : admin + conducteur de travaux
+    // (les CHEF voient leurs propres demandes mais le badge sert au
+    // pilotage pour valider rapidement)
+    isAdmin || isConducteur
+      ? db.demandeMateriel.count({ where: { statut: "DEMANDEE" } })
+      : 0,
   ]);
 
   // Charge les notifications de l'utilisateur (non lues + 20 plus récentes
@@ -140,6 +143,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </main>
           <MobileBottomNav
             isAdmin={isAdmin}
+            isConducteur={isConducteur}
             isClient={isClient}
             pendingUsersCount={pendingUsersCount}
             navBadges={navBadges}
