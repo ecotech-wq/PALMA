@@ -16,6 +16,16 @@ function applyTheme(mode: Mode) {
   root.classList.toggle("dark", dark);
 }
 
+/** Sauvegarde la préférence dans localStorage (legacy) ET dans un
+ *  cookie 1 an (lu par /theme-init.js au prochain chargement). */
+function persistMode(mode: Mode) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, mode);
+  } catch {}
+  // Cookie : 1 an, path=/, SameSite=Lax
+  document.cookie = `${STORAGE_KEY}=${encodeURIComponent(mode)}; max-age=${60 * 60 * 24 * 365}; path=/; SameSite=Lax`;
+}
+
 function readMode(): Mode {
   if (typeof window === "undefined") return "system";
   const v = window.localStorage.getItem(STORAGE_KEY);
@@ -41,7 +51,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
 
   function setAndApply(next: Mode) {
     setMode(next);
-    window.localStorage.setItem(STORAGE_KEY, next);
+    persistMode(next);
     applyTheme(next);
   }
 

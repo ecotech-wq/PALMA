@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { ThemeScript } from "@/components/ThemeScript";
 import { PwaRegister } from "@/components/PwaRegister";
 
 const geistSans = Geist({
@@ -54,10 +53,17 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
+      <head>
+        {/*
+          Script anti-FOUC servi depuis /public (statique). Avec un
+          attribut `src`, React 19 ne déclenche PAS le warning sur les
+          scripts dans les composants (qui ne concerne que les scripts
+          inline via dangerouslySetInnerHTML). Le navigateur l'exécute
+          pendant le parsing HTML, avant le premier paint.
+        */}
+        <script src="/theme-init.js" />
+      </head>
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        {/* ThemeScript: injecté en beforeInteractive par next/script,
-            tourne avant l'hydratation pour éviter le FOUC */}
-        <ThemeScript />
         {children}
         <PwaRegister />
       </body>
