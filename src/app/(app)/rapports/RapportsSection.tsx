@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -270,12 +269,12 @@ function RapportRow({
               onClick={() => setLightboxIdx(idx)}
               className="relative aspect-square rounded-md overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:ring-2 hover:ring-brand-300 transition"
             >
-              <Image
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
                 src={url}
                 alt={`Photo ${idx + 1}`}
-                fill
-                sizes="(max-width: 640px) 33vw, 120px"
-                className="object-cover"
+                loading="lazy"
+                className="absolute inset-0 w-full h-full object-cover"
               />
             </button>
           ))}
@@ -297,12 +296,12 @@ function RapportRow({
             <X size={24} />
           </button>
           <div className="relative w-full h-full max-w-5xl max-h-[90vh]">
-            <Image
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
               src={r.photos[lightboxIdx]}
               alt={`Photo ${lightboxIdx + 1}`}
-              fill
-              className="object-contain"
-              sizes="90vw"
+              loading="lazy"
+              className="absolute inset-0 w-full h-full object-contain"
             />
           </div>
           {r.photos.length > 1 && (

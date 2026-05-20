@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useRef, useState, useTransition } from "react";
 import { Pencil, Trash2, Save, X, Calendar, Camera, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -222,11 +221,13 @@ function DisplayRow({
       {/* Photo dépliée */}
       {showPhoto && p.photo && (
         <div className="mt-2 relative">
-          <Image
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
             src={p.photo}
             alt="Photo du pointage"
             width={400}
             height={400}
+            loading="lazy"
             className="rounded-md border border-slate-200 dark:border-slate-800 max-w-full h-auto object-contain bg-slate-50 dark:bg-slate-900"
           />
           {onRemovePhoto && (

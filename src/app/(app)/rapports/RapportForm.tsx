@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -206,12 +205,12 @@ export function RapportForm({
                 key={url}
                 className="relative aspect-square rounded-md overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 group"
               >
-                <Image
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
                   src={url}
                   alt="Photo"
-                  fill
-                  sizes="120px"
-                  className="object-cover"
+                  loading="lazy"
+                  className="absolute inset-0 w-full h-full object-cover"
                 />
                 <button
                   type="button"

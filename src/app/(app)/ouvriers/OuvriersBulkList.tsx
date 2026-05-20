@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, User, ChevronRight, CheckSquare, Square } from "lucide-react";
@@ -178,12 +177,12 @@ export function OuvriersBulkList({
                   )}
                 >
                   {o.photo ? (
-                    <Image
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
                       src={o.photo}
                       alt={fullName}
-                      fill
-                      sizes="48px"
-                      className="object-cover"
+                      loading="lazy"
+                      className="absolute inset-0 w-full h-full object-cover"
                     />
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500">

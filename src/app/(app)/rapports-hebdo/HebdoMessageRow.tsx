@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -193,12 +192,12 @@ export function HebdoMessageRow({
                 rel="noreferrer"
                 className="relative aspect-square rounded overflow-hidden bg-slate-100 dark:bg-slate-800"
               >
-                <Image
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
                   src={url}
                   alt={`Photo ${idx + 1}`}
-                  fill
-                  sizes="120px"
-                  className="object-cover"
+                  loading="lazy"
+                  className="absolute inset-0 w-full h-full object-cover"
                 />
               </a>
             ))}

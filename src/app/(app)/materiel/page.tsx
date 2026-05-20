@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { Plus, Wrench, Search } from "lucide-react";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/Button";
@@ -99,12 +98,12 @@ export default async function MaterielListPage({
             >
               <div className="aspect-square bg-slate-100 dark:bg-slate-800 relative">
                 {m.photo ? (
-                  <Image
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
                     src={m.photo}
                     alt={m.nomCommun}
-                    fill
-                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                    className="object-cover"
+                    loading="lazy"
+                    className="absolute inset-0 w-full h-full object-cover"
                   />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-slate-300">

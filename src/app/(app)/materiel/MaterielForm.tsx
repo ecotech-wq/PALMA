@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
@@ -37,20 +36,17 @@ export function MaterielForm({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(materiel?.photo ?? null);
-  const [photoChanged, setPhotoChanged] = useState(false);
   const [removePhoto, setRemovePhoto] = useState(false);
 
   function onPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setPhotoPreview(URL.createObjectURL(file));
-    setPhotoChanged(true);
     setRemovePhoto(false);
   }
 
   function clearPhoto() {
     setPhotoPreview(null);
-    setPhotoChanged(true);
     setRemovePhoto(true);
     const input = document.getElementById("photo") as HTMLInputElement | null;
     if (input) input.value = "";
@@ -83,13 +79,12 @@ export function MaterielForm({
             <div className="space-y-2">
               <div className="aspect-square bg-slate-100 dark:bg-slate-800 rounded-lg relative overflow-hidden border border-slate-200 dark:border-slate-800">
                 {photoPreview ? (
-                  <Image
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
                     src={photoPreview}
                     alt="Aperçu"
-                    fill
-                    sizes="(max-width: 768px) 100vw, 33vw"
-                    className="object-cover"
-                    unoptimized={photoChanged}
+                    loading="lazy"
+                    className="absolute inset-0 w-full h-full object-cover"
                   />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500 text-sm">

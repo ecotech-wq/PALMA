@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import {
   FileText,
   Sun,
@@ -183,12 +182,12 @@ export default async function RapportsListPage({
                         href={`/chantiers/${r.chantier.id}#rapport-${r.id}`}
                         className="relative w-14 h-14 rounded overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800"
                       >
-                        <Image
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
                           src={url}
                           alt={`Photo ${idx + 1}`}
-                          fill
-                          sizes="56px"
-                          className="object-cover"
+                          className="absolute inset-0 w-full h-full object-cover"
+                          loading="lazy"
                         />
                       </Link>
                     ))}

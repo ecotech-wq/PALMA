@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { Plus, Wrench, ArrowRight } from "lucide-react";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/Button";
@@ -87,7 +86,8 @@ export default async function SortiesPage() {
                       <div className="flex items-start gap-3">
                         <Link href={`/materiel/${s.materiel.id}`} className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
                           {s.materiel.photo ? (
-                            <Image src={s.materiel.photo} alt={s.materiel.nomCommun} fill sizes="56px" className="object-cover" />
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={s.materiel.photo} alt={s.materiel.nomCommun} loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
                           ) : (
                             <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500">
                               <Wrench size={20} />
@@ -158,7 +158,8 @@ export default async function SortiesPage() {
                   <li key={s.id} className="p-3 flex items-center gap-3 text-sm">
                     <div className="w-9 h-9 shrink-0 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
                       {s.materiel.photo ? (
-                        <Image src={s.materiel.photo} alt={s.materiel.nomCommun} fill sizes="36px" className="object-cover" />
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={s.materiel.photo} alt={s.materiel.nomCommun} loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500">
                           <Wrench size={14} />

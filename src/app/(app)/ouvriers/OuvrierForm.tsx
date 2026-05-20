@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, User } from "lucide-react";
@@ -54,7 +53,6 @@ export function OuvrierForm({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(ouvrier?.photo ?? null);
-  const [photoChanged, setPhotoChanged] = useState(false);
   const [removePhoto, setRemovePhoto] = useState(false);
   const [typeContrat, setTypeContrat] = useState(ouvrier?.typeContrat ?? "JOUR");
 
@@ -62,12 +60,10 @@ export function OuvrierForm({
     const file = e.target.files?.[0];
     if (!file) return;
     setPhotoPreview(URL.createObjectURL(file));
-    setPhotoChanged(true);
     setRemovePhoto(false);
   }
   function clearPhoto() {
     setPhotoPreview(null);
-    setPhotoChanged(true);
     setRemovePhoto(true);
     const input = document.getElementById("photo") as HTMLInputElement | null;
     if (input) input.value = "";
@@ -98,13 +94,12 @@ export function OuvrierForm({
         <div className="w-24 shrink-0">
           <div className="aspect-square bg-slate-100 dark:bg-slate-800 rounded-lg relative overflow-hidden border border-slate-200 dark:border-slate-800">
             {photoPreview ? (
-              <Image
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
                 src={photoPreview}
                 alt="Aperçu"
-                fill
-                sizes="100px"
-                className="object-cover"
-                unoptimized={photoChanged}
+                loading="lazy"
+                className="absolute inset-0 w-full h-full object-cover"
               />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500">

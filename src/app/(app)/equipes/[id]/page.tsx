@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { Trash2, User, Plus, Wrench } from "lucide-react";
 import { db } from "@/lib/db";
@@ -116,7 +115,8 @@ export default async function EquipeDetailPage({
                     <li key={o.id} className="py-2 flex items-center gap-3">
                       <div className="w-9 h-9 shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
                         {o.photo ? (
-                          <Image src={o.photo} alt={fullName} fill sizes="36px" className="object-cover" />
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img src={o.photo} alt={fullName} loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
                         ) : (
                           <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500">
                             <User size={16} />
@@ -193,7 +193,8 @@ export default async function EquipeDetailPage({
                   <li key={s.id} className="py-2 flex items-center gap-3">
                     <div className="w-10 h-10 shrink-0 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
                       {s.materiel.photo ? (
-                        <Image src={s.materiel.photo} alt={s.materiel.nomCommun} fill sizes="40px" className="object-cover" />
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={s.materiel.photo} alt={s.materiel.nomCommun} loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500">
                           <Wrench size={16} />

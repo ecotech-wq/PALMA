@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -358,12 +357,12 @@ function MessageBubble({
             <X size={24} />
           </button>
           <div className="relative w-full h-full max-w-5xl max-h-[90vh]">
-            <Image
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
               src={m.photos[lightboxIdx]}
               alt={`Photo ${lightboxIdx + 1}`}
-              fill
-              className="object-contain"
-              sizes="90vw"
+              loading="lazy"
+              className="absolute inset-0 w-full h-full object-contain"
             />
           </div>
         </div>
@@ -398,12 +397,12 @@ function PhotoGrid({
           onClick={() => onOpen(idx)}
           className={`relative ${small ? "aspect-square" : "aspect-video"} rounded-md overflow-hidden bg-slate-100 dark:bg-slate-800`}
         >
-          <Image
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
             src={url}
             alt={`Photo ${idx + 1}`}
-            fill
-            sizes="200px"
-            className="object-cover"
+            loading="lazy"
+            className="absolute inset-0 w-full h-full object-cover"
           />
         </button>
       ))}

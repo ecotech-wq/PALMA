@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { CheckCircle2, RotateCcw, Trash2, Play } from "lucide-react";
 import { db } from "@/lib/db";
@@ -145,12 +144,12 @@ export default async function IncidentDetailPage({
                         rel="noreferrer"
                         className="relative aspect-square rounded-md overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:ring-2 hover:ring-brand-300 transition"
                       >
-                        <Image
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
                           src={url}
                           alt={`Photo ${idx + 1}`}
-                          fill
-                          sizes="120px"
-                          className="object-cover"
+                          loading="lazy"
+                          className="absolute inset-0 w-full h-full object-cover"
                         />
                       </a>
                     ))}
