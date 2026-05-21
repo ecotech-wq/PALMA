@@ -52,7 +52,7 @@ export async function getFinanceChantier(chantierId: string): Promise<FinanceCha
       },
     }),
     db.commande.findMany({
-      where: { chantierId, statut: { not: "ANNULEE" } },
+      where: { chantierId, statut: { not: "ANNULEE" }, deletedAt: null },
       select: { coutTotal: true },
     }),
     db.locationPret.findMany({

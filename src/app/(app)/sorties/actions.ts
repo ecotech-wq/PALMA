@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/auth-helpers";
+import { insertSystemMessage } from "@/app/(app)/journal/actions";
 
 const sortieSchema = z.object({
   materielId: z.string().min(1, "Matériel requis"),
@@ -13,6 +15,7 @@ const sortieSchema = z.object({
 });
 
 export async function createSortie(formData: FormData) {
+  const me = await requireAuth();
   const data = sortieSchema.parse({
     materielId: formData.get("materielId"),
     equipeId: formData.get("equipeId"),
@@ -24,7 +27,7 @@ export async function createSortie(formData: FormData) {
     throw new Error("Affecte la sortie à au moins une équipe ou un chantier");
   }
 
-  await db.$transaction([
+  const [sortie] = await db.$transaction([
     db.sortieMateriel.create({
       data: {
         materielId: data.materielId,
@@ -32,12 +35,31 @@ export async function createSortie(formData: FormData) {
         chantierId: data.chantierId || null,
         note: data.note || null,
       },
+      include: {
+        materiel: { select: { nomCommun: true } },
+        equipe: { select: { nom: true } },
+      },
     }),
     db.materiel.update({
       where: { id: data.materielId },
       data: { statut: "SORTI" },
     }),
   ]);
+
+  // Propagation dans la messagerie du chantier (si rattaché à un chantier)
+  if (data.chantierId) {
+    const cible = sortie.equipe?.nom
+      ? ` → équipe ${sortie.equipe.nom}`
+      : "";
+    await insertSystemMessage({
+      chantierId: data.chantierId,
+      type: "SYSTEM_SORTIE",
+      texte: `📤 Sortie matériel : ${sortie.materiel.nomCommun}${cible}${data.note ? "\n" + data.note : ""}`,
+      authorId: me.id,
+      sortieId: sortie.id,
+    });
+    revalidatePath(`/messagerie/${data.chantierId}`);
+  }
 
   revalidatePath("/sorties");
   revalidatePath("/materiel");
@@ -52,12 +74,16 @@ const retourSchema = z.object({
 });
 
 export async function cloturerSortie(sortieId: string, formData: FormData) {
+  const me = await requireAuth();
   const data = retourSchema.parse({
     etatRetour: formData.get("etatRetour") || "BON",
     note: formData.get("note"),
   });
 
-  const sortie = await db.sortieMateriel.findUnique({ where: { id: sortieId } });
+  const sortie = await db.sortieMateriel.findUnique({
+    where: { id: sortieId },
+    include: { materiel: { select: { nomCommun: true } } },
+  });
   if (!sortie) throw new Error("Sortie introuvable");
   if (sortie.dateRetour) throw new Error("Sortie déjà clôturée");
 
@@ -78,6 +104,18 @@ export async function cloturerSortie(sortieId: string, formData: FormData) {
       data: { statut: newStatut },
     }),
   ]);
+
+  // Propagation dans la messagerie
+  if (sortie.chantierId) {
+    await insertSystemMessage({
+      chantierId: sortie.chantierId,
+      type: "SYSTEM_RETOUR",
+      texte: `📥 Retour matériel : ${sortie.materiel.nomCommun} (${data.etatRetour})${data.note ? "\n" + data.note : ""}`,
+      authorId: me.id,
+      sortieId: sortie.id,
+    });
+    revalidatePath(`/messagerie/${sortie.chantierId}`);
+  }
 
   revalidatePath("/sorties");
   revalidatePath("/materiel");

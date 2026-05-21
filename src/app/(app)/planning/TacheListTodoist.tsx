@@ -15,6 +15,8 @@ import {
   FolderPlus,
   Folder,
   Pencil,
+  GripVertical,
+  RotateCw,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import {
@@ -25,6 +27,7 @@ import {
   createSection,
   renameSection,
   deleteSection,
+  reordonnerTaches,
 } from "./actions";
 
 export type TacheTodo = {
@@ -41,8 +44,18 @@ export type TacheTodo = {
   equipe: { id: string; nom: string } | null;
   chantier: { id: string; nom: string };
   labels: { label: { id: string; nom: string; couleur: string } }[];
+  ouvriers?: { id: string; nom: string; prenom: string | null }[];
+  recurrence?: string | null;
   enfants?: TacheTodo[];
 };
+
+/** Renvoie les initiales d'un ouvrier (P. NOM ou juste les 2 premières lettres) */
+function ouvrierInitiales(nom: string, prenom: string | null): string {
+  const p = (prenom ?? "").trim();
+  const n = nom.trim();
+  if (p && n) return `${p[0]}${n[0]}`.toUpperCase();
+  return n.slice(0, 2).toUpperCase();
+}
 
 export type SectionItem = {
   id: string;
@@ -194,9 +207,51 @@ function SectionGroup({
   taches: TacheTodo[];
   onEdit?: (id: string) => void;
 }) {
+  const router = useRouter();
+  const toast = useToast();
   const [expanded, setExpanded] = useState(true);
+  // Ordre local optimiste : commence par l'ordre reçu (déjà trié serveur)
+  const [orderedIds, setOrderedIds] = useState<string[]>(taches.map((t) => t.id));
+  // Re-sync si la liste serveur change (nouvelle tâche, suppression…)
+  // Simple : on remplace si la composition change.
+  const incomingKey = taches.map((t) => t.id).sort().join(",");
+  const currentKey = [...orderedIds].sort().join(",");
+  if (incomingKey !== currentKey) {
+    setOrderedIds(taches.map((t) => t.id));
+  }
+  const tacheById = new Map(taches.map((t) => [t.id, t]));
+  const visible = orderedIds.map((id) => tacheById.get(id)).filter(Boolean) as TacheTodo[];
+
   const total = taches.length;
   const done = taches.filter((t) => t.statut === "TERMINEE").length;
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [hoverId, setHoverId] = useState<string | null>(null);
+
+  function commitOrder(next: string[]) {
+    setOrderedIds(next);
+    // Persistance serveur en best-effort
+    reordonnerTaches(next).catch((e) => {
+      toast.error(e instanceof Error ? e.message : "Réordonnancement échoué");
+      router.refresh();
+    });
+  }
+
+  function handleDrop(targetId: string) {
+    if (!dragId || dragId === targetId) {
+      setDragId(null);
+      setHoverId(null);
+      return;
+    }
+    const next = [...orderedIds];
+    const from = next.indexOf(dragId);
+    const to = next.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    next.splice(from, 1);
+    next.splice(to, 0, dragId);
+    setDragId(null);
+    setHoverId(null);
+    commitOrder(next);
+  }
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
@@ -209,13 +264,44 @@ function SectionGroup({
       />
       {expanded && (
         <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-          {taches.length === 0 ? (
+          {visible.length === 0 ? (
             <li className="px-3 py-3 text-xs text-slate-400 italic text-center">
               Aucune tâche dans cette section.
             </li>
           ) : (
-            taches.map((t) => (
-              <TacheRow key={t.id} tache={t} depth={0} onEdit={onEdit} />
+            visible.map((t) => (
+              <TacheRow
+                key={t.id}
+                tache={t}
+                depth={0}
+                onEdit={onEdit}
+                dnd={{
+                  isDragging: dragId === t.id,
+                  isHover: hoverId === t.id,
+                  onDragStart: (e) => {
+                    setDragId(t.id);
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", t.id);
+                  },
+                  onDragEnd: () => {
+                    setDragId(null);
+                    setHoverId(null);
+                  },
+                  onDragOver: (e) => {
+                    if (!dragId || dragId === t.id) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (hoverId !== t.id) setHoverId(t.id);
+                  },
+                  onDragLeave: () => {
+                    if (hoverId === t.id) setHoverId(null);
+                  },
+                  onDrop: (e) => {
+                    e.preventDefault();
+                    handleDrop(t.id);
+                  },
+                }}
+              />
             ))
           )}
         </ul>
@@ -438,14 +524,26 @@ function AddSectionInline({ chantierId }: { chantierId: string }) {
   );
 }
 
+type DnDProps = {
+  isDragging: boolean;
+  isHover: boolean;
+  onDragStart: (e: React.DragEvent<HTMLLIElement>) => void;
+  onDragEnd: (e: React.DragEvent<HTMLLIElement>) => void;
+  onDragOver: (e: React.DragEvent<HTMLLIElement>) => void;
+  onDragLeave: (e: React.DragEvent<HTMLLIElement>) => void;
+  onDrop: (e: React.DragEvent<HTMLLIElement>) => void;
+};
+
 function TacheRow({
   tache: t,
   depth,
   onEdit,
+  dnd,
 }: {
   tache: TacheTodo;
   depth: number;
   onEdit?: (id: string) => void;
+  dnd?: DnDProps;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -503,11 +601,29 @@ function TacheRow({
   return (
     <>
       <li
+        draggable={!!dnd}
+        onDragStart={dnd?.onDragStart}
+        onDragEnd={dnd?.onDragEnd}
+        onDragOver={dnd?.onDragOver}
+        onDragLeave={dnd?.onDragLeave}
+        onDrop={dnd?.onDrop}
         className={`flex items-start gap-2 px-3 py-2 group hover:bg-slate-50 dark:hover:bg-slate-800/50 transition ${
           done ? "opacity-60" : ""
+        } ${dnd?.isDragging ? "opacity-40" : ""} ${
+          dnd?.isHover ? "border-t-2 border-brand-500" : ""
         }`}
         style={{ paddingLeft: `${12 + depth * 24}px` }}
       >
+        {/* Poignée drag (visible au survol, top-level uniquement) */}
+        {dnd && depth === 0 && (
+          <span
+            className="shrink-0 mt-1 -ml-1 text-slate-300 dark:text-slate-600 cursor-grab opacity-0 group-hover:opacity-100 transition"
+            title="Glisser pour réordonner"
+          >
+            <GripVertical size={12} />
+          </span>
+        )}
+
         {/* Caret expand sous-tâches */}
         {hasChildren ? (
           <button
@@ -562,6 +678,14 @@ function TacheRow({
             }`}
           >
             {t.nom}
+            {t.recurrence && (
+              <span
+                className="inline-block ml-1 align-text-bottom text-slate-400 dark:text-slate-500"
+                title={`Récurrente : ${t.recurrence}`}
+              >
+                <RotateCw size={11} />
+              </span>
+            )}
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
             <span className="text-brand-700 dark:text-brand-400 font-medium">
@@ -571,6 +695,28 @@ function TacheRow({
               <span className="inline-flex items-center gap-1">
                 <Users size={10} />
                 {t.equipe.nom}
+              </span>
+            )}
+            {t.ouvriers && t.ouvriers.length > 0 && (
+              <span
+                className="inline-flex items-center -space-x-1"
+                title={t.ouvriers
+                  .map((o) => (o.prenom ? `${o.prenom} ${o.nom}` : o.nom))
+                  .join(", ")}
+              >
+                {t.ouvriers.slice(0, 4).map((o) => (
+                  <span
+                    key={o.id}
+                    className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-brand-100 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 text-[8px] font-bold border border-white dark:border-slate-900"
+                  >
+                    {ouvrierInitiales(o.nom, o.prenom)}
+                  </span>
+                ))}
+                {t.ouvriers.length > 4 && (
+                  <span className="ml-1 text-[10px] text-slate-500 dark:text-slate-400">
+                    +{t.ouvriers.length - 4}
+                  </span>
+                )}
               </span>
             )}
             <span

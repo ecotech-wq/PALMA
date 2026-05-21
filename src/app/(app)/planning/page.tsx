@@ -11,7 +11,7 @@ import { QuickAddBar } from "./QuickAddBar";
 import { requireAuth } from "@/lib/auth-helpers";
 import { createTache, deleteTache, setAvancement, updateTache } from "./actions";
 
-type Vue = "gantt" | "liste" | "pert" | "kanban";
+type Vue = "gantt" | "liste" | "pert" | "kanban" | "calendrier";
 
 export default async function PlanningPage({
   searchParams,
@@ -30,12 +30,16 @@ export default async function PlanningPage({
         ? "pert"
         : vueRaw === "kanban"
           ? "kanban"
-          : "gantt";
+          : vueRaw === "calendrier"
+            ? "calendrier"
+            : "gantt";
 
-  const [taches, chantiers, equipes, commandes, locations, sections] =
+  const [taches, chantiers, equipes, commandes, locations, sections, ouvriers] =
     await Promise.all([
     db.tache.findMany({
-      where: chantier ? { chantierId: chantier } : {},
+      where: chantier
+        ? { chantierId: chantier, deletedAt: null }
+        : { deletedAt: null },
       include: {
         chantier: { select: { id: true, nom: true } },
         equipe: { select: { id: true, nom: true } },
@@ -45,8 +49,14 @@ export default async function PlanningPage({
             label: { select: { id: true, nom: true, couleur: true } },
           },
         },
+        ouvriers: {
+          include: {
+            ouvrier: { select: { id: true, nom: true, prenom: true } },
+          },
+        },
       },
-      orderBy: [{ priorite: "asc" }, { dateDebut: "asc" }],
+      // Ordre manuel d'abord (drag-to-reorder), puis priorité, puis date début
+      orderBy: [{ ordre: "asc" }, { priorite: "asc" }, { dateDebut: "asc" }],
     }),
     db.chantier.findMany({
       where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] } },
@@ -61,6 +71,7 @@ export default async function PlanningPage({
       where: {
         statut: { in: ["COMMANDEE", "EN_LIVRAISON"] },
         dateLivraisonPrevue: { not: null },
+        deletedAt: null,
         ...(chantier ? { chantierId: chantier } : {}),
       },
       select: {
@@ -86,6 +97,12 @@ export default async function PlanningPage({
       where: chantier ? { chantierId: chantier } : {},
       select: { id: true, chantierId: true, nom: true, ordre: true },
       orderBy: { ordre: "asc" },
+    }),
+    // Liste des ouvriers actifs (pour le multi-select dans la modale)
+    db.ouvrier.findMany({
+      where: { actif: true },
+      select: { id: true, nom: true, prenom: true, equipeId: true },
+      orderBy: [{ nom: "asc" }, { prenom: "asc" }],
     }),
   ]);
 
@@ -194,6 +211,18 @@ export default async function PlanningPage({
                 <button
                   type="submit"
                   name="vue"
+                  value="calendrier"
+                  className={`px-3 py-2 border-l border-slate-300 dark:border-slate-700 ${
+                    view === "calendrier"
+                      ? "bg-brand-500 text-white"
+                      : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900"
+                  }`}
+                >
+                  Calendrier
+                </button>
+                <button
+                  type="submit"
+                  name="vue"
                   value="pert"
                   className={`px-3 py-2 border-l border-slate-300 dark:border-slate-700 ${
                     view === "pert"
@@ -236,7 +265,10 @@ export default async function PlanningPage({
         </CardBody>
       </Card>
 
-      {view !== "pert" && taches.length === 0 && events.length === 0 ? (
+      {view !== "pert" &&
+      view !== "calendrier" &&
+      taches.length === 0 &&
+      events.length === 0 ? (
         <Card>
           <CardBody className="text-center text-sm text-slate-500 dark:text-slate-500 py-10">
             <Calendar size={32} className="mx-auto mb-3 text-slate-300" />
@@ -246,7 +278,7 @@ export default async function PlanningPage({
       ) : view !== "pert" ? (
         <div className="space-y-3">
           <PlanningViews
-            view={view as "gantt" | "kanban" | "liste"}
+            view={view as "gantt" | "kanban" | "liste" | "calendrier"}
             canEdit={canEdit}
             taches={taches.map((t) => ({
               id: t.id,
@@ -265,12 +297,19 @@ export default async function PlanningPage({
               labels: t.labels,
               equipe: t.equipe,
               chantier: t.chantier,
+              ouvriers: t.ouvriers.map((o) => ({
+                id: o.ouvrier.id,
+                nom: o.ouvrier.nom,
+                prenom: o.ouvrier.prenom,
+              })),
+              recurrence: t.recurrence,
             }))}
             events={events}
             sections={sections}
             chantiers={chantiers}
             equipes={equipes}
             allLabels={allLabels}
+            allOuvriers={ouvriers}
             defaultChantierId={chantier}
           />
           {view === "gantt" && <Legend />}

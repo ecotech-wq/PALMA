@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { saveUploadedPhoto, deleteUploadedPhoto } from "@/lib/upload";
 import { requireAuth, requireAdmin } from "@/lib/auth-helpers";
 import { notifyAdmins } from "@/lib/notifications";
+import { insertSystemMessage } from "@/app/(app)/journal/actions";
 
 const meteoEnum = z.enum([
   "SOLEIL",
@@ -83,6 +84,18 @@ export async function createRapport(formData: FormData) {
     );
   }
 
+  // Propagation dans la messagerie du chantier
+  await insertSystemMessage({
+    chantierId: data.chantierId,
+    date: new Date(data.date + "T00:00:00.000Z"),
+    type: "SYSTEM_RAPPORT",
+    texte: `📝 Rapport du ${data.date}${data.meteo ? ` (${data.meteo.toLowerCase()})` : ""}${data.nbOuvriers ? ` · ${data.nbOuvriers} ouvrier${data.nbOuvriers > 1 ? "s" : ""}` : ""} :\n${data.texte}`,
+    authorId: me.id,
+    rapportId: rapport.id,
+    photos,
+  });
+  revalidatePath(`/messagerie/${data.chantierId}`);
+
   revalidatePath(`/chantiers/${data.chantierId}`);
   revalidatePath("/rapports");
   redirect(`/chantiers/${data.chantierId}#rapport-${rapport.id}`);
@@ -134,7 +147,7 @@ export async function updateRapport(id: string, formData: FormData) {
   revalidatePath("/rapports");
 }
 
-/** Suppression — l'auteur ou un admin. */
+/** Suppression — l'auteur ou un admin. Soft-delete : conservé 30 jours. */
 export async function deleteRapport(id: string) {
   const me = await requireAuth();
   const existing = await db.rapportChantier.findUnique({ where: { id } });
@@ -142,11 +155,11 @@ export async function deleteRapport(id: string) {
   if (!me.isAdmin && existing.authorId !== me.id) {
     throw new Error("Tu ne peux supprimer que tes propres rapports");
   }
-  // Nettoie les photos sur disque
-  for (const p of existing.photos) {
-    await deleteUploadedPhoto(p);
-  }
-  await db.rapportChantier.delete({ where: { id } });
+  // Soft-delete : on garde les photos sur disque, restaurable depuis la corbeille
+  await db.rapportChantier.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  });
   revalidatePath(`/chantiers/${existing.chantierId}`);
   revalidatePath("/rapports");
 }

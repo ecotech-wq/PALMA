@@ -182,6 +182,18 @@ export async function resolveIncident(id: string, formData: FormData) {
     );
   }
 
+  // Propagation dans la messagerie
+  if (existing.chantierId) {
+    await insertSystemMessage({
+      chantierId: existing.chantierId,
+      type: "SYSTEM_INCIDENT_RESOLU",
+      texte: `✅ Incident résolu : ${existing.titre}\nRésolution : ${data.resolutionNote}`,
+      authorId: me.id,
+      incidentId: existing.id,
+    });
+    revalidatePath(`/messagerie/${existing.chantierId}`);
+  }
+
   revalidatePath("/incidents");
   revalidatePath(`/incidents/${id}`);
   if (existing.chantierId) revalidatePath(`/chantiers/${existing.chantierId}`);

@@ -50,6 +50,14 @@ model User {
   showPlans         Boolean @default(true)
   showRapportsHebdo Boolean @default(true)
 
+  // 2FA TOTP (RFC 6238). `totpSecret` est en clair (encryption au repos
+  // via la BDD/disk). `totpEnabled` reste false tant que le user n'a pas
+  // vérifié son premier code (anti-enrôlement raté). Backup codes hashés
+  // SHA-256, à usage unique : on vérifie le hash et on retire le code.
+  totpEnabled      Boolean  @default(false)
+  totpSecret       String?
+  totpBackupCodes  String[] @default([])
+
   chantiersGeres     Chantier[]           @relation("ChefChantier")
   chantiersClient    Chantier[]           @relation("ChantierClients")
   passwordResets     PasswordResetToken[]
@@ -62,6 +70,10 @@ model User {
   journalMessages    JournalMessage[]
   plansUploaded      PlanChantier[]
   readStates         UserReadState[]
+  pushSubscriptions  PushSubscription[]
+  chantierPins       UserChantierPin[]
+  auditEntries       AuditEntry[]
+  messageReactions   MessageReaction[]
 }
 
 // Token à usage unique pour réinitialiser un mot de passe.
@@ -125,6 +137,7 @@ model Chantier {
   pvReceptions     PvReception[]
   labels           Label[]
   sections         Section[]
+  pins             UserChantierPin[]
 }
 
 model Equipe {
@@ -174,6 +187,7 @@ model Ouvrier {
   avances          Avance[]
   paiements        Paiement[]
   outilsPersonnels OutilPersonnel[]
+  tachesAssignees  TacheOuvrier[]
 }
 
 /// Singleton (id="singleton") qui stocke les préférences de l'app —
@@ -418,8 +432,12 @@ model Commande {
 
   lignes LigneCommande[]
 
+  // Soft-delete : marqué supprimé mais conservé 30 jours dans la corbeille
+  deletedAt DateTime?
+
   @@index([chantierId])
   @@index([statut])
+  @@index([deletedAt])
 }
 
 model LigneCommande {
@@ -471,13 +489,39 @@ model Tache {
   dependances Tache[]     @relation("TacheDependance")
   dependants  Tache[]     @relation("TacheDependance")
   labels      TacheLabel[]
+  ouvriers    TacheOuvrier[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+
+  // Récurrence (format RFC 5545 RRULE, ex: "FREQ=WEEKLY;BYDAY=MO,FR").
+  // Quand la tâche est marquée terminée, une nouvelle occurrence est
+  // créée automatiquement à la prochaine date prévue par la règle.
+  recurrence  String?
+  /// Tâche parente de la série récurrente (pour traçage/historique).
+  recurrenceParentId String?
+
+  // Soft-delete : marqué supprimé mais conservé 30 jours dans la corbeille
+  deletedAt   DateTime?
 
   @@index([chantierId])
   @@index([dateDebut, dateFin])
   @@index([parentId])
   @@index([sectionId])
+  @@index([deletedAt])
+}
+
+/// Affectation m2m d'ouvriers sur une tâche. La tâche garde toujours son
+/// équipe (vue agrégée), mais cette table permet de cibler des ouvriers
+/// individuels — utile pour les sous-tâches précises ou les forfaits.
+model TacheOuvrier {
+  tacheId   String
+  ouvrierId String
+  tache     Tache   @relation(fields: [tacheId], references: [id], onDelete: Cascade)
+  ouvrier   Ouvrier @relation(fields: [ouvrierId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([tacheId, ouvrierId])
+  @@index([ouvrierId])
 }
 
 /// Section pour grouper les tâches dans un chantier (Todoist-like).
@@ -553,8 +597,12 @@ model RapportChantier {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Soft-delete : marqué supprimé mais conservé 30 jours dans la corbeille
+  deletedAt   DateTime?
+
   @@index([chantierId, date(sort: Desc)])
   @@index([authorId])
+  @@index([deletedAt])
 }
 
 // =====================================================
@@ -692,13 +740,23 @@ model DemandeMateriel {
 enum JournalMessageType {
   NOTE
   SYSTEM_INCIDENT
+  /// Incident clos / résolu (le SYSTEM_INCIDENT initial reste, on en ajoute un nouveau)
+  SYSTEM_INCIDENT_RESOLU
   SYSTEM_DEMANDE
   SYSTEM_COMMANDE
+  /// Commande livrée (transition d'état depuis l'onglet commandes)
+  SYSTEM_COMMANDE_LIVREE
   SYSTEM_RAPPORT
   /// Sortie de matériel postée depuis la messagerie (lien sortieId)
   SYSTEM_SORTIE
   /// Retour de matériel — met à jour la sortie liée
   SYSTEM_RETOUR
+  /// Location/prêt créé(e) (depuis l'onglet locations)
+  SYSTEM_LOCATION
+  /// Location/prêt restitué(e) — clôture
+  SYSTEM_LOCATION_FIN
+  /// Plan uploadé sur le chantier (depuis l'onglet plans)
+  SYSTEM_PLAN
   BILAN_JOURNEE
 }
 
@@ -751,6 +809,23 @@ model JournalMessage {
 
   @@index([chantierId, date])
   @@index([createdAt(sort: Desc)])
+  reactions    MessageReaction[]
+}
+
+/// Réaction emoji sur un message du fil. Un utilisateur peut poser
+/// plusieurs emojis différents sur un même message, mais pas le même
+/// emoji deux fois (composite PK).
+model MessageReaction {
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message JournalMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId, emoji])
+  @@index([messageId])
 }
 
 // =====================================================
@@ -881,4 +956,76 @@ model PvReserve {
   updatedAt   DateTime    @updatedAt
 
   @@index([pvId, numero])
+}
+
+// =====================================================
+// WEB PUSH — abonnements navigateur (PWA)
+// =====================================================
+
+/// Journal d'audit : trace les actions sensibles (modifications de paie,
+/// suppressions, changements de rôle/statut, validations de demandes, etc.)
+/// Consultable par les admins via /admin/audit. Append-only (jamais
+/// modifié/supprimé) sauf via purge manuelle.
+model AuditEntry {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userName   String   // snapshot du nom au moment de l'action
+  userRole   String   // snapshot du rôle au moment de l'action
+  action     String   // ex: "PAIEMENT_PAYE", "USER_DELETED", "DEMANDE_APPROUVEE"
+  entity     String   // table/entité touchée : "Paiement", "User", "DemandeMateriel"
+  entityId   String?  // id de l'entité ciblée (peut être null si N/A)
+  summary    String   // description lisible "Paiement 1234.56€ versé à Jean Dupont"
+  metadata   Json?    // payload structuré (avant/après si besoin)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([action])
+  @@index([entity, entityId])
+  @@index([userId])
+}
+
+/// Métadonnées EXIF des photos uploadées (GPS, date prise de vue).
+/// Indexé par URL relative — une entrée par photo. Optionnel : si l'image
+/// ne contient pas d'EXIF GPS, aucune entrée n'est créée.
+model PhotoMetadata {
+  url       String   @id
+  gpsLat    Float?
+  gpsLng    Float?
+  takenAt   DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([gpsLat, gpsLng])
+}
+
+/// Chantier épinglé en tête du hub messagerie pour un utilisateur. Composite
+/// PK (userId, chantierId) : un user peut épingler plusieurs chantiers,
+/// `pinnedAt` sert à ordonner les épinglés entre eux.
+model UserChantierPin {
+  userId     String
+  chantierId String
+  pinnedAt   DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chantier Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+
+  @@id([userId, chantierId])
+  @@index([userId])
+}
+
+/// Abonnement Push d'un navigateur/device. Un utilisateur peut avoir
+/// plusieurs subscriptions (téléphone + desktop). Quand un endpoint est
+/// révoqué côté navigateur, on supprime l'entrée correspondante.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  lastUsed  DateTime @default(now())
+
+  @@index([userId])
 }

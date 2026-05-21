@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/Toast";
+import { Lightbox } from "@/components/Lightbox";
 import { RapportForm } from "./RapportForm";
 import {
   createRapport,
@@ -281,35 +282,13 @@ function RapportRow({
         </div>
       )}
 
-      {/* Lightbox simple */}
+      {/* Lightbox avec zoom + navigation */}
       {lightboxIdx !== null && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setLightboxIdx(null)}
-        >
-          <button
-            type="button"
-            onClick={() => setLightboxIdx(null)}
-            className="absolute top-4 right-4 text-white p-2 hover:bg-white/10 rounded-full"
-            aria-label="Fermer"
-          >
-            <X size={24} />
-          </button>
-          <div className="relative w-full h-full max-w-5xl max-h-[90vh]">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={r.photos[lightboxIdx]}
-              alt={`Photo ${lightboxIdx + 1}`}
-              loading="lazy"
-              className="absolute inset-0 w-full h-full object-contain"
-            />
-          </div>
-          {r.photos.length > 1 && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-sm">
-              {lightboxIdx + 1} / {r.photos.length}
-            </div>
-          )}
-        </div>
+        <Lightbox
+          images={r.photos}
+          startIndex={lightboxIdx}
+          onClose={() => setLightboxIdx(null)}
+        />
       )}
     </li>
   );

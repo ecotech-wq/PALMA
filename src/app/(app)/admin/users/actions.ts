@@ -8,6 +8,15 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { createResetTokenForUser } from "@/lib/password-reset";
 import { sendEmail, isEmailConfigured } from "@/lib/email";
+import { audit } from "@/lib/audit";
+
+function actor(user: { id?: string | null; name?: string | null; role?: string | null }) {
+  return {
+    id: (user.id ?? "") as string,
+    name: user.name ?? "Admin",
+    role: user.role ?? "ADMIN",
+  };
+}
 
 async function ensureAdmin() {
   const session = await auth();
@@ -18,11 +27,23 @@ async function ensureAdmin() {
 }
 
 export async function approveUser(userId: string) {
-  await ensureAdmin();
+  const me = await ensureAdmin();
+  const target = await db.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true },
+  });
   await db.user.update({
     where: { id: userId },
     data: { status: "ACTIVE" },
   });
+  if (target) {
+    await audit(actor(me), {
+      action: "USER_APPROVED",
+      entity: "User",
+      entityId: userId,
+      summary: `Compte activé : ${target.name} (${target.email})`,
+    });
+  }
   revalidatePath("/admin/users");
 }
 
@@ -31,10 +52,22 @@ export async function revokeUser(userId: string) {
   if (userId === me.id) {
     throw new Error("Tu ne peux pas révoquer ton propre compte");
   }
+  const target = await db.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true },
+  });
   await db.user.update({
     where: { id: userId },
     data: { status: "REVOKED" },
   });
+  if (target) {
+    await audit(actor(me), {
+      action: "USER_REVOKED",
+      entity: "User",
+      entityId: userId,
+      summary: `Compte révoqué : ${target.name} (${target.email})`,
+    });
+  }
   revalidatePath("/admin/users");
 }
 
@@ -43,7 +76,19 @@ export async function deleteUser(userId: string) {
   if (userId === me.id) {
     throw new Error("Tu ne peux pas supprimer ton propre compte");
   }
+  const target = await db.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true, role: true },
+  });
   await db.user.delete({ where: { id: userId } });
+  if (target) {
+    await audit(actor(me), {
+      action: "USER_DELETED",
+      entity: "User",
+      entityId: userId,
+      summary: `Compte supprimé : ${target.name} (${target.email}, ${target.role})`,
+    });
+  }
   revalidatePath("/admin/users");
 }
 
@@ -57,10 +102,23 @@ export async function changeUserRole(userId: string, role: string) {
     throw new Error("Tu ne peux pas te retirer le rôle ADMIN à toi-même");
   }
 
+  const target = await db.user.findUnique({
+    where: { id: userId },
+    select: { name: true, role: true },
+  });
   await db.user.update({
     where: { id: userId },
     data: { role: parsed },
   });
+  if (target) {
+    await audit(actor(me), {
+      action: "USER_ROLE_CHANGED",
+      entity: "User",
+      entityId: userId,
+      summary: `Rôle ${target.name} : ${target.role} → ${parsed}`,
+      metadata: { from: target.role, to: parsed },
+    });
+  }
   revalidatePath("/admin/users");
 }
 

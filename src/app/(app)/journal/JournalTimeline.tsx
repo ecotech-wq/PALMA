@@ -26,6 +26,7 @@ import {
   deleteJournalMessage,
   toggleHiddenFromClient,
 } from "./actions";
+import { Lightbox } from "@/components/Lightbox";
 
 type Message = {
   id: string;
@@ -342,30 +343,13 @@ function MessageBubble({
         </div>
       </div>
 
-      {/* Lightbox photos */}
+      {/* Lightbox avec zoom + navigation */}
       {lightboxIdx !== null && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setLightboxIdx(null)}
-        >
-          <button
-            type="button"
-            onClick={() => setLightboxIdx(null)}
-            className="absolute top-4 right-4 text-white p-2 hover:bg-white/10 rounded-full"
-            aria-label="Fermer"
-          >
-            <X size={24} />
-          </button>
-          <div className="relative w-full h-full max-w-5xl max-h-[90vh]">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={m.photos[lightboxIdx]}
-              alt={`Photo ${lightboxIdx + 1}`}
-              loading="lazy"
-              className="absolute inset-0 w-full h-full object-contain"
-            />
-          </div>
-        </div>
+        <Lightbox
+          images={m.photos}
+          startIndex={lightboxIdx}
+          onClose={() => setLightboxIdx(null)}
+        />
       )}
     </div>
   );

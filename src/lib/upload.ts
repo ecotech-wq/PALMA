@@ -2,7 +2,9 @@ import "server-only";
 import { mkdir, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import exifr from "exifr";
 import { randomUUID } from "node:crypto";
+import { db } from "@/lib/db";
 
 const UPLOADS_ROOT = path.join(process.cwd(), "public", "uploads");
 
@@ -48,13 +50,87 @@ export async function saveUploadedPhoto(
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
+  // Extraction EXIF (GPS + date de prise de vue) AVANT le redimensionnement
+  // Sharp qui efface les métadonnées par défaut. Best-effort : si l'image
+  // n'a pas d'EXIF lisible ou pas de GPS, on n'enregistre rien.
+  let exif: { gpsLat?: number; gpsLng?: number; takenAt?: Date } = {};
+  try {
+    const parsed = await exifr.parse(buffer, {
+      gps: true,
+      pick: ["latitude", "longitude", "DateTimeOriginal", "CreateDate"],
+    });
+    if (parsed) {
+      const lat = typeof parsed.latitude === "number" ? parsed.latitude : undefined;
+      const lng = typeof parsed.longitude === "number" ? parsed.longitude : undefined;
+      const takenAt =
+        parsed.DateTimeOriginal instanceof Date
+          ? parsed.DateTimeOriginal
+          : parsed.CreateDate instanceof Date
+            ? parsed.CreateDate
+            : undefined;
+      // On garde si au moins une info utile (GPS ou date) — pas de ligne vide
+      if ((lat !== undefined && lng !== undefined) || takenAt) {
+        exif = { gpsLat: lat, gpsLng: lng, takenAt };
+      }
+    }
+  } catch {
+    // Ignore : pas d'EXIF, image mal formée, etc.
+  }
+
   await sharp(buffer)
     .rotate()
     .resize(1280, 1280, { fit: "inside", withoutEnlargement: true })
     .webp({ quality: 82 })
     .toFile(fullPath);
 
-  return `/uploads/${folder}/${filename}`;
+  const url = `/uploads/${folder}/${filename}`;
+
+  // Persiste les métadonnées si on a trouvé quelque chose d'utile.
+  // Best-effort : on ne bloque jamais l'upload pour un échec d'écriture.
+  if (exif.gpsLat !== undefined || exif.takenAt) {
+    db.photoMetadata
+      .create({
+        data: {
+          url,
+          gpsLat: exif.gpsLat ?? null,
+          gpsLng: exif.gpsLng ?? null,
+          takenAt: exif.takenAt ?? null,
+        },
+      })
+      .catch((e) => {
+        console.error("PhotoMetadata create failed:", e);
+      });
+  }
+
+  return url;
+}
+
+/**
+ * Récupère les métadonnées EXIF associées à une liste d'URLs de photos.
+ * Renvoie un Record indexé par URL pour un lookup O(1) côté UI.
+ */
+export async function getPhotoMetadata(
+  urls: string[]
+): Promise<
+  Record<string, { gpsLat: number | null; gpsLng: number | null; takenAt: Date | null }>
+> {
+  if (urls.length === 0) return {};
+  const rows = await db.photoMetadata.findMany({
+    where: { url: { in: urls } },
+    select: { url: true, gpsLat: true, gpsLng: true, takenAt: true },
+  });
+  const out: Record<
+    string,
+    { gpsLat: number | null; gpsLng: number | null; takenAt: Date | null }
+  > = {};
+  for (const r of rows) {
+    out[r.url] = {
+      gpsLat: r.gpsLat,
+      gpsLng: r.gpsLng,
+      takenAt: r.takenAt,
+    };
+  }
+  return out;
 }
 
 /**

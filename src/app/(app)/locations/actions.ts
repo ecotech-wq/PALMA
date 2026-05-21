@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdminOrConducteur } from "@/lib/auth-helpers";
+import { insertSystemMessage } from "@/app/(app)/journal/actions";
 
 const locationSchema = z.object({
   designation: z.string().min(1, "Désignation requise"),
@@ -45,9 +46,23 @@ function parseLocation(formData: FormData) {
 }
 
 export async function createLocation(formData: FormData) {
-  await requireAdminOrConducteur();
+  const me = await requireAdminOrConducteur();
   const data = parseLocation(formData);
   const created = await db.locationPret.create({ data });
+
+  // Propagation dans la messagerie du chantier
+  if (data.chantierId) {
+    const dateFinStr = data.dateFinPrevue.toISOString().slice(0, 10);
+    const typeLabel = data.type === "PRET" ? "Prêt" : "Location";
+    await insertSystemMessage({
+      chantierId: data.chantierId,
+      type: "SYSTEM_LOCATION",
+      texte: `🚚 ${typeLabel} démarré(e) : ${data.designation} chez ${data.fournisseurNom} — à rendre le ${dateFinStr}${data.coutJour > 0 ? ` · ${data.coutJour}€/jour` : ""}`,
+      authorId: me.id,
+    });
+    revalidatePath(`/messagerie/${data.chantierId}`);
+  }
+
   revalidatePath("/locations");
   if (data.chantierId) revalidatePath(`/chantiers/${data.chantierId}`);
   redirect(`/locations/${created.id}`);
@@ -73,7 +88,7 @@ const cloturerSchema = z.object({
 });
 
 export async function cloturerLocation(id: string, formData: FormData) {
-  await requireAdminOrConducteur();
+  const me = await requireAdminOrConducteur();
   const data = cloturerSchema.parse({
     dateRetourReel: formData.get("dateRetourReel"),
     coutTotalFinal: formData.get("coutTotalFinal"),
@@ -101,6 +116,20 @@ export async function cloturerLocation(id: string, formData: FormData) {
   }
 
   await db.locationPret.update({ where: { id }, data: updateData });
+
+  // Propagation dans la messagerie
+  if (existing.chantierId) {
+    const typeLabel = existing.type === "PRET" ? "Prêt" : "Location";
+    const finalCost =
+      updateData.coutTotal ?? Number(existing.coutTotal);
+    await insertSystemMessage({
+      chantierId: existing.chantierId,
+      type: "SYSTEM_LOCATION_FIN",
+      texte: `🏁 ${typeLabel} restitué(e) : ${existing.designation} (${existing.fournisseurNom})${finalCost > 0 ? ` · total ${finalCost}€` : ""}${data.note ? "\n" + data.note : ""}`,
+      authorId: me.id,
+    });
+    revalidatePath(`/messagerie/${existing.chantierId}`);
+  }
 
   revalidatePath("/locations");
   revalidatePath(`/locations/${id}`);

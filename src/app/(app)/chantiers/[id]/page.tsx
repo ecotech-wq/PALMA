@@ -60,7 +60,7 @@ export default async function ChantierDetailPage({
       orderBy: { nom: "asc" },
     }),
     db.commande.findMany({
-      where: { chantierId: id },
+      where: { chantierId: id, deletedAt: null },
       orderBy: { dateCommande: "desc" },
       take: 10,
     }),
@@ -71,7 +71,7 @@ export default async function ChantierDetailPage({
     }),
     getFinanceChantier(id),
     db.rapportChantier.findMany({
-      where: { chantierId: id },
+      where: { chantierId: id, deletedAt: null },
       include: { author: { select: { id: true, name: true } } },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       take: 30,

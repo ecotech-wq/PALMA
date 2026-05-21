@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { calcPaie } from "@/lib/calc-paie";
 import { getAppSettings } from "@/lib/app-settings";
 import { requireAdmin } from "@/lib/auth-helpers";
+import { audit } from "@/lib/audit";
 
 const generateSchema = z.object({
   ouvrierId: z.string().min(1),
@@ -121,10 +122,26 @@ export async function generatePaiement(formData: FormData) {
 }
 
 export async function marquerPaye(id: string) {
-  await requireAdmin();
+  const me = await requireAdmin();
+  const before = await db.paiement.findUnique({
+    where: { id },
+    include: { ouvrier: { select: { nom: true, prenom: true } } },
+  });
+  if (!before) throw new Error("Paiement introuvable");
   await db.paiement.update({
     where: { id },
     data: { statut: "PAYE" },
+  });
+  await audit(me, {
+    action: "PAIEMENT_PAYE",
+    entity: "Paiement",
+    entityId: id,
+    summary: `Paiement de ${Number(before.montantNet).toFixed(2)} € marqué payé pour ${before.ouvrier.nom}${before.ouvrier.prenom ? " " + before.ouvrier.prenom : ""}`,
+    metadata: {
+      montantNet: Number(before.montantNet),
+      mode: before.mode,
+      ouvrierId: before.ouvrierId,
+    },
   });
   revalidatePath("/paie");
   revalidatePath(`/paie/${id}`);
@@ -136,13 +153,26 @@ export async function marquerPaye(id: string) {
  * Renvoie le nombre de paiements effectivement marqués.
  */
 export async function marquerPayesBulk(ids: string[]): Promise<number> {
-  await requireAdmin();
+  const me = await requireAdmin();
   if (!Array.isArray(ids) || ids.length === 0) return 0;
   // Filtre stricte : on ne touche que les CALCULE
+  const before = await db.paiement.aggregate({
+    where: { id: { in: ids }, statut: "CALCULE" },
+    _sum: { montantNet: true },
+    _count: true,
+  });
   const result = await db.paiement.updateMany({
     where: { id: { in: ids }, statut: "CALCULE" },
     data: { statut: "PAYE" },
   });
+  if (result.count > 0) {
+    await audit(me, {
+      action: "PAIEMENT_PAYE_BULK",
+      entity: "Paiement",
+      summary: `${result.count} paiement(s) marqués payés — total ${Number(before._sum.montantNet ?? 0).toFixed(2)} €`,
+      metadata: { ids, count: result.count },
+    });
+  }
   // Récupère les ouvrierIds concernés pour revalidate les fiches ouvrier
   const paiements = await db.paiement.findMany({
     where: { id: { in: ids } },
@@ -277,12 +307,26 @@ export async function updatePaiementMeta(id: string, formData: FormData) {
  * annulation), pour ne pas laisser de données orphelines.
  */
 export async function deletePaiement(id: string) {
-  await requireAdmin();
+  const me = await requireAdmin();
   const existing = await db.paiement.findUnique({
     where: { id },
-    include: { retenuesOutils: true },
+    include: {
+      retenuesOutils: true,
+      ouvrier: { select: { nom: true, prenom: true } },
+    },
   });
   if (!existing) throw new Error("Paiement introuvable");
+  await audit(me, {
+    action: "PAIEMENT_DELETED",
+    entity: "Paiement",
+    entityId: id,
+    summary: `Paiement de ${Number(existing.montantNet).toFixed(2)} € supprimé (${existing.ouvrier.nom})`,
+    metadata: {
+      montantNet: Number(existing.montantNet),
+      statut: existing.statut,
+      ouvrierId: existing.ouvrierId,
+    },
+  });
 
   await db.$transaction(async (tx) => {
     // Si pas encore annulé, on restaure les avances + retenues outils

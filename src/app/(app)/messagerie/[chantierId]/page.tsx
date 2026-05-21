@@ -6,8 +6,10 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ChantierComposer } from "../ChantierComposer";
 import { ChantierFeed } from "../ChantierFeed";
+import { CompileRapportButton } from "../CompileRapportButton";
 import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
 import { markResourceRead } from "@/lib/read-state";
+import { getPhotoMetadata } from "@/lib/upload";
 
 /**
  * Le fil d'un chantier — vue chat WhatsApp-like. Affiche les N derniers
@@ -32,7 +34,7 @@ export default async function MessagerieChantierPage({
   since.setDate(since.getDate() - 14);
   since.setHours(0, 0, 0, 0);
 
-  const [chantier, messages, materiels, equipes, sortiesOuvertes] =
+  const [chantier, messages, materiels, equipes, sortiesOuvertes, demandesStatuts] =
     await Promise.all([
       db.chantier.findUnique({
         where: { id: chantierId },
@@ -47,6 +49,9 @@ export default async function MessagerieChantierPage({
         where: { chantierId, createdAt: { gte: since } },
         include: {
           author: { select: { id: true, name: true, role: true } },
+          reactions: {
+            select: { emoji: true, userId: true },
+          },
         },
         orderBy: { createdAt: "asc" },
       }),
@@ -72,6 +77,12 @@ export default async function MessagerieChantierPage({
         },
         orderBy: { dateSortie: "desc" },
       }),
+      // Statuts des demandes liées aux messages affichés — pour pouvoir
+      // afficher (ou masquer) les boutons « Approuver / Refuser »
+      db.demandeMateriel.findMany({
+        where: { chantierId },
+        select: { id: true, statut: true, description: true, quantite: true, unite: true },
+      }),
     ]);
   if (!chantier) notFound();
 
@@ -80,6 +91,26 @@ export default async function MessagerieChantierPage({
     materielNom: s.materiel.nomCommun,
     dateSortie: s.dateSortie,
   }));
+
+  // Charge les métadonnées EXIF (GPS, date prise vue) pour toutes les
+  // photos visibles dans le fil — affiché dans le lightbox
+  const allPhotoUrls = messages.flatMap((m) => m.photos);
+  const photoMeta =
+    allPhotoUrls.length > 0 ? await getPhotoMetadata(allPhotoUrls) : {};
+
+  // Map demandeId -> info pour le feed
+  const demandeInfo: Record<
+    string,
+    { statut: string; description: string; quantite: number; unite: string | null }
+  > = {};
+  for (const d of demandesStatuts) {
+    demandeInfo[d.id] = {
+      statut: d.statut,
+      description: d.description,
+      quantite: Number(d.quantite),
+      unite: d.unite,
+    };
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-160px)] min-h-[500px]">
@@ -91,6 +122,9 @@ export default async function MessagerieChantierPage({
         backHref="/messagerie"
         action={
           <div className="flex items-center gap-2">
+            {(me.isAdmin || me.isConducteur) && (
+              <CompileRapportButton chantierId={chantierId} />
+            )}
             <Link href={`/chantiers/${chantierId}`}>
               <button className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
                 <Settings2 size={14} /> Fiche chantier
@@ -105,6 +139,7 @@ export default async function MessagerieChantierPage({
         <Card className="h-full">
           <CardBody className="!p-0 h-full overflow-y-auto">
             <ChantierFeed
+              chantierId={chantierId}
               messages={messages.map((m) => ({
                 id: m.id,
                 authorId: m.authorId,
@@ -121,9 +156,16 @@ export default async function MessagerieChantierPage({
                 sortieId: m.sortieId,
                 rapportId: m.rapportId,
                 createdAt: m.createdAt,
+                reactions: m.reactions.map((r) => ({
+                  emoji: r.emoji,
+                  userId: r.userId,
+                })),
               }))}
               currentUserId={me.id}
               canEdit={me.isAdmin || me.isConducteur}
+              canPilotDemandes={me.isAdmin || me.isConducteur}
+              demandeInfo={demandeInfo}
+              photoMeta={photoMeta}
             />
           </CardBody>
         </Card>

@@ -161,7 +161,8 @@ export async function changerStatutCommande(
   statut: StatutCommande,
   dateLivraisonReelle?: Date
 ) {
-  await requireAdminOrConducteur();
+  const me = await requireAdminOrConducteur();
+  const before = await db.commande.findUnique({ where: { id } });
   const data: { statut: StatutCommande; dateLivraisonReelle?: Date } = { statut };
   if (statut === "LIVREE" && !dateLivraisonReelle) {
     data.dateLivraisonReelle = new Date();
@@ -169,6 +170,20 @@ export async function changerStatutCommande(
     data.dateLivraisonReelle = dateLivraisonReelle;
   }
   const cmd = await db.commande.update({ where: { id }, data });
+
+  // Propagation dans la messagerie : seulement sur la livraison
+  // (les autres changements de statut sont peu narratifs)
+  if (statut === "LIVREE" && before && before.statut !== "LIVREE") {
+    await insertSystemMessage({
+      chantierId: cmd.chantierId,
+      type: "SYSTEM_COMMANDE_LIVREE",
+      texte: `📦✓ Commande livrée : ${cmd.fournisseur}${cmd.reference ? ` (${cmd.reference})` : ""}`,
+      authorId: me.id,
+      commandeId: cmd.id,
+    });
+    revalidatePath(`/messagerie/${cmd.chantierId}`);
+  }
+
   revalidatePath("/commandes");
   revalidatePath(`/commandes/${id}`);
   revalidatePath(`/chantiers/${cmd.chantierId}`);
@@ -177,7 +192,11 @@ export async function changerStatutCommande(
 export async function deleteCommande(id: string) {
   await requireAdminOrConducteur();
   const existing = await db.commande.findUnique({ where: { id } });
-  await db.commande.delete({ where: { id } });
+  // Soft-delete : marqué supprimé, conservé 30 jours dans la corbeille
+  await db.commande.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  });
   revalidatePath("/commandes");
   if (existing) revalidatePath(`/chantiers/${existing.chantierId}`);
   redirect("/commandes");

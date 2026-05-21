@@ -17,6 +17,7 @@ const tacheSchema = z.object({
   priorite: z.coerce.number().int().min(1).max(4).default(4),
   parentId: z.string().optional().or(z.literal("")),
   sectionId: z.string().optional().or(z.literal("")),
+  recurrence: z.string().optional().or(z.literal("")),
 });
 
 function parseTache(formData: FormData) {
@@ -32,6 +33,7 @@ function parseTache(formData: FormData) {
     priorite: formData.get("priorite") || 4,
     parentId: formData.get("parentId") || "",
     sectionId: formData.get("sectionId") || "",
+    recurrence: formData.get("recurrence") || "",
   });
 
   return {
@@ -46,6 +48,7 @@ function parseTache(formData: FormData) {
     priorite: data.priorite,
     parentId: data.parentId || null,
     sectionId: data.sectionId || null,
+    recurrence: data.recurrence ? data.recurrence : null,
   };
 }
 
@@ -120,7 +123,11 @@ export async function updateTache(id: string, formData: FormData) {
 
 export async function deleteTache(id: string) {
   const existing = await db.tache.findUnique({ where: { id } });
-  await db.tache.delete({ where: { id } });
+  // Soft-delete : marqué supprimé, conservé 30 jours dans la corbeille
+  await db.tache.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  });
   revalidatePath("/planning");
   if (existing) revalidatePath(`/chantiers/${existing.chantierId}`);
 }
@@ -142,9 +149,15 @@ export async function setAvancement(id: string, avancement: number) {
   revalidatePath(`/chantiers/${t.chantierId}`);
 }
 
-/** Toggle complete : passe à 100% (terminée) si pas, sinon 0%. */
+/** Toggle complete : passe à 100% (terminée) si pas, sinon 0%.
+ *  Si la tâche est récurrente, créer la prochaine occurrence à la
+ *  prochaine date prévue par la règle RRule.
+ */
 export async function toggleComplete(id: string) {
-  const t = await db.tache.findUnique({ where: { id } });
+  const t = await db.tache.findUnique({
+    where: { id },
+    include: { labels: true, ouvriers: true },
+  });
   if (!t) return;
   const isDone = t.statut === "TERMINEE" || t.avancement === 100;
   await db.tache.update({
@@ -154,6 +167,79 @@ export async function toggleComplete(id: string) {
       statut: isDone ? "A_FAIRE" : "TERMINEE",
     },
   });
+
+  // Récurrence : on ne crée la prochaine occurrence que lors du passage
+  // À fait → fait (pas l'inverse), pour éviter les doublons.
+  if (!isDone && t.recurrence) {
+    try {
+      const { RRule, rrulestr } = await import("rrule");
+      // Format possible : "FREQ=WEEKLY;..." ou rrule complète avec DTSTART
+      let rule;
+      try {
+        rule = rrulestr(
+          t.recurrence.includes("FREQ")
+            ? t.recurrence
+            : `RRULE:${t.recurrence}`,
+          { dtstart: t.dateDebut }
+        );
+      } catch {
+        rule = null;
+      }
+      const next: Date | null = rule instanceof RRule
+        ? rule.after(new Date(t.dateDebut), false)
+        : rule && "after" in rule
+          ? (rule as { after: (d: Date, inc: boolean) => Date | null }).after(
+              new Date(t.dateDebut),
+              false
+            )
+          : null;
+      if (next) {
+        const duration =
+          new Date(t.dateFin).getTime() - new Date(t.dateDebut).getTime();
+        const nextFin = new Date(next.getTime() + duration);
+        const created = await db.tache.create({
+          data: {
+            chantierId: t.chantierId,
+            equipeId: t.equipeId,
+            sectionId: t.sectionId,
+            parentId: t.parentId,
+            nom: t.nom,
+            description: t.description,
+            dateDebut: next,
+            dateFin: nextFin,
+            avancement: 0,
+            statut: "A_FAIRE",
+            priorite: t.priorite,
+            ordre: t.ordre,
+            recurrence: t.recurrence,
+            recurrenceParentId: t.recurrenceParentId ?? t.id,
+          },
+        });
+        // Cloner les labels + ouvriers
+        if (t.labels.length > 0) {
+          await db.tacheLabel.createMany({
+            data: t.labels.map((l) => ({
+              tacheId: created.id,
+              labelId: l.labelId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+        if (t.ouvriers.length > 0) {
+          await db.tacheOuvrier.createMany({
+            data: t.ouvriers.map((o) => ({
+              tacheId: created.id,
+              ouvrierId: o.ouvrierId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Recurrence next-occurrence failed:", e);
+    }
+  }
+
   revalidatePath("/planning");
   revalidatePath(`/chantiers/${t.chantierId}`);
 }
@@ -485,6 +571,63 @@ export async function reordonnerSections(
       })
     )
   );
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${chantierId}`);
+}
+
+/**
+ * Affecte un ensemble d'ouvriers à une tâche (remplace l'ensemble actuel).
+ * Disponible pour admin/conducteur ; CHEF peut affecter sur ses chantiers.
+ */
+export async function setTacheOuvriers(
+  tacheId: string,
+  ouvrierIds: string[]
+) {
+  // Vérifie l'existence + accès chantier
+  const t = await db.tache.findUnique({
+    where: { id: tacheId },
+    select: { chantierId: true },
+  });
+  if (!t) throw new Error("Tâche introuvable");
+  await db.$transaction([
+    db.tacheOuvrier.deleteMany({ where: { tacheId } }),
+    ...(ouvrierIds.length > 0
+      ? [
+          db.tacheOuvrier.createMany({
+            data: ouvrierIds.map((ouvrierId) => ({ tacheId, ouvrierId })),
+            skipDuplicates: true,
+          }),
+        ]
+      : []),
+  ]);
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${t.chantierId}`);
+}
+
+/**
+ * Réordonne un lot de tâches en assignant `ordre` selon la position
+ * dans le tableau reçu. Permet le drag-and-drop dans la liste.
+ * Toutes les tâches doivent appartenir à un même chantier (sécurité :
+ * pas de réordonnancement cross-chantier en un appel).
+ */
+export async function reordonnerTaches(orderedIds: string[]) {
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) return;
+  const taches = await db.tache.findMany({
+    where: { id: { in: orderedIds } },
+    select: { id: true, chantierId: true },
+  });
+  const chantierIds = new Set(taches.map((t) => t.chantierId));
+  if (chantierIds.size !== 1) {
+    throw new Error(
+      "Toutes les tâches doivent appartenir au même chantier"
+    );
+  }
+  await db.$transaction(
+    orderedIds.map((id, ordre) =>
+      db.tache.update({ where: { id }, data: { ordre } })
+    )
+  );
+  const chantierId = [...chantierIds][0];
   revalidatePath("/planning");
   revalidatePath(`/chantiers/${chantierId}`);
 }

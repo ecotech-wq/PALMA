@@ -21,6 +21,7 @@ import { getFinanceChantier } from "@/lib/finances-chantier";
 import { ChantierFinanceCard } from "./ChantierFinanceCard";
 import { TodayWidget } from "./TodayWidget";
 import { ClientDashboard } from "./ClientDashboard";
+import { QuickActionsBar } from "./QuickActionsBar";
 import { requireAuth } from "@/lib/auth-helpers";
 
 export default async function DashboardPage() {
@@ -101,7 +102,7 @@ export default async function DashboardPage() {
       take: 5,
     }),
     db.commande.findMany({
-      where: { statut: { in: ["COMMANDEE", "EN_LIVRAISON"] } },
+      where: { statut: { in: ["COMMANDEE", "EN_LIVRAISON"] }, deletedAt: null },
       include: { chantier: { select: { nom: true } } },
       orderBy: { dateLivraisonPrevue: "asc" },
       take: 5,
@@ -196,6 +197,13 @@ export default async function DashboardPage() {
           </p>
         </div>
       </div>
+
+      {/* Actions rapides selon le rôle */}
+      <QuickActionsBar
+        isAdmin={me.isAdmin}
+        isConducteur={me.isConducteur}
+        isChef={me.isChef}
+      />
 
       {/* Widget Aujourd'hui (vue temps réel) */}
       <TodayWidget />

@@ -10,6 +10,7 @@ import {
 } from "@/lib/upload";
 import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
 import { notifyAdmins, notify } from "@/lib/notifications";
+import { audit } from "@/lib/audit";
 
 /* -------------------------------------------------------------------------
  *  Composer chat-first : un seul point d'entrée pour TOUTES les actions
@@ -419,6 +420,236 @@ async function notifyChat(
       `/messagerie/${chantierId}`
     );
   }
+}
+
+const EMOJI_WHITELIST = ["👍", "❤️", "🎉", "👏", "🔥", "😂", "😮", "😢", "🙏"];
+
+/**
+ * Toggle réaction emoji sur un message. Si l'utilisateur a déjà posé
+ * cet emoji, on l'enlève ; sinon on l'ajoute. Renvoie le nouvel état
+ * (`true` = ajoutée, `false` = retirée).
+ */
+export async function toggleMessageReaction(
+  messageId: string,
+  emoji: string
+): Promise<boolean> {
+  const me = await requireAuth();
+  if (!EMOJI_WHITELIST.includes(emoji)) {
+    throw new Error("Emoji non autorisé");
+  }
+  // Vérifie l'accès via le chantier du message
+  const msg = await db.journalMessage.findUnique({
+    where: { id: messageId },
+    select: { chantierId: true },
+  });
+  if (!msg) throw new Error("Message introuvable");
+  await requireChantierAccess(me, msg.chantierId);
+
+  const existing = await db.messageReaction.findUnique({
+    where: {
+      messageId_userId_emoji: { messageId, userId: me.id, emoji },
+    },
+  });
+  if (existing) {
+    await db.messageReaction.delete({
+      where: {
+        messageId_userId_emoji: { messageId, userId: me.id, emoji },
+      },
+    });
+    revalidatePath(`/messagerie/${msg.chantierId}`);
+    return false;
+  }
+  await db.messageReaction.create({
+    data: { messageId, userId: me.id, emoji },
+  });
+  revalidatePath(`/messagerie/${msg.chantierId}`);
+  return true;
+}
+
+/**
+ * Bascule l'épinglage d'un chantier dans le hub messagerie pour
+ * l'utilisateur courant. Renvoie le nouvel état (épinglé ou non).
+ */
+export async function toggleChantierPin(chantierId: string): Promise<boolean> {
+  const me = await requireAuth();
+  await requireChantierAccess(me, chantierId);
+  const existing = await db.userChantierPin.findUnique({
+    where: { userId_chantierId: { userId: me.id, chantierId } },
+  });
+  if (existing) {
+    await db.userChantierPin.delete({
+      where: { userId_chantierId: { userId: me.id, chantierId } },
+    });
+    revalidatePath("/messagerie");
+    return false;
+  }
+  await db.userChantierPin.create({
+    data: { userId: me.id, chantierId },
+  });
+  revalidatePath("/messagerie");
+  return true;
+}
+
+/**
+ * Approbation 1 clic d'une demande matériel depuis le fil : approuve
+ * la demande, crée une Commande "brouillon" (fournisseur = demandé ou
+ * "À définir", prix unitaire à 0 à compléter ensuite) et publie un
+ * SYSTEM_COMMANDE dans le fil. Admin ou conducteur uniquement.
+ *
+ * Renvoie l'ID de la commande créée.
+ */
+export async function quickApproveDemandeToCommande(demandeId: string) {
+  const me = await requireAuth();
+  if (!me.isAdmin && !me.isConducteur) {
+    throw new Error("Réservé à l'admin ou au conducteur");
+  }
+  const demande = await db.demandeMateriel.findUnique({
+    where: { id: demandeId },
+    include: { chantier: { select: { id: true, nom: true } } },
+  });
+  if (!demande) throw new Error("Demande introuvable");
+  if (demande.statut !== "DEMANDEE") {
+    throw new Error("Cette demande est déjà traitée");
+  }
+  await requireChantierAccess(me, demande.chantierId);
+
+  const today = startOfToday();
+  const quantite = Number(demande.quantite ?? 1);
+
+  // Création de la commande + ligne en transaction
+  const commande = await db.$transaction(async (tx) => {
+    const c = await tx.commande.create({
+      data: {
+        chantierId: demande.chantierId,
+        fournisseur: demande.fournisseur?.trim() || "À définir",
+        dateCommande: today,
+        statut: "COMMANDEE",
+        coutTotal: 0,
+        lignes: {
+          create: [
+            {
+              designation: demande.description,
+              quantite,
+              prixUnitaire: 0,
+              total: 0,
+            },
+          ],
+        },
+      },
+    });
+    await tx.demandeMateriel.update({
+      where: { id: demande.id },
+      data: {
+        statut: "COMMANDEE",
+        commandeId: c.id,
+        approverId: me.id,
+        approuveLe: new Date(),
+      },
+    });
+    return c;
+  });
+
+  // Message SYSTEM_COMMANDE dans le fil
+  await db.journalMessage.create({
+    data: {
+      chantierId: demande.chantierId,
+      authorId: me.id,
+      date: today,
+      type: "SYSTEM_COMMANDE",
+      texte: `🛒 Commande créée depuis la demande : ${demande.description} (${quantite}${demande.unite ? " " + demande.unite : ""})${commande.fournisseur === "À définir" ? " — fournisseur à compléter" : ` — ${commande.fournisseur}`}`,
+      commandeId: commande.id,
+      demandeId: demande.id,
+    },
+  });
+
+  await notify(
+    demande.requesterId,
+    "DEMANDE_APPROUVEE",
+    `Demande approuvée — ${demande.chantier.nom}`,
+    `${me.name} a approuvé et créé la commande : ${demande.description.slice(0, 80)}`,
+    `/commandes/${commande.id}`
+  );
+
+  await audit(me, {
+    action: "DEMANDE_APPROUVEE_COMMANDEE",
+    entity: "DemandeMateriel",
+    entityId: demande.id,
+    summary: `Demande "${demande.description.slice(0, 80)}" approuvée → commande créée (${commande.fournisseur})`,
+    metadata: { commandeId: commande.id, chantierId: demande.chantierId },
+  });
+
+  revalidatePath(`/messagerie/${demande.chantierId}`);
+  revalidatePath(`/demandes`);
+  revalidatePath(`/demandes/${demande.id}`);
+  revalidatePath(`/commandes`);
+  revalidatePath(`/chantiers/${demande.chantierId}`);
+  return commande.id;
+}
+
+/**
+ * Refus 1 clic d'une demande matériel depuis le fil. Une note de motif
+ * est requise. Admin ou conducteur uniquement.
+ */
+export async function quickRefuseDemande(demandeId: string, motif: string) {
+  const me = await requireAuth();
+  if (!me.isAdmin && !me.isConducteur) {
+    throw new Error("Réservé à l'admin ou au conducteur");
+  }
+  const note = motif.trim();
+  if (!note) throw new Error("Motif de refus requis");
+
+  const demande = await db.demandeMateriel.findUnique({
+    where: { id: demandeId },
+    include: { chantier: { select: { nom: true } } },
+  });
+  if (!demande) throw new Error("Demande introuvable");
+  if (demande.statut !== "DEMANDEE") {
+    throw new Error("Cette demande est déjà traitée");
+  }
+  await requireChantierAccess(me, demande.chantierId);
+
+  await db.demandeMateriel.update({
+    where: { id: demandeId },
+    data: {
+      statut: "REFUSEE",
+      reponseNote: note,
+      approverId: me.id,
+      approuveLe: new Date(),
+    },
+  });
+
+  // Note dans le fil expliquant le refus (interne par défaut)
+  await db.journalMessage.create({
+    data: {
+      chantierId: demande.chantierId,
+      authorId: me.id,
+      date: startOfToday(),
+      type: "NOTE",
+      texte: `❌ Demande refusée : ${demande.description.slice(0, 80)} — Motif : ${note}`,
+      demandeId: demande.id,
+      hiddenFromClient: true,
+    },
+  });
+
+  await notify(
+    demande.requesterId,
+    "DEMANDE_REFUSEE",
+    `Demande refusée — ${demande.chantier.nom}`,
+    `${me.name} a refusé : ${demande.description.slice(0, 80)} (${note.slice(0, 60)})`,
+    `/demandes/${demande.id}`
+  );
+
+  await audit(me, {
+    action: "DEMANDE_REFUSEE",
+    entity: "DemandeMateriel",
+    entityId: demande.id,
+    summary: `Demande "${demande.description.slice(0, 80)}" refusée — motif : ${note.slice(0, 80)}`,
+    metadata: { motif: note, chantierId: demande.chantierId },
+  });
+
+  revalidatePath(`/messagerie/${demande.chantierId}`);
+  revalidatePath(`/demandes`);
+  revalidatePath(`/demandes/${demande.id}`);
 }
 
 /**

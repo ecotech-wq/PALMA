@@ -6,7 +6,7 @@ import { X, Flag, Loader2, Save } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Textarea } from "@/components/ui/Input";
-import { updateTache } from "./actions";
+import { updateTache, setTacheOuvriers } from "./actions";
 
 type LabelRef = { id: string; nom: string; couleur: string };
 
@@ -25,12 +25,33 @@ export type TacheForEdit = {
   priorite: number;
   dependances: { id: string; nom: string }[];
   labels: { label: LabelRef }[];
+  ouvriers?: { id: string; nom: string; prenom: string | null }[];
+  recurrence?: string | null;
 };
+
+/** Presets simples pour le sélecteur de récurrence. */
+const RECURRENCE_PRESETS: { value: string; label: string }[] = [
+  { value: "", label: "Pas de récurrence" },
+  { value: "FREQ=DAILY", label: "Tous les jours" },
+  {
+    value: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+    label: "Tous les jours ouvrés (lun → ven)",
+  },
+  { value: "FREQ=WEEKLY", label: "Toutes les semaines" },
+  { value: "FREQ=WEEKLY;INTERVAL=2", label: "Toutes les 2 semaines" },
+  { value: "FREQ=MONTHLY", label: "Tous les mois" },
+];
 
 type Chantier = { id: string; nom: string };
 type Equipe = { id: string; nom: string; chantierId: string | null };
 type SectionItem = { id: string; nom: string; chantierId: string };
 type TacheCand = { id: string; nom: string; chantierId: string };
+type OuvrierRef = {
+  id: string;
+  nom: string;
+  prenom: string | null;
+  equipeId: string | null;
+};
 
 const PRIO_BTN: Record<number, string> = {
   1: "border-red-300 bg-red-50 text-red-700 dark:bg-red-950/40 dark:border-red-900 dark:text-red-300",
@@ -68,6 +89,7 @@ export function TacheEditModal({
   sections,
   taches,
   allLabels,
+  allOuvriers = [],
   onClose,
 }: {
   tache: TacheForEdit;
@@ -76,6 +98,7 @@ export function TacheEditModal({
   sections: SectionItem[];
   taches: TacheCand[];
   allLabels: LabelRef[];
+  allOuvriers?: OuvrierRef[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -93,6 +116,21 @@ export function TacheEditModal({
   );
   const [deps, setDeps] = useState<string[]>(
     tache.dependances.map((d) => d.id)
+  );
+  const [equipeId, setEquipeId] = useState<string>(tache.equipeId ?? "");
+  const [ouvrierIds, setOuvrierIds] = useState<string[]>(
+    (tache.ouvriers ?? []).map((o) => o.id)
+  );
+  // Récurrence : si la valeur ne matche aucun preset, on tombe sur "custom"
+  const initialRecurrence = tache.recurrence ?? "";
+  const isPreset = RECURRENCE_PRESETS.some(
+    (p) => p.value === initialRecurrence
+  );
+  const [recurrence, setRecurrence] = useState<string>(
+    isPreset ? initialRecurrence : "custom"
+  );
+  const [recurrenceCustom, setRecurrenceCustom] = useState<string>(
+    !isPreset ? initialRecurrence : ""
   );
 
   // Fermer avec Echap
@@ -125,6 +163,20 @@ export function TacheEditModal({
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   }
+  function toggleOuvrier(id: string) {
+    setOuvrierIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  // Filtre des ouvriers proposés : si une équipe est choisie, prio aux
+  // ouvriers de cette équipe ; sinon tous les ouvriers actifs.
+  const ouvriersFiltered = equipeId
+    ? allOuvriers.filter((o) => o.equipeId === equipeId)
+    : allOuvriers;
+  const ouvriersHorsEquipe = equipeId
+    ? allOuvriers.filter((o) => o.equipeId !== equipeId)
+    : [];
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -138,10 +190,24 @@ export function TacheEditModal({
     labelIds.forEach((id) => fd.append("labelIds", id));
     fd.delete("dependances");
     deps.forEach((id) => fd.append("dependances", id));
+    // Récurrence : préfère la valeur preset, ou la saisie custom (RRule brute)
+    fd.set(
+      "recurrence",
+      recurrence === "custom" ? recurrenceCustom.trim() : recurrence
+    );
 
     startTransition(async () => {
       try {
         await updateTache(tache.id, fd);
+        // Persistance des affectations ouvriers (table m2m séparée)
+        const currentIds = (tache.ouvriers ?? [])
+          .map((o) => o.id)
+          .sort()
+          .join(",");
+        const nextIds = [...ouvrierIds].sort().join(",");
+        if (currentIds !== nextIds) {
+          await setTacheOuvriers(tache.id, ouvrierIds);
+        }
         toast.success("Tâche modifiée");
         router.refresh();
         onClose();
@@ -297,7 +363,8 @@ export function TacheEditModal({
               <Field label="Équipe (optionnel)">
                 <Select
                   name="equipeId"
-                  defaultValue={tache.equipeId ?? ""}
+                  value={equipeId}
+                  onChange={(e) => setEquipeId(e.target.value)}
                 >
                   <option value="">—</option>
                   {equipesFiltered.map((e) => (
@@ -319,6 +386,72 @@ export function TacheEditModal({
               </Field>
             </div>
 
+            {/* Ouvriers affectés (m2m) */}
+            {allOuvriers.length > 0 && (
+              <Field label="Ouvriers affectés (optionnel)">
+                <div className="flex flex-wrap gap-1.5">
+                  {ouvriersFiltered.length === 0 && ouvriersHorsEquipe.length === 0 ? (
+                    <span className="text-xs text-slate-500 dark:text-slate-400 italic">
+                      Aucun ouvrier actif
+                    </span>
+                  ) : (
+                    <>
+                      {ouvriersFiltered.map((o) => {
+                        const active = ouvrierIds.includes(o.id);
+                        return (
+                          <button
+                            key={o.id}
+                            type="button"
+                            onClick={() => toggleOuvrier(o.id)}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] border transition ${
+                              active
+                                ? "bg-brand-600 border-brand-700 text-white"
+                                : "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                            }`}
+                          >
+                            {o.prenom ? `${o.prenom} ${o.nom}` : o.nom}
+                          </button>
+                        );
+                      })}
+                      {ouvriersHorsEquipe.length > 0 && (
+                        <details className="basis-full mt-1">
+                          <summary className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200">
+                            Hors équipe ({ouvriersHorsEquipe.length})
+                          </summary>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {ouvriersHorsEquipe.map((o) => {
+                              const active = ouvrierIds.includes(o.id);
+                              return (
+                                <button
+                                  key={o.id}
+                                  type="button"
+                                  onClick={() => toggleOuvrier(o.id)}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] border transition ${
+                                    active
+                                      ? "bg-brand-600 border-brand-700 text-white"
+                                      : "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                  }`}
+                                >
+                                  {o.prenom ? `${o.prenom} ${o.nom}` : o.nom}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </details>
+                      )}
+                    </>
+                  )}
+                </div>
+                {ouvrierIds.length > 0 && (
+                  <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                    {ouvrierIds.length} ouvrier
+                    {ouvrierIds.length > 1 ? "s" : ""} affecté
+                    {ouvrierIds.length > 1 ? "s" : ""}
+                  </p>
+                )}
+              </Field>
+            )}
+
             {/* Parent (sous-tâche de) */}
             {tachesCandidates.length > 0 && (
               <Field label="Sous-tâche de (optionnel)">
@@ -335,6 +468,36 @@ export function TacheEditModal({
                 </Select>
               </Field>
             )}
+
+            {/* Récurrence */}
+            <Field label="Récurrence (optionnel)">
+              <Select
+                value={recurrence}
+                onChange={(e) => setRecurrence(e.target.value)}
+              >
+                {RECURRENCE_PRESETS.map((p) => (
+                  <option key={p.value || "none"} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+                <option value="custom">Personnalisée (RRule)</option>
+              </Select>
+              {recurrence === "custom" && (
+                <input
+                  type="text"
+                  value={recurrenceCustom}
+                  onChange={(e) => setRecurrenceCustom(e.target.value)}
+                  placeholder="FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20261231T000000Z"
+                  className="mt-2 w-full px-2 py-1.5 text-xs font-mono border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                />
+              )}
+              {recurrence && recurrence !== "custom" && (
+                <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 italic">
+                  À chaque fois que tu marqueras cette tâche terminée, une
+                  nouvelle occurrence sera créée à la prochaine date prévue.
+                </p>
+              )}
+            </Field>
 
             {/* Labels */}
             {visibleLabels.length > 0 && (

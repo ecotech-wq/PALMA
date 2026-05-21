@@ -197,11 +197,16 @@ export async function insertSystemMessage(opts: {
   date?: Date;
   type:
     | "SYSTEM_INCIDENT"
+    | "SYSTEM_INCIDENT_RESOLU"
     | "SYSTEM_DEMANDE"
     | "SYSTEM_COMMANDE"
+    | "SYSTEM_COMMANDE_LIVREE"
     | "SYSTEM_RAPPORT"
     | "SYSTEM_SORTIE"
-    | "SYSTEM_RETOUR";
+    | "SYSTEM_RETOUR"
+    | "SYSTEM_LOCATION"
+    | "SYSTEM_LOCATION_FIN"
+    | "SYSTEM_PLAN";
   texte: string;
   authorId?: string;
   incidentId?: string;

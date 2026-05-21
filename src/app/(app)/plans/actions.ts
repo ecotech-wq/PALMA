@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { saveUploadedPlan, deleteUploadedPhoto } from "@/lib/upload";
 import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
+import { insertSystemMessage } from "@/app/(app)/journal/actions";
 
 const baseSchema = z.object({
   chantierId: z.string().min(1),
@@ -34,7 +35,7 @@ export async function uploadPlan(formData: FormData) {
 
   const saved = await saveUploadedPlan(file);
 
-  await db.planChantier.create({
+  const plan = await db.planChantier.create({
     data: {
       chantierId: data.chantierId,
       uploaderId: me.id,
@@ -45,6 +46,21 @@ export async function uploadPlan(formData: FormData) {
       fileSize: saved.size,
     },
   });
+
+  // Propagation dans la messagerie : si c'est une image, on attache la photo
+  // au message ; sinon on met juste le nom du fichier dans le texte.
+  const isImage = saved.mimeType.startsWith("image/");
+  await insertSystemMessage({
+    chantierId: data.chantierId,
+    type: "SYSTEM_PLAN",
+    texte: `📐 Plan ajouté : ${data.nom}${data.description ? "\n" + data.description : ""}${!isImage ? `\n→ ${saved.url}` : ""}`,
+    authorId: me.id,
+    photos: isImage ? [saved.url] : [],
+  });
+  revalidatePath(`/messagerie/${data.chantierId}`);
+
+  // Évite l'avertissement de variable non utilisée si plus tard on lie le message au plan
+  void plan;
 
   revalidatePath(`/chantiers/${data.chantierId}/plans`);
   revalidatePath(`/chantiers/${data.chantierId}`);

@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { DesktopSidebar, MobileBottomNav, MobileTopBar } from "@/components/NavSidebar";
 import { ToastProvider } from "@/components/Toast";
 import { NotificationBell } from "@/components/NotificationBell";
+import { CommandPalette } from "@/components/CommandPalette";
+import { OfflineBanner } from "@/components/OfflineBanner";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -135,6 +137,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <ToastProvider>
+      <CommandPalette />
+      <OfflineBanner />
       <div className="min-h-screen flex bg-slate-50 dark:bg-slate-950">
         <DesktopSidebar
           userName={session.user.name}

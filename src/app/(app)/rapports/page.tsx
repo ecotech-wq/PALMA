@@ -52,6 +52,7 @@ export default async function RapportsListPage({
   const [rapports, chantiers] = await Promise.all([
     db.rapportChantier.findMany({
       where: {
+        deletedAt: null,
         ...(accessibleIds !== null
           ? { chantierId: { in: accessibleIds } }
           : {}),

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MessageSquare, Hammer, Loader2 } from "lucide-react";
+import { MessageSquare, Hammer, Pin } from "lucide-react";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
@@ -10,6 +10,7 @@ import {
   getAccessibleChantierIds,
 } from "@/lib/auth-helpers";
 import { unreadMessagerieFor } from "@/lib/read-state";
+import { PinChantierButton } from "./PinChantierButton";
 
 const timeFmt = new Intl.DateTimeFormat("fr-FR", {
   day: "2-digit",
@@ -54,7 +55,14 @@ export default async function MessagerieHubPage() {
   }
 
   const accessibleIds = await getAccessibleChantierIds(me);
-  const unread = await unreadMessagerieFor(me.id, accessibleIds);
+  const [unread, pins] = await Promise.all([
+    unreadMessagerieFor(me.id, accessibleIds),
+    db.userChantierPin.findMany({
+      where: { userId: me.id },
+      select: { chantierId: true, pinnedAt: true },
+    }),
+  ]);
+  const pinnedAt = new Map(pins.map((p) => [p.chantierId, p.pinnedAt]));
   const chantiers = await db.chantier.findMany({
     where: {
       archivedAt: null,
@@ -88,17 +96,27 @@ export default async function MessagerieHubPage() {
     orderBy: { updatedAt: "desc" },
   });
 
-  // Trie par dernière activité (dernier message si présent, sinon updatedAt)
+  // Tri : épinglés (par pinnedAt desc) en tête, puis non-épinglés (par
+  // dernière activité desc).
   const sorted = chantiers
     .map((c) => ({
       ...c,
       lastActivity: c.journalMessages[0]?.createdAt ?? new Date(0),
+      isPinned: pinnedAt.has(c.id),
+      pinnedAt: pinnedAt.get(c.id) ?? null,
     }))
-    .sort(
-      (a, b) =>
+    .sort((a, b) => {
+      if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+      if (a.isPinned && b.isPinned) {
+        return (
+          new Date(b.pinnedAt!).getTime() - new Date(a.pinnedAt!).getTime()
+        );
+      }
+      return (
         new Date(b.lastActivity).getTime() -
         new Date(a.lastActivity).getTime()
-    );
+      );
+    });
 
   return (
     <div>
@@ -126,7 +144,10 @@ export default async function MessagerieHubPage() {
         </Card>
       ) : (
         <ul className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
-          {sorted.map((c) => {
+          {sorted.map((c, idx) => {
+            // Séparateur visuel entre épinglés et le reste
+            const prevPinned = idx > 0 ? sorted[idx - 1].isPinned : false;
+            const showSeparator = prevPinned && !c.isPinned;
             const last = c.journalMessages[0];
             const lastPreview = last
               ? (last.texte?.slice(0, 100) ?? "") ||
@@ -141,20 +162,30 @@ export default async function MessagerieHubPage() {
                   {
                     NOTE: "",
                     SYSTEM_INCIDENT: "⚠️ ",
+                    SYSTEM_INCIDENT_RESOLU: "✅ ",
                     SYSTEM_DEMANDE: "📦 ",
                     SYSTEM_COMMANDE: "🛒 ",
+                    SYSTEM_COMMANDE_LIVREE: "📦✓ ",
                     SYSTEM_RAPPORT: "📝 ",
                     SYSTEM_SORTIE: "📤 ",
                     SYSTEM_RETOUR: "📥 ",
+                    SYSTEM_LOCATION: "🚚 ",
+                    SYSTEM_LOCATION_FIN: "🏁 ",
+                    SYSTEM_PLAN: "📐 ",
                     BILAN_JOURNEE: "🏁 ",
-                  } as const
+                  } as Record<string, string>
                 )[last.type] || ""
               : "";
             return (
-              <li key={c.id}>
+              <li key={c.id} className="relative">
+                {showSeparator && (
+                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800/50 border-y border-slate-100 dark:border-slate-800">
+                    Autres chantiers
+                  </div>
+                )}
                 <Link
                   href={`/messagerie/${c.id}`}
-                  className="flex items-start gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition"
+                  className={`flex items-start gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition ${c.isPinned ? "bg-amber-50/30 dark:bg-amber-950/10" : ""}`}
                 >
                   {/* Avatar simple : initiales chantier */}
                   <div className="shrink-0 w-11 h-11 rounded-full bg-brand-100 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 flex items-center justify-center font-bold text-sm">
@@ -162,7 +193,13 @@ export default async function MessagerieHubPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                      <span className="font-semibold text-slate-900 dark:text-slate-100 truncate flex items-center gap-1">
+                        {c.isPinned && (
+                          <Pin
+                            size={11}
+                            className="text-amber-500 fill-current shrink-0"
+                          />
+                        )}
                         {c.nom}
                       </span>
                       <span className="text-[11px] text-slate-500 dark:text-slate-400 shrink-0">
@@ -197,13 +234,19 @@ export default async function MessagerieHubPage() {
                       </p>
                     )}
                   </div>
-                  {(unread.byChantier[c.id] ?? 0) > 0 ? (
-                    <span className="shrink-0 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-brand-600 text-white text-[10px] font-bold leading-none">
-                      {unread.byChantier[c.id]}
-                    </span>
-                  ) : c._count.journalMessages > 0 ? (
-                    <Badge color="slate">{c._count.journalMessages}</Badge>
-                  ) : null}
+                  <div className="shrink-0 flex flex-col items-end gap-1.5">
+                    {(unread.byChantier[c.id] ?? 0) > 0 ? (
+                      <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-brand-600 text-white text-[10px] font-bold leading-none">
+                        {unread.byChantier[c.id]}
+                      </span>
+                    ) : c._count.journalMessages > 0 ? (
+                      <Badge color="slate">{c._count.journalMessages}</Badge>
+                    ) : null}
+                    <PinChantierButton
+                      chantierId={c.id}
+                      pinned={c.isPinned}
+                    />
+                  </div>
                 </Link>
               </li>
             );

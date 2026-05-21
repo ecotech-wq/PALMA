@@ -12,6 +12,7 @@ import { requireAuth } from "@/lib/auth-helpers";
 export default async function CommandesListPage() {
   const me = await requireAuth();
   const commandes = await db.commande.findMany({
+    where: { deletedAt: null },
     include: {
       chantier: { select: { id: true, nom: true } },
       _count: { select: { lignes: true } },

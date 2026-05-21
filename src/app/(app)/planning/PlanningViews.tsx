@@ -7,9 +7,10 @@ import { GanttChartV2 } from "./GanttChartV2";
 import { KanbanBoard } from "./KanbanBoard";
 import { TacheListTodoist, type SectionItem } from "./TacheListTodoist";
 import { TacheEditModal, type TacheForEdit } from "./TacheEditModal";
+import { CalendarMonth } from "./CalendarMonth";
 import { quickCreateAt } from "./actions";
 
-type Vue = "gantt" | "liste" | "kanban";
+type Vue = "gantt" | "liste" | "kanban" | "calendrier";
 
 type FullTache = TacheForEdit & {
   equipe: { id: string; nom: string } | null;
@@ -40,6 +41,7 @@ export function PlanningViews({
   chantiers,
   equipes,
   allLabels,
+  allOuvriers = [],
   defaultChantierId,
   canEdit,
 }: {
@@ -50,6 +52,12 @@ export function PlanningViews({
   chantiers: Chantier[];
   equipes: Equipe[];
   allLabels: LabelRef[];
+  allOuvriers?: {
+    id: string;
+    nom: string;
+    prenom: string | null;
+    equipeId: string | null;
+  }[];
   defaultChantierId?: string;
   canEdit: boolean;
 }) {
@@ -138,6 +146,28 @@ export function PlanningViews({
         />
       )}
 
+      {view === "calendrier" && (
+        <CalendarMonth
+          canEdit={canEdit}
+          onClickTask={canEdit ? (id) => setEditingId(id) : undefined}
+          onEmptyCellClick={canEdit ? handleEmptyCellClick : undefined}
+          chantiers={chantiers}
+          defaultChantierId={defaultChantierId}
+          taches={taches.map((t) => ({
+            id: t.id,
+            nom: t.nom,
+            dateDebut: t.dateDebut,
+            dateFin: t.dateFin,
+            avancement: t.avancement,
+            statut: t.statut,
+            priorite: t.priorite,
+            equipe: t.equipe,
+            chantier: t.chantier,
+          }))}
+          events={events}
+        />
+      )}
+
       {view === "liste" && (
         <TacheListTodoist
           sections={sections}
@@ -157,6 +187,8 @@ export function PlanningViews({
             equipe: t.equipe,
             chantier: t.chantier,
             labels: t.labels,
+            ouvriers: t.ouvriers,
+            recurrence: t.recurrence,
           }))}
         />
       )}
@@ -173,6 +205,7 @@ export function PlanningViews({
           }))}
           taches={tacheCandidates}
           allLabels={allLabels}
+          allOuvriers={allOuvriers}
           onClose={() => setEditingId(null)}
         />
       )}

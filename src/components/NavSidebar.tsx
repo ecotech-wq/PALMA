@@ -30,9 +30,12 @@ import {
   CalendarRange,
   ClipboardCheck,
   ClipboardList,
+  Download,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { SearchTrigger } from "@/components/SearchTrigger";
 
 type NavItem = {
   href: string;
@@ -469,6 +472,11 @@ export function DesktopSidebar({
         {bell}
       </div>
 
+      {/* Trigger de recherche globale (ouvre la palette Ctrl+K) */}
+      <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800">
+        <SearchTrigger variant="sidebar" />
+      </div>
+
       <nav className="flex-1 overflow-y-auto py-2 space-y-0.5">
         {/* Tableau de bord — toujours en haut, isolé */}
         <NavLeaf
@@ -521,6 +529,9 @@ export function DesktopSidebar({
               icon: ShieldCheck,
               items: [
                 { href: "/admin/users", label: "Utilisateurs", icon: ShieldCheck },
+                { href: "/admin/audit", label: "Journal d'audit", icon: FileText },
+                { href: "/admin/corbeille", label: "Corbeille", icon: Trash2 },
+                { href: "/exports", label: "Exports & FEC", icon: Download },
                 { href: "/parametres", label: "Paramètres", icon: Settings },
               ],
             }}
@@ -798,6 +809,7 @@ export function MobileTopBar({
     <header className="md:hidden sticky top-0 z-20 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-between gap-2">
       <BrandHeader subtitle={userName} href="/profil" />
       <div className="flex items-center gap-1">
+        <SearchTrigger variant="topbar" />
         {bell}
         <ThemeToggle compact />
         <form action={signOutAction}>

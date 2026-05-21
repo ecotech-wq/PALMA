@@ -39,6 +39,12 @@ ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholde
 ENV AUTH_SECRET="build-time-placeholder"
 ENV AUTH_TRUST_HOST="true"
 
+# Clé publique VAPID (Web Push) : variable NEXT_PUBLIC_* → doit être inlinée
+# AU BUILD pour finir dans le bundle client. Passée via build.args par
+# docker-compose. Vide par défaut = Web Push désactivé côté client (sans casser le build).
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
+ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
+
 RUN npm run build
 
 # ---------- Stage 3 : runner ----------

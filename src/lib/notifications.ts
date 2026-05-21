@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { sendPushTo, sendPushToMany } from "@/lib/push";
 
 type NotifType =
   | "RAPPORT_CREE"
@@ -35,6 +36,13 @@ export async function notify(
         link: link ?? null,
       },
     });
+    // Fire-and-forget : Web Push (silencieux si VAPID non configuré)
+    sendPushTo(userId, {
+      title,
+      body: message,
+      url: link,
+      tag: type,
+    }).catch(() => {});
   } catch (e) {
     console.error("notify failed:", e);
   }
@@ -64,6 +72,11 @@ export async function notifyAdmins(
         link: link ?? null,
       })),
     });
+    // Fire-and-forget : Web Push pour chaque admin
+    sendPushToMany(
+      admins.map((a) => a.id),
+      { title, body: message, url: link, tag: type }
+    ).catch(() => {});
   } catch (e) {
     console.error("notifyAdmins failed:", e);
   }

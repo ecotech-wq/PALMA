@@ -9,6 +9,13 @@
 #   POSTGRES_PASSWORD       mot de passe Postgres (fort)
 #   AUTH_SECRET             secret aléatoire 32 octets (openssl rand -base64 32)
 #   ACME_EMAIL              email pour Let's Encrypt (alertes expiration cert)
+#
+# Variables optionnelles (Web Push — notifications navigateur) :
+#   VAPID_PUBLIC_KEY              clé publique VAPID
+#   VAPID_PRIVATE_KEY            clé privée VAPID (secret)
+#   NEXT_PUBLIC_VAPID_PUBLIC_KEY  = VAPID_PUBLIC_KEY (inlinée au build côté client)
+#   VAPID_SUBJECT                mailto:... ou URL du site
+#   → générer une paire : npx web-push generate-vapid-keys
 
 services:
   postgres:
@@ -35,6 +42,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Clé publique VAPID inlinée au build (Web Push côté client).
+        # Vide si non défini → Web Push simplement désactivé, build OK.
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
     container_name: ogc-app
     restart: unless-stopped
     depends_on:
@@ -48,6 +59,10 @@ services:
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
+      # Web Push (serveur) — optionnel, no-op si vide
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
     volumes:
       # Photos uploadées : persistées hors du conteneur
       - uploads:/app/public/uploads
