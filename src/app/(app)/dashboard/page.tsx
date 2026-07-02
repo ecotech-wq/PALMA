@@ -17,6 +17,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { CommandeStatutBadge } from "@/app/(app)/commandes/CommandeStatutBadge";
 import { formatEuro, formatDate } from "@/lib/utils";
+import { Montant } from "@/features/discret";
 import { getFinanceChantier } from "@/lib/finances-chantier";
 import { ChantierFinanceCard } from "./ChantierFinanceCard";
 import { TodayWidget } from "./TodayWidget";
@@ -241,7 +242,7 @@ export default async function DashboardPage() {
               <div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">Budget total</div>
                 <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                  {formatEuro(budgetTotal)}
+                  <Montant>{formatEuro(budgetTotal)}</Montant>
                 </div>
               </div>
               <div>
@@ -251,7 +252,7 @@ export default async function DashboardPage() {
                     isOver ? "text-red-600" : "text-slate-900 dark:text-slate-100"
                   }`}
                 >
-                  {formatEuro(coutTotalEngage)}
+                  <Montant>{formatEuro(coutTotalEngage)}</Montant>
                 </div>
               </div>
               <div>
@@ -261,8 +262,10 @@ export default async function DashboardPage() {
                     margeGlobale < 0 ? "text-red-600" : "text-green-600 dark:text-green-500"
                   }`}
                 >
-                  {margeGlobale >= 0 ? "+" : ""}
-                  {formatEuro(margeGlobale)}
+                  <Montant>
+                    {margeGlobale >= 0 ? "+" : ""}
+                    {formatEuro(margeGlobale)}
+                  </Montant>
                 </div>
               </div>
             </div>
@@ -362,7 +365,7 @@ export default async function DashboardPage() {
                         </div>
                         {me.canSeePrices && (
                           <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                            Budget prévu : {formatEuro(budget)}
+                            Budget prévu : <Montant>{formatEuro(budget)}</Montant>
                           </div>
                         )}
                       </div>
@@ -430,7 +433,7 @@ export default async function DashboardPage() {
               <span className="text-sm font-medium">À verser (paiements calculés)</span>
             </div>
             <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
-              {formatEuro(totalACalculer)}
+              <Montant>{formatEuro(totalACalculer)}</Montant>
             </div>
             <div className="text-xs text-slate-400 dark:text-slate-500">
               {paiementsCalcules._count} paiement{paiementsCalcules._count > 1 ? "s" : ""} en
@@ -449,12 +452,20 @@ export default async function DashboardPage() {
               <span className="text-sm font-medium">Locations en cours</span>
             </div>
             <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
-              {formatEuro(totalLocations)}
+              <Montant>{formatEuro(totalLocations)}</Montant>
             </div>
             {me.isAdmin && (
               <div className="text-xs text-slate-400 dark:text-slate-500">
-                {totalAvances > 0 && `Avances : ${formatEuro(totalAvances)} · `}
-                {totalOutilsRestant > 0 && `Outils dus : ${formatEuro(totalOutilsRestant)}`}
+                {totalAvances > 0 && (
+                  <>
+                    Avances : <Montant>{formatEuro(totalAvances)}</Montant>{" · "}
+                  </>
+                )}
+                {totalOutilsRestant > 0 && (
+                  <>
+                    Outils dus : <Montant>{formatEuro(totalOutilsRestant)}</Montant>
+                  </>
+                )}
                 {totalAvances === 0 && totalOutilsRestant === 0 && "Aucune avance ouverte"}
               </div>
             )}
@@ -499,7 +510,7 @@ export default async function DashboardPage() {
                       <CommandeStatutBadge statut={c.statut} />
                       {me.canSeePrices && (
                         <div className="font-semibold w-20 text-right shrink-0">
-                          {formatEuro(c.coutTotal.toString())}
+                          <Montant>{formatEuro(c.coutTotal.toString())}</Montant>
                         </div>
                       )}
                     </Link>

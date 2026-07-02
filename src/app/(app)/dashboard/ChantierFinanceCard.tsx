@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Banknote, ShoppingCart, Truck, ChevronRight } from "lucide-react";
 import { ChantierStatutBadge } from "@/app/(app)/chantiers/ChantierStatutBadge";
 import { formatEuro } from "@/lib/utils";
+import { Montant } from "@/features/discret";
 import type { FinanceChantier } from "@/lib/finances-chantier";
 
 type ChantierLite = {
@@ -72,7 +73,7 @@ export function ChantierFinanceCard({
                 Budget
               </div>
               <div className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
-                {formatEuro(finance.budgetTotal)}
+                <Montant>{formatEuro(finance.budgetTotal)}</Montant>
               </div>
             </div>
             <div>
@@ -84,7 +85,7 @@ export function ChantierFinanceCard({
                   isOver ? "text-red-600" : "text-slate-900 dark:text-slate-100"
                 }`}
               >
-                {formatEuro(finance.coutTotal)}
+                <Montant>{formatEuro(finance.coutTotal)}</Montant>
               </div>
             </div>
             <div>
@@ -99,7 +100,7 @@ export function ChantierFinanceCard({
                 }`}
               >
                 {margeAmount >= 0 ? "+" : ""}
-                {formatEuro(margeAmount)}
+                <Montant>{formatEuro(margeAmount)}</Montant>
               </div>
             </div>
           </div>
@@ -130,7 +131,7 @@ export function ChantierFinanceCard({
                 <span>M.O.</span>
               </div>
               <div className="font-medium text-slate-700 dark:text-slate-300 mt-0.5">
-                {formatEuro(finance.coutMainOeuvre)}
+                <Montant>{formatEuro(finance.coutMainOeuvre)}</Montant>
               </div>
             </div>
             <div>
@@ -139,7 +140,7 @@ export function ChantierFinanceCard({
                 <span>Commandes</span>
               </div>
               <div className="font-medium text-slate-700 dark:text-slate-300 mt-0.5">
-                {formatEuro(finance.coutCommandes)}
+                <Montant>{formatEuro(finance.coutCommandes)}</Montant>
                 {finance.commandesCount > 0 && (
                   <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-1">
                     ({finance.commandesCount})
@@ -153,7 +154,7 @@ export function ChantierFinanceCard({
                 <span>Locations</span>
               </div>
               <div className="font-medium text-slate-700 dark:text-slate-300 mt-0.5">
-                {formatEuro(finance.coutLocations)}
+                <Montant>{formatEuro(finance.coutLocations)}</Montant>
                 {finance.locationsCount > 0 && (
                   <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-1">
                     ({finance.locationsCount})

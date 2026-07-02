@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LYNX, refonte de l'accueil : sobre et discret</title>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#0f172a; --card:#111c30; --line:#1e293b;
+    --txt:#e2e8f0; --mut:#94a3b8; --dim:#64748b;
+    --brand:#2dd4bf; --brand-deep:#135858; --accent:#b5733b;
+    --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font:15px/1.6 system-ui,Segoe UI,Roboto,sans-serif;padding:32px 16px 80px}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:26px;margin-bottom:6px}
+  h2{font-size:19px;margin:40px 0 8px;color:var(--brand)}
+  h3{font-size:15px;margin:18px 0 6px}
+  p{color:var(--mut);max-width:75ch;margin-bottom:10px}
+  p strong{color:var(--txt)}
+  .cols{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;margin-top:14px}
+  .phone{width:340px;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;flex-shrink:0}
+  .phone .tag{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
+  .avant .tag{color:var(--bad)} .apres .tag{color:var(--ok)}
+  /* ---- éléments communs ---- */
+  .row{display:flex;align-items:center;gap:8px}
+  .sp{flex:1}
+  .kpigrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}
+  .kpi .ic{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;margin-bottom:6px}
+  .kpi b{font-size:20px;display:block}
+  .kpi span{font-size:11px;color:var(--dim)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+  .card h4{font-size:12px;color:var(--mut);font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em}
+  .euros{font-size:19px;font-weight:700}
+  .euros.ok{color:var(--ok)} .euros.warnc{color:var(--warn)}
+  .bar{height:6px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:8px}
+  .bar i{display:block;height:100%;width:22%;background:var(--brand-deep)}
+  .mini{font-size:11px;color:var(--dim);margin-top:4px}
+  /* ---- APRÈS : liste d'actions ---- */
+  .action{display:flex;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line);align-items:center}
+  .action:last-child{border:none}
+  .dot{width:8px;height:8px;border-radius:99px;flex-shrink:0}
+  .action .t{font-size:13.5px}
+  .action .s{font-size:11.5px;color:var(--dim)}
+  .chip{font-size:10.5px;border:1px solid var(--line);border-radius:99px;padding:2px 8px;color:var(--mut);white-space:nowrap}
+  /* ---- mode discret ---- */
+  .eye{cursor:pointer;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--mut);padding:4px 10px;font-size:12px;user-select:none}
+  .eye:hover{color:var(--txt);border-color:var(--brand-deep)}
+  .m{transition:filter .15s}
+  body.masque .m{filter:blur(7px);user-select:none}
+  .doct{counter-reset:r;max-width:78ch}
+  .doct li{list-style:none;margin:14px 0;color:var(--mut);padding-left:38px;position:relative}
+  .doct li::before{counter-increment:r;content:counter(r);position:absolute;left:0;top:2px;width:26px;height:26px;border-radius:8px;background:var(--brand-deep);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+  .doct b{color:var(--txt)}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+  th{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+  td{padding:8px;border-bottom:1px solid var(--line);color:var(--mut);vertical-align:top}
+  td:first-child{color:var(--txt);font-weight:600;white-space:nowrap}
+  .note{border-left:3px solid var(--accent);padding:10px 14px;background:var(--panel);border-radius:0 10px 10px 0;margin-top:16px;font-size:13.5px;color:var(--mut);max-width:78ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Refonte de l'accueil : sobre, utile, discret</h1>
+  <p>Deux problèmes traités ensemble. D'abord la <strong>confidentialité</strong> : l'accueil actuel projette budget, marge et paie dès l'ouverture, y compris en visio ou sur le terrain. Ensuite la <strong>surcharge</strong> : huit blocs de même poids visuel, le regard ne sait pas où se poser. Le bouton ci-dessous simule le mode discret proposé : il fait partie de la maquette, cliquez-le.</p>
+  <div class="row" style="margin-top:10px">
+    <button class="eye" onclick="document.body.classList.toggle('masque');this.textContent=document.body.classList.contains('masque')?'Montants masqués : cliquer pour révéler':'Montants visibles : cliquer pour masquer'">Montants visibles : cliquer pour masquer</button>
+  </div>
+
+  <h2>1. L'accueil, avant et après</h2>
+  <div class="cols">
+    <div class="phone avant">
+      <div class="tag">Aujourd'hui : tout est exposé, tout crie</div>
+      <div class="kpigrid">
+        <div class="kpi"><div class="ic" style="background:#134e4a">C</div><b>3</b><span>Chantiers actifs</span></div>
+        <div class="kpi"><div class="ic" style="background:#1e3a8a">E</div><b>2</b><span>Équipes</span></div>
+        <div class="kpi"><div class="ic" style="background:#713f12">M</div><b>17</b><span>Matériel</span></div>
+        <div class="kpi"><div class="ic" style="background:#4c1d95">O</div><b>8</b><span>Ouvriers</span></div>
+      </div>
+      <div class="card">
+        <h4>Budget global, chantiers actifs</h4>
+        <div class="row"><div><div class="mini">Budget</div><div class="euros">64 000 €</div></div><div class="sp"></div>
+        <div><div class="mini">Engagé</div><div class="euros warnc">14 370 €</div></div><div class="sp"></div>
+        <div><div class="mini">Marge</div><div class="euros ok">+49 630 €</div></div></div>
+        <div class="bar"><i></i></div><div class="mini">22 % consommé</div>
+      </div>
+      <div class="card"><h4>Paie à verser</h4><div class="euros">6 240 €</div><div class="mini">Avances : 800 € · Outils dus : 240 €</div></div>
+      <div class="card"><h4>Détail par chantier</h4><div class="mini">Mont vert : marge +15 630 € · Garage Soulé : marge +9 800 € ...</div></div>
+      <div class="mini" style="text-align:center;margin-top:6px">+ 4 autres blocs en dessous...</div>
+    </div>
+
+    <div class="phone apres">
+      <div class="tag">Proposé : la journée d'abord, l'argent sur demande</div>
+      <div class="row" style="margin-bottom:10px">
+        <div><b style="font-size:17px">Jeudi 2 juillet</b><div class="mini">3 chantiers en cours</div></div>
+        <div class="sp"></div><span class="eye" title="Mode discret">👁</span>
+      </div>
+      <div class="card">
+        <h4>À traiter</h4>
+        <div class="action"><span class="dot" style="background:var(--bad)"></span><div><div class="t">Incident : fissure poutre R+1</div><div class="s">Mont vert · signalé 15:11</div></div><div class="sp"></div><span class="chip">ouvrir</span></div>
+        <div class="action"><span class="dot" style="background:var(--warn)"></span><div><div class="t">2 demandes de matériel à valider</div><div class="s">ciment (Garage Soulé), coffrage</div></div><div class="sp"></div><span class="chip">valider</span></div>
+        <div class="action"><span class="dot" style="background:var(--brand)"></span><div><div class="t">5 messages non lus</div><div class="s">Mont vert (3), Garage Soulé (2)</div></div><div class="sp"></div><span class="chip">lire</span></div>
+      </div>
+      <div class="card">
+        <h4>Terrain, aujourd'hui</h4>
+        <div class="action"><div><div class="t">6 ouvriers pointés sur 8</div><div class="s">Mont vert 4 · Garage Soulé 2</div></div><div class="sp"></div><span class="chip">pointage</span></div>
+      </div>
+      <div class="card">
+        <h4 class="row">Finances <span class="sp"></span><span style="font-size:10px;color:var(--dim)">masquées par défaut</span></h4>
+        <div class="row">
+          <div><div class="mini">Marge active</div><div class="euros ok m">+49 630 €</div></div><div class="sp"></div>
+          <div><div class="mini">Paie à verser</div><div class="euros m">6 240 €</div></div><div class="sp"></div>
+          <span class="chip">détail</span>
+        </div>
+      </div>
+      <div class="mini" style="text-align:center;margin-top:6px">C'est tout. Le reste vit dans ses pages.</div>
+    </div>
+  </div>
+  <p style="margin-top:14px">La logique est celle que tu as validée pour la messagerie : <strong>le contenu utile occupe l'écran, le reste se déplie à la demande</strong>. L'accueil répond à une seule question : « qu'est-ce qui a besoin de moi maintenant ? ». Les compteurs décoratifs (équipes, matériel, ouvriers) disparaissent : ils ne changent presque jamais et ont déjà leurs pages.</p>
+
+  <h2>2. Le mode discret (confidentialité)</h2>
+  <p>Un seul composant <b style="color:var(--txt)">&lt;Montant&gt;</b> affiche désormais chaque valeur en euros de l'application. Il obéit à un interrupteur global : l'œil dans l'en-tête, le raccourci clavier M, et une préférence par compte « masquer les montants à l'ouverture » (activée pour toi par défaut). Masqué, un montant devient flou et illisible, même en plein écran partagé ; un appui le révèle deux secondes si besoin. Essaie avec le bouton en haut de page : les montants de la colonne « proposé » et du tableau ci-dessous obéissent.</p>
+  <p>C'est le comportement des applications bancaires (Revolut, Bankin) : éprouvé, compris de tous, et il protège aussi la paie devant les ouvriers, les marges devant un client, les prix devant un sous-traitant. Il complète, sans le remplacer, le filtrage par rôle déjà en place (un chef ne reçoit jamais les prix du serveur).</p>
+
+  <h2>3. Les six règles qui « dé-IA-isent » le design</h2>
+  <ol class="doct">
+    <li><b>Une question par écran.</b> L'accueil : « que dois-je traiter ? ». La fiche chantier : « où en est ce chantier ? ». Ce qui ne répond pas à la question de l'écran va ailleurs.</li>
+    <li><b>Des listes, pas des mosaïques de cartes.</b> Les grilles de cartes icône + gros chiffre sont la signature visuelle des tableaux de bord générés. Une liste dense et bien typographiée dit plus en moins de place.</li>
+    <li><b>La couleur signifie un état, jamais une décoration.</b> Rouge = dépassement ou urgence, ambre = attention, vert = validé. Tout le reste en neutre, un seul accent de marque.</li>
+    <li><b>Hiérarchie typographique au lieu de boîtes.</b> Moins de bordures et de cartes imbriquées ; des tailles et graisses de texte qui guident l'œil.</li>
+    <li><b>L'argent est une information de second rideau.</b> Toujours accessible en deux gestes, jamais imposé au premier regard. Mode discret global.</li>
+    <li><b>Feuilles et pages, pas de popups.</b> Au téléphone : feuille bas d'écran (comme le « + » de la messagerie). Pour le dense : une vraie page. Les popups modales cassent le fil et vieillissent mal.</li>
+  </ol>
+
+  <h2>4. Application écran par écran</h2>
+  <table>
+    <tr><th>Écran</th><th>Aujourd'hui</th><th>Proposé</th></tr>
+    <tr><td>Accueil</td><td>8 blocs empilés, finances en tête</td><td>À traiter + terrain du jour + finances repliées (maquette ci-dessus)</td></tr>
+    <tr><td>Chantiers</td><td>cartes avec budget visible <span class="m">20 000 €</span></td><td>liste sobre : nom, statut, avancement, dernier événement ; montants via &lt;Montant&gt; masquables</td></tr>
+    <tr><td>Fiche chantier</td><td>pile de 7 cartes, finances au premier écran</td><td>onglets : Vue d'ensemble / Équipe / Documents / Finances. La marge <span class="m">+15 630 €</span> vit dans l'onglet Finances</td></tr>
+    <tr><td>Matériel</td><td>tableau avec prix mélangés au stock</td><td>colonne prix masquable, vue « état du parc » par défaut</td></tr>
+    <tr><td>Paie</td><td>montants nets à l'écran dès l'entrée <span class="m">6 240 €</span></td><td>écran le plus sensible : TOUJOURS masqué à l'ouverture, révélation explicite</td></tr>
+    <tr><td>Planning</td><td>correct (vue Todoist)</td><td>inchangé, on n'y touche pas</td></tr>
+    <tr><td>Pointage</td><td>saisie manuelle</td><td>rejoint le QR v4.3 ; l'écran du jour reste sans aucun montant</td></tr>
+  </table>
+
+  <div class="note"><b style="color:var(--txt)">Ce que je te propose comme ordre de réalisation :</b> d'abord le mode discret et le composant &lt;Montant&gt; (un soir de travail, protège immédiatement toutes les pages), puis l'accueil refondu comme ci-dessus, puis la fiche chantier en onglets, et le reste écran par écran. Chaque étape est visible sur localhost:3200 avant d'aller plus loin.</div>
+</div>
+</body>
+</html>

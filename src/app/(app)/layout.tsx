@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { auth, signOut } from "@/auth";
+import { DiscretProvider, DiscretToggle } from "@/features/discret";
 import { db } from "@/lib/db";
 import { DesktopSidebar, MobileBottomNav, MobileTopBar } from "@/components/NavSidebar";
 import { ToastProvider } from "@/components/Toast";
@@ -120,6 +122,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     await signOut({ redirectTo: "/login" });
   }
 
+  // Mode discret : cookie absent = montants MASQUÉS (réglage sûr).
+  // La bascule (œil, touche M) écrit le cookie côté client.
+  const discretCookie = (await cookies()).get("discret")?.value;
+  const discretInitial = discretCookie !== "0";
+
   const bell = (
     <NotificationBell
       notifications={notifications.map((n) => ({
@@ -135,8 +142,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     />
   );
 
+  // L'œil du mode discret voyage avec la cloche : un seul point
+  // d'insertion pour l'en-tête mobile ET la barre latérale desktop.
+  const bellEtOeil = (
+    <>
+      <DiscretToggle />
+      {bell}
+    </>
+  );
+
   return (
     <ToastProvider>
+      <DiscretProvider initial={discretInitial}>
       <CommandPalette />
       <OfflineBanner />
       <div className="min-h-screen flex bg-slate-50 dark:bg-slate-950">
@@ -147,13 +164,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           navBadges={navBadges}
           clientVisibility={clientVisibility}
           signOutAction={handleSignOut}
-          bell={bell}
+          bell={bellEtOeil}
         />
         <div className="flex-1 flex flex-col min-w-0">
           <MobileTopBar
             userName={session.user.name}
             signOutAction={handleSignOut}
-            bell={bell}
+            bell={bellEtOeil}
           />
           <main className="flex-1 pb-24 md:pb-0">
             <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-4 md:py-6">
@@ -170,6 +187,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           />
         </div>
       </div>
+      </DiscretProvider>
     </ToastProvider>
   );
 }
