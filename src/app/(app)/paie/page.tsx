@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   Plus,
@@ -22,6 +23,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Input, Field } from "@/components/ui/Input";
 import { calcMontantBrut } from "@/lib/calc-paie";
 import { formatEuro, formatDate, cn } from "@/lib/utils";
+import { Montant } from "@/features/discret";
 import { PaiePendingList } from "./PaiePendingList";
 
 const dateRangeFmt = new Intl.DateTimeFormat("fr-FR", {
@@ -527,7 +529,7 @@ export default async function PaieListPage({
           value={aCalculer.length}
           subtitle={
             aCalculer.length > 0
-              ? `≈ ${formatEuro(totalACalculer)} brut estimé`
+              ? <>≈ <Montant>{formatEuro(totalACalculer)}</Montant> brut estimé</>
               : "Tous calculés"
           }
           color="blue"
@@ -538,7 +540,7 @@ export default async function PaieListPage({
           value={aVerser.length}
           subtitle={
             aVerser.length > 0
-              ? `${formatEuro(totalAVerser)} en attente`
+              ? <><Montant>{formatEuro(totalAVerser)}</Montant> en attente</>
               : "Aucun en attente"
           }
           color="yellow"
@@ -549,7 +551,7 @@ export default async function PaieListPage({
           value={payes.length}
           subtitle={
             payes.length > 0
-              ? `${formatEuro(totalPayes)} versés`
+              ? <><Montant>{formatEuro(totalPayes)}</Montant> versés</>
               : "Aucun versement"
           }
           color="green"
@@ -604,7 +606,7 @@ export default async function PaieListPage({
             À verser ({aVerser.length})
             {totalAVerser > 0 && (
               <span className="text-sm font-normal text-amber-700 dark:text-amber-400">
-                — {formatEuro(totalAVerser)}
+                — <Montant>{formatEuro(totalAVerser)}</Montant>
               </span>
             )}
           </CardTitle>
@@ -622,7 +624,7 @@ export default async function PaieListPage({
             À calculer ({aCalculer.length})
             {totalACalculer > 0 && (
               <span className="text-sm font-normal text-blue-700 dark:text-blue-400">
-                — ≈ {formatEuro(totalACalculer)} brut
+                — ≈ <Montant>{formatEuro(totalACalculer)}</Montant> brut
               </span>
             )}
           </CardTitle>
@@ -651,7 +653,7 @@ export default async function PaieListPage({
                       </Link>
                       <div className="text-right shrink-0">
                         <div className="font-semibold text-slate-900 dark:text-slate-100">
-                          ≈ {formatEuro(o.estime)}
+                          ≈ <Montant>{formatEuro(o.estime)}</Montant>
                         </div>
                         <div className="text-[10px] text-slate-400 dark:text-slate-500">
                           brut estimé
@@ -689,7 +691,7 @@ export default async function PaieListPage({
             Payés sur la période ({payes.length})
             {totalPayes > 0 && (
               <span className="text-sm font-normal text-slate-500 dark:text-slate-400">
-                — {formatEuro(totalPayes)}
+                — <Montant>{formatEuro(totalPayes)}</Montant>
               </span>
             )}
           </CardTitle>
@@ -713,7 +715,7 @@ export default async function PaieListPage({
                           {p.ouvrierNom}
                         </span>
                         <span className="font-semibold text-slate-900 dark:text-slate-100 shrink-0">
-                          {formatEuro(p.montantNet)}
+                          <Montant>{formatEuro(p.montantNet)}</Montant>
                         </span>
                       </div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
@@ -817,7 +819,7 @@ export default async function PaieListPage({
                       </div>
                       <div className="text-right shrink-0">
                         <div className="font-semibold">
-                          {formatEuro(p.montantNet.toString())}
+                          <Montant>{formatEuro(p.montantNet.toString())}</Montant>
                         </div>
                         <div className="text-xs text-slate-400 dark:text-slate-500">
                           {p.mode === "ESPECES" ? "Espèces" : "Virement"}
@@ -846,7 +848,7 @@ function StatCard({
   icon: typeof Banknote;
   label: string;
   value: number;
-  subtitle: string;
+  subtitle: ReactNode;
   color: "blue" | "yellow" | "green" | "gray";
 }) {
   const colorMap = {

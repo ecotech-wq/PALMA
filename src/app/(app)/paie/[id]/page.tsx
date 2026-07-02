@@ -15,6 +15,7 @@ import {
   deletePaiement,
 } from "../actions";
 import { formatEuro, formatDate } from "@/lib/utils";
+import { Montant } from "@/features/discret";
 
 const contratLabel: Record<string, string> = {
   FIXE: "Salarié fixe",
@@ -112,7 +113,7 @@ export default async function PaiementDetailPage({
                     {Number(paiement.joursTravailles)} jour
                     {Number(paiement.joursTravailles) > 1 ? "s" : ""}
                   </span>
-                  <span className="font-medium">{formatEuro(paiement.montantBrut.toString())}</span>
+                  <span className="font-medium"><Montant>{formatEuro(paiement.montantBrut.toString())}</Montant></span>
                 </div>
 
                 {Number(paiement.avancesDeduites) > 0 && (
@@ -121,7 +122,7 @@ export default async function PaiementDetailPage({
                       Avances déduites ({paiement.avances.length})
                     </span>
                     <span className="font-medium text-orange-600">
-                      -{formatEuro(paiement.avancesDeduites.toString())}
+                      -<Montant>{formatEuro(paiement.avancesDeduites.toString())}</Montant>
                     </span>
                   </div>
                 )}
@@ -132,7 +133,7 @@ export default async function PaiementDetailPage({
                       Retenue outils ({paiement.retenuesOutils.length})
                     </span>
                     <span className="font-medium text-orange-600">
-                      -{formatEuro(paiement.retenueOutil.toString())}
+                      -<Montant>{formatEuro(paiement.retenueOutil.toString())}</Montant>
                     </span>
                   </div>
                 )}
@@ -144,7 +145,7 @@ export default async function PaiementDetailPage({
                       Number(paiement.montantNet) < 0 ? "text-red-600" : "text-slate-900 dark:text-slate-100"
                     }`}
                   >
-                    {formatEuro(paiement.montantNet.toString())}
+                    <Montant>{formatEuro(paiement.montantNet.toString())}</Montant>
                   </span>
                 </div>
 
@@ -169,7 +170,7 @@ export default async function PaiementDetailPage({
                         {formatDate(a.date)} · {a.mode === "ESPECES" ? "Espèces" : "Virement"}
                         {a.note && <span className="ml-2 italic text-slate-500 dark:text-slate-500">{a.note}</span>}
                       </span>
-                      <span className="font-medium">{formatEuro(a.montant.toString())}</span>
+                      <span className="font-medium"><Montant>{formatEuro(a.montant.toString())}</Montant></span>
                     </li>
                   ))}
                 </ul>
@@ -187,7 +188,7 @@ export default async function PaiementDetailPage({
                   {paiement.retenuesOutils.map((r) => (
                     <li key={r.id} className="px-5 py-2 flex items-center justify-between text-sm">
                       <span className="text-slate-600 dark:text-slate-500">{r.outilPersonnel.nom}</span>
-                      <span className="font-medium">{formatEuro(r.montant.toString())}</span>
+                      <span className="font-medium"><Montant>{formatEuro(r.montant.toString())}</Montant></span>
                     </li>
                   ))}
                 </ul>
@@ -212,7 +213,7 @@ export default async function PaiementDetailPage({
                 {contratLabel[paiement.ouvrier.typeContrat]}
               </div>
               <div className="text-sm text-slate-500 dark:text-slate-500">
-                Tarif : {formatEuro(paiement.ouvrier.tarifBase.toString())}
+                Tarif : <Montant>{formatEuro(paiement.ouvrier.tarifBase.toString())}</Montant>
               </div>
             </CardBody>
           </Card>

@@ -10,6 +10,7 @@ import { useToast } from "@/components/Toast";
 import { OuvrierActiveToggle } from "./OuvrierActiveToggle";
 import { bulkToggleOuvriers } from "./actions";
 import { formatEuro, cn } from "@/lib/utils";
+import { Montant } from "@/features/discret";
 
 const contratLabel: Record<string, string> = {
   FIXE: "Fixe",
@@ -217,7 +218,7 @@ export function OuvriersBulkList({
                   <Badge color="blue">{contratLabel[o.typeContrat]}</Badge>
                   {isAdmin && (
                     <div className="text-sm font-medium text-slate-900 dark:text-slate-100 mt-1">
-                      {formatEuro(o.tarifBase)}
+                      <Montant>{formatEuro(o.tarifBase)}</Montant>
                       <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
                         {tarifSuffix[o.typeContrat]}
                       </span>

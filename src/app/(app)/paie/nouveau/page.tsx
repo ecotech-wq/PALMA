@@ -8,6 +8,7 @@ import { generatePaiement } from "../actions";
 import { calcPaie } from "@/lib/calc-paie";
 import { getAppSettings } from "@/lib/app-settings";
 import { formatEuro, formatDate, cn } from "@/lib/utils";
+import { Montant } from "@/features/discret";
 
 function iso(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -224,20 +225,20 @@ export default async function NouveauPaiementPage({
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-100">
                 <div>
                   <div className="text-xs text-slate-500 dark:text-slate-500">Brut</div>
-                  <div className="text-lg font-semibold">{formatEuro(preview.montantBrut)}</div>
+                  <div className="text-lg font-semibold"><Montant>{formatEuro(preview.montantBrut)}</Montant></div>
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 dark:text-slate-500">
                     Avances ({preview.avancesCount})
                   </div>
                   <div className="text-lg font-semibold text-orange-600">
-                    -{formatEuro(preview.avancesDeduites)}
+                    -<Montant>{formatEuro(preview.avancesDeduites)}</Montant>
                   </div>
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 dark:text-slate-500">Retenue outil</div>
                   <div className="text-lg font-semibold text-orange-600">
-                    -{formatEuro(preview.retenueOutil)}
+                    -<Montant>{formatEuro(preview.retenueOutil)}</Montant>
                   </div>
                 </div>
                 <div className="border-l border-slate-200 dark:border-slate-800 pl-3">
@@ -247,7 +248,7 @@ export default async function NouveauPaiementPage({
                       preview.montantNet < 0 ? "text-red-600" : "text-slate-900 dark:text-slate-100"
                     }`}
                   >
-                    {formatEuro(preview.montantNet)}
+                    <Montant>{formatEuro(preview.montantNet)}</Montant>
                   </div>
                 </div>
               </div>

@@ -1,5 +1,6 @@
 import { calcMontantBrut } from "@/lib/calc-paie";
 import { formatEuro } from "@/lib/utils";
+import { Montant } from "@/features/discret";
 
 type Pointage = { date: Date; joursTravailles: number };
 
@@ -63,7 +64,7 @@ export function MonthlyRecap({
           {m.totalJours > 0 ? (
             showAmount ? (
               <div className="text-[11px] text-slate-600 dark:text-slate-400">
-                ≈ {formatEuro(m.brutEstime)}
+                ≈ <Montant>{formatEuro(m.brutEstime)}</Montant>
               </div>
             ) : null
           ) : (

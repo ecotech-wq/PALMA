@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CommandeStatutBadge } from "./CommandeStatutBadge";
 import { formatEuro, formatDate } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth-helpers";
+import { Montant } from "@/features/discret";
 
 export default async function CommandesListPage() {
   const me = await requireAuth();
@@ -77,7 +78,7 @@ export default async function CommandesListPage() {
                     </div>
                     {me.canSeePrices && (
                       <div className="text-right shrink-0">
-                        <div className="font-semibold">{formatEuro(c.coutTotal.toString())}</div>
+                        <div className="font-semibold"><Montant>{formatEuro(c.coutTotal.toString())}</Montant></div>
                         {me.isAdmin && (
                           <div className="text-xs text-slate-400 dark:text-slate-500">
                             {c.mode === "ESPECES" ? "Espèces" : "Virement"}
