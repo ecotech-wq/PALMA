@@ -20,6 +20,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
 import { postChantierMessage } from "./actions";
 
 type Materiel = { id: string; nomCommun: string; statut: string };
@@ -151,6 +152,7 @@ export function ChantierComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [pending, startTransition] = useTransition();
+  const panneau = usePanneauOpaque();
   const [category, setCategory] = useState<Categorie>("NOTE");
   const [texte, setTexte] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -526,7 +528,10 @@ export function ChantierComposer({
               <div
                 role="menu"
                 className="fixed inset-x-3 bottom-3 z-50 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1.5 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-full sm:left-0 sm:z-30 sm:mb-2 sm:w-72 sm:rounded-md sm:p-1 sm:shadow-lg"
-                style={{ paddingBottom: "max(0.375rem, env(safe-area-inset-bottom))" }}
+                style={{
+                  ...panneau,
+                  paddingBottom: "max(0.375rem, env(safe-area-inset-bottom))",
+                }}
               >
                 <div className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
                   Type de message

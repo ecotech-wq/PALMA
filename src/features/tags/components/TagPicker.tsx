@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Hash, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
 import { listTagsForRole } from "../core/catalog";
 import type { Role, TagCode } from "../core/types";
 import { tagDotClass } from "./tag-colors";
@@ -45,6 +46,7 @@ export function TagPicker({
 }) {
   const [ouvert, setOuvert] = useState(false);
   const conteneurRef = useRef<HTMLDivElement>(null);
+  const panneau = usePanneauOpaque();
 
   // Fermeture au clic extérieur et à la touche Échap, uniquement quand le menu est ouvert.
   useEffect(() => {
@@ -121,7 +123,10 @@ export function TagPicker({
                 ? "sm:bottom-full sm:left-0 sm:top-auto sm:mb-1"
                 : "sm:left-0 sm:top-full sm:mt-1"
             )}
-            style={{ paddingBottom: "max(0.375rem, env(safe-area-inset-bottom))" }}
+            style={{
+              ...panneau,
+              paddingBottom: "max(0.375rem, env(safe-area-inset-bottom))",
+            }}
           >
             <div className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground sm:hidden">
               Ranger ce message dans une rubrique

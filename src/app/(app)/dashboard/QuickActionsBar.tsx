@@ -11,6 +11,7 @@ import {
   ShoppingCart,
   Hammer,
 } from "lucide-react";
+import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
 
 /**
  * Le « + » de l'accueil : un seul bouton, les actions de création se
@@ -30,6 +31,7 @@ export function QuickActionsBar({
 }) {
   const [ouvert, setOuvert] = useState(false);
   const conteneurRef = useRef<HTMLDivElement>(null);
+  const panneau = usePanneauOpaque();
   void isChef;
 
   useEffect(() => {
@@ -132,7 +134,10 @@ export function QuickActionsBar({
           <div
             role="menu"
             className="fixed inset-x-3 bottom-3 z-50 rounded-lg border border-slate-200 bg-white p-1.5 shadow-xl ring-1 ring-black/5 dark:border-slate-600 dark:bg-slate-900 dark:ring-white/10 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:z-40 sm:mt-2 sm:w-72 sm:rounded-md sm:p-1 sm:shadow-2xl"
-            style={{ paddingBottom: "max(0.375rem, env(safe-area-inset-bottom))" }}
+            style={{
+              ...panneau,
+              paddingBottom: "max(0.375rem, env(safe-area-inset-bottom))",
+            }}
           >
             <div className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
               Créer

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Info, Settings2, X } from "lucide-react";
+import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
 import { RubriquesPanel, type Rubrique } from "./ChantierRubriques";
 import { documentsChantier } from "./chantier-documents";
 
@@ -25,6 +26,7 @@ export function ChantierInfoSheet({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const panneau = usePanneauOpaque();
 
   // Fermeture à Échap ; verrouille le défilement de la page derrière
   useEffect(() => {
@@ -74,7 +76,10 @@ export function ChantierInfoSheet({
             role="dialog"
             aria-label={`Rubriques et documents du chantier ${chantierNom}`}
             className="fixed inset-x-0 bottom-0 z-50 max-h-[75dvh] overflow-y-auto rounded-t-2xl border-t border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
-            style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+            style={{
+              ...panneau,
+              paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+            }}
           >
             <div className="mb-3 flex items-center gap-2">
               <h2 className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900 dark:text-slate-100">

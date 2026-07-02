@@ -73,6 +73,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
 import {
   deleteChantierMessage,
   toggleMessageClientVisibility,
@@ -619,6 +620,7 @@ function MessageBubble({
     grouped.set(r.emoji, cur);
   }
   const [pickerOpen, setPickerOpen] = useState(false);
+  const panneau = usePanneauOpaque();
   const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
@@ -860,7 +862,10 @@ function MessageBubble({
                     className="fixed inset-0 z-20"
                     onClick={() => setPickerOpen(false)}
                   />
-                  <div className="absolute bottom-full left-0 mb-1 z-30 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-1 flex gap-0.5 flex-wrap max-w-[240px]">
+                  <div
+                    className="absolute bottom-full left-0 mb-1 z-30 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-1 flex gap-0.5 flex-wrap max-w-[240px]"
+                    style={panneau}
+                  >
                     {REACTION_EMOJIS.map((em) => (
                       <button
                         key={em}
