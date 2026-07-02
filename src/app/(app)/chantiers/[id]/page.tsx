@@ -33,6 +33,13 @@ import { formatEuro, formatDate } from "@/lib/utils";
 import { getFinanceChantier } from "@/lib/finances-chantier";
 import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
 import { RapportsSection } from "@/app/(app)/rapports/RapportsSection";
+import {
+  canManageMembers,
+  isChantierMembre,
+  listChantierMembres,
+  listUtilisateursInvitables,
+} from "@/features/membership";
+import { MembresCard } from "@/features/membership/components/MembresCard";
 
 export default async function ChantierDetailPage({
   params,
@@ -78,6 +85,14 @@ export default async function ChantierDetailPage({
     }),
   ]);
   if (!chantier) notFound();
+
+  // v4.3 : équipe du chantier (membres + invitables pour la gestion)
+  const membres = await listChantierMembres(id);
+  const canManage = canManageMembers(
+    me,
+    me.isConducteur ? await isChantierMembre(me.id, id) : false
+  );
+  const invitables = canManage ? await listUtilisateursInvitables(id) : [];
 
   const updateAction = updateChantier.bind(null, id);
   const deleteAction = deleteChantier.bind(null, id);
@@ -194,6 +209,28 @@ export default async function ChantierDetailPage({
                 action={updateAction}
                 submitLabel="Enregistrer"
                 isAdmin={me.canSeePrices}
+              />
+            </CardBody>
+          </Card>}
+
+          {!me.isClient && <Card>
+            <CardHeader>
+              <CardTitle>Équipe du chantier</CardTitle>
+            </CardHeader>
+            <CardBody>
+              <MembresCard
+                chantierId={id}
+                membres={membres.map((m) => ({
+                  userId: m.userId,
+                  nom: m.nom,
+                  role: m.role,
+                }))}
+                invitables={invitables.map((u) => ({
+                  id: u.id,
+                  name: u.name,
+                  role: u.role,
+                }))}
+                canManage={canManage}
               />
             </CardBody>
           </Card>}

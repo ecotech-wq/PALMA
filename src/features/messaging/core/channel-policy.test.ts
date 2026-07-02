@@ -14,6 +14,7 @@ const MATRIX: Record<ChannelRole, Record<ChannelVisibility, boolean>> = {
   CHEF: { INTERNE: true, CLIENT: true, SOUS_TRAITANT: true },
   CLIENT: { INTERNE: false, CLIENT: true, SOUS_TRAITANT: false },
   SOUS_TRAITANT: { INTERNE: false, CLIENT: false, SOUS_TRAITANT: true },
+  OUVRIER: { INTERNE: false, CLIENT: false, SOUS_TRAITANT: false },
 };
 
 const ROLES = Object.keys(MATRIX) as ChannelRole[];

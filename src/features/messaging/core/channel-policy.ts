@@ -61,10 +61,10 @@ export function canCreateChannel(user: {
  * exclut les canaux archivés. L'ordre d'entrée est préservé (la requête
  * DB trie déjà par `ordre`).
  */
-export function visibleChannels(
+export function visibleChannels<T extends ChannelRef>(
   role: ChannelRole,
-  channels: ChannelRef[]
-): ChannelRef[] {
+  channels: T[]
+): T[] {
   return channels.filter(
     (c) => c.archivedAt === null && canSeeChannel(role, c.visibility)
   );

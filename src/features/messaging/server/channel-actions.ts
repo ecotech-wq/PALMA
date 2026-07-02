@@ -13,6 +13,7 @@ import {
 } from "../core/channel-policy";
 import { isUniqueViolation } from "../core/db-errors";
 import type { ChannelVisibility } from "../core/types";
+import type { Role } from "@/generated/prisma/enums";
 
 /* -------------------------------------------------------------------------
  *  Actions de gestion des canaux de messagerie (v4.2).
@@ -82,6 +83,33 @@ export async function createChannel(
         createdById: me.id,
       },
     });
+
+    // v4.3 : ensemencement des membres. INTERNE : toute l'équipe interne
+    // du chantier. CLIENT : équipe interne + clients membres du chantier.
+    // SOUS_TRAITANT : équipe interne seule, les externes sont invités à
+    // la main. Le créateur est toujours membre.
+    const rolesSeed: Role[] =
+      data.visibility === "CLIENT"
+        ? ["CONDUCTEUR", "CHEF", "CLIENT"]
+        : ["CONDUCTEUR", "CHEF"];
+    const membres = await db.chantierMembre.findMany({
+      where: {
+        chantierId: data.chantierId,
+        user: { role: { in: rolesSeed }, status: "ACTIVE" },
+      },
+      select: { userId: true },
+    });
+    const seedIds = new Set(membres.map((m) => m.userId));
+    seedIds.add(me.id);
+    await db.canalMembre.createMany({
+      data: [...seedIds].map((userId) => ({
+        canalId: canal.id,
+        userId,
+        addedById: me.id,
+      })),
+      skipDuplicates: true,
+    });
+
     revalidatePath(`/messagerie/${data.chantierId}`);
     return canal;
   } catch (e) {

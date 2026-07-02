@@ -11,16 +11,16 @@
 export type ChannelVisibility = "INTERNE" | "CLIENT" | "SOUS_TRAITANT";
 
 /**
- * Rôles connus de la politique de visibilité. Inclut le futur rôle
- * SOUS_TRAITANT (pas encore porté par CurrentUser) pour que la
- * politique soit déjà correcte le jour où il arrive.
+ * Rôles connus de la politique de visibilité. OUVRIER (v4.3) ne voit
+ * aucun canal pour l'instant : son interface est réduite au pointage.
  */
 export type ChannelRole =
   | "ADMIN"
   | "CONDUCTEUR"
   | "CHEF"
   | "CLIENT"
-  | "SOUS_TRAITANT";
+  | "SOUS_TRAITANT"
+  | "OUVRIER";
 
 /** Référence légère d'un canal, suffisante pour la politique et l'UI. */
 export type ChannelRef = {

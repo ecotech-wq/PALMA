@@ -25,6 +25,12 @@ enum Role {
   /// sorties/retours matériel.
   CHEF
   CLIENT
+  /// v4.3 : compte ultraléger relié à un enregistrement Ouvrier.
+  /// Interface réduite au pointage (QR chantier, Arrivée/Départ).
+  OUVRIER
+  /// v4.3 : externe. Voit son canal, ses tâches/plans, SES documents.
+  /// Jamais les prix globaux ni les échanges clients.
+  SOUS_TRAITANT
 }
 
 enum UserStatus {
@@ -76,6 +82,47 @@ model User {
   messageReactions   MessageReaction[]
   canauxCrees        Canal[]              @relation("CanalCreateur")
   messageTags        MessageTag[]         @relation("TagAuteur")
+  chantiersMembre     ChantierMembre[]    @relation("MembreUser")
+  membresAjoutes      ChantierMembre[]    @relation("MembreAjoutePar")
+  canauxMembre        CanalMembre[]       @relation("CanalMembreUser")
+  canalMembresAjoutes CanalMembre[]       @relation("CanalMembreAjoutePar")
+  ouvrierLie          Ouvrier?
+}
+
+/// v4.3 : une ligne = une personne sur un chantier, quel que soit son
+/// chapeau (le rôle reste global sur User). L'admin voit tout sans
+/// lignes ; conducteurs, chefs, ouvriers, sous-traitants et clients ne
+/// voient que les chantiers où ils sont membres. Ajout et retrait par
+/// l'admin ou un conducteur membre du chantier.
+model ChantierMembre {
+  id         String   @id @default(cuid())
+  chantierId String
+  chantier   Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation("MembreUser", fields: [userId], references: [id], onDelete: Cascade)
+  addedById  String?
+  addedBy    User?    @relation("MembreAjoutePar", fields: [addedById], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@unique([chantierId, userId])
+  @@index([userId])
+}
+
+/// v4.3 : composition explicite d'un canal. Le canal Général n'a pas de
+/// lignes : l'équipe interne du chantier y est de droit. Borne dure
+/// appliquée côté action : un externe n'est invitable que sur un canal
+/// de sa classe (CLIENT -> CLIENT, SOUS_TRAITANT -> SOUS_TRAITANT).
+model CanalMembre {
+  canalId   String
+  canal     Canal    @relation(fields: [canalId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("CanalMembreUser", fields: [userId], references: [id], onDelete: Cascade)
+  addedById String?
+  addedBy   User?    @relation("CanalMembreAjoutePar", fields: [addedById], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@id([canalId, userId])
+  @@index([userId])
 }
 
 // Token à usage unique pour réinitialiser un mot de passe.
@@ -141,6 +188,7 @@ model Chantier {
   sections         Section[]
   pins             UserChantierPin[]
   canaux           Canal[]
+  membres          ChantierMembre[]
 }
 
 model Equipe {
@@ -182,6 +230,10 @@ model Ouvrier {
   actif        Boolean     @default(true)
   equipeId     String?
   equipe       Equipe?     @relation(fields: [equipeId], references: [id], onDelete: SetNull)
+  /// v4.3 : compte OUVRIER lié (pointage QR). Optionnel : un ouvrier
+  /// sans smartphone reste un simple enregistrement pointé par le chef.
+  userId       String?     @unique
+  user         User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
   notes        String?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
@@ -796,6 +848,7 @@ model Canal {
   createdAt   DateTime        @default(now())
 
   messages    JournalMessage[]
+  membres     CanalMembre[]
 
   @@unique([chantierId, nom])
   @@index([chantierId, ordre])

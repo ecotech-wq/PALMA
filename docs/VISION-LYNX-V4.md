@@ -142,3 +142,89 @@ hebdomadaire, comme aujourd'hui.
    Concrètement : un dossier par fonctionnalité (modèle, logique, actions, composants),
    zéro import croisé sauvage entre fonctionnalités, et les briques génériques
    (messagerie, tags) ignorantes du métier BTP qui les consomme.
+
+## 8. Membres, rôles et pointage (vision de Youssoufou, 2026-07-02, en cours d'arbitrage)
+
+Sa formulation : l'administrateur choisit les conducteurs de travaux et affecte à chacun
+ses chantiers. Ensuite le conducteur ou l'admin invitent les chefs de chantier et les
+ouvriers. Le chef fait les rapports, messages, incidents (comme déjà défini) mais ne voit
+ni le financier, ni le matériel, ni les commandes. Pour chaque canal, on invite qui l'on
+souhaite (conducteur ou admin), et on peut retirer qui on veut du canal ou du chantier.
+Pareil pour les sous-traitants et les clients. Les ouvriers ont une interface simple :
+un QR code par chantier, affiché sur place ; ils scannent à l'arrivée et au départ pour
+pointer.
+
+### Modèle proposé
+
+1. **Table ChantierMembre** (chantierId, userId, addedById, createdAt) : une ligne = une
+   personne sur un chantier. Le rôle reste global sur User (ADMIN, CONDUCTEUR, CHEF,
+   OUVRIER nouveau, SOUS_TRAITANT nouveau, CLIENT). Migration : Chantier.chefId et la
+   relation clients existants deviennent des lignes de membres. L'accès chantier devient :
+   admin voit tout, les autres voient LEURS chantiers (corrige le trou actuel : aujourd'hui
+   conducteurs ET chefs voient tous les chantiers, TODO déjà noté dans auth-helpers).
+2. **Table CanalMembre** (canalId, userId, addedById) : composition explicite des canaux,
+   invitation et retrait par admin ou conducteur du chantier. À la création d'un canal, la
+   visibilité (INTERNE / CLIENT / SOUS_TRAITANT) sert de gabarit de préremplissage ; le
+   canal Général reste automatique pour toute l'équipe interne du chantier. Le type du
+   canal reste une classe de sécurité : proposition de borne dure, jamais d'externe
+   (client, sous-traitant) invitable sur un canal INTERNE.
+3. **Chef de chantier** : accès limité à ses chantiers ; garde ses gestes terrain
+   (rapports, messages, incidents, demandes, déclarer sortie/retour de matériel) ; perd
+   les modules de gestion (inventaire matériel, commandes, locations, finances). À
+   arbitrer : le périmètre exact (sortie/retour terrain conservés ou non).
+4. **Ouvrier** : rôle nouveau, compte ultraléger relié à l'enregistrement Ouvrier existant
+   (déjà en base : nom, tarif, mode de paie, relié au pointage et à la paie). Interface
+   réduite au pointage (pas de messagerie au lancement, à arbitrer).
+
+### Pointage par QR (proposition affinée par la recherche)
+
+Verdict de la recherche marché : le QR statique seul est considéré comme peu sécurisé
+(photo du QR = pointage à distance, « buddy punching ») ; la pratique de référence des
+outils BTP (Alobees notamment) est QR affiché sur le chantier + position GPS captée au
+moment du scan + validation hebdomadaire par l'encadrement. Le QR rotatif exige un écran
+sur site (surdimensionné ici) ; le selfie au pointage est à proscrire en France (mise en
+demeure CNIL badgeuses photo, 27 août 2020).
+
+Fonctionnement proposé : QR par chantier imprimable depuis la fiche chantier, encodant
+une URL /pointer/<chantier> avec jeton révocable. Le scan ouvre la PWA (rien à installer) :
+première fois, l'ouvrier choisit son nom dans la liste du chantier et pose un code PIN ;
+ensuite, un bouton Arrivée ou Départ. Heure = serveur (jamais le téléphone). Position GPS
+captée uniquement à l'instant du pointage, si l'ouvrier l'accepte. Garde-fous : un
+appareil = un ouvrier par défaut, anomalies signalées au conducteur (hors zone, doublons,
+même appareil pour deux personnes, hors plage) avec correction manuelle. Alimente la
+chaîne Pointage -> Paie existante. Le pointage manuel actuel reste comme repli
+(obligation CNIL : alternative pour qui refuse ou n'a pas de smartphone).
+
+### Contraintes CNIL à respecter (recherche du 2026-07-02, applicable à La Réunion)
+
+- Information individuelle écrite préalable des salariés (L1222-4, L1121-1 du Code du
+  travail) couvrant pointage, position au badgeage, usage du téléphone personnel.
+- BYOD : usage du téléphone personnel VOLONTAIRE uniquement ; une alternative
+  professionnelle doit exister (le pointage manuel par le chef reste disponible).
+- Géolocalisation : uniquement à l'instant du pointage, jamais en continu ; finalité
+  « preuve de présence sur chantiers dispersés » ; refus possible sans sanction
+  (pointage enregistré sans position, marqué comme tel).
+- Pas de photo systématique au pointage (badgeuses photo sanctionnées par la CNIL).
+- Conservation : logs bruts 3 mois ; données servant à la paie jusqu'à 5 ans ;
+  inscription au registre des traitements ; AIPD à envisager si le dispositif s'étend.
+- CSE : consultation obligatoire seulement à partir de 50 salariés (non atteint).
+
+Sources principales : cnil.fr (accès locaux et contrôle des horaires ; géolocalisation
+des véhicules ; BYOD bonnes pratiques ; badgeuses photo, mise en demeure du 27/08/2020 ;
+délibération SAN-2024-021 du 19/12/2024), Code du travail L1121-1, L1222-4, L2312-38,
+L3171-2 ; marché : keobat.fr (guide pointage BTP), alobees.com, traxxeo.com,
+buddypunch.com (chiffres buddy punching), connecteam.com.
+
+### Arbitrages rendus (Youssoufou, 2026-07-02, soir)
+
+1. **Chef et matériel** : le chef DEMANDE (matériel, commande, location) auprès du
+   conducteur ou de l'admin, qui VALIDENT. Les constats de terrain (déclarer une sortie
+   ou un retour d'outillage) restent des gestes du chef. Aucun module de gestion ni prix.
+2. **Borne dure canaux** : tranchée OUI (par Claude, sur délégation) : un externe
+   (client, sous-traitant) n'est JAMAIS invitable sur un canal interne. Le type du canal
+   est une classe de sécurité, pas une étiquette.
+3. **Ouvriers** : pointage seul au lancement. La messagerie leur sera ouverte plus tard,
+   canal par canal, si le besoin apparaît.
+4. **GPS au pointage** : OUI, position captée uniquement à l'instant du scan, refusable
+   par l'ouvrier (pointage « sans position » signalé), note d'information préalable à
+   rédiger avant le déploiement réel.

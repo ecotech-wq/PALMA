@@ -21,9 +21,14 @@ const channelSelect = {
 } as const;
 
 /**
- * Liste les canaux d'un chantier visibles par l'utilisateur : filtre
- * par rôle (cf. core/channel-policy.ts), exclut les archivés, trie par
- * ordre puis date de création.
+ * Liste les canaux d'un chantier visibles par l'utilisateur.
+ * Deux couches (v4.3) :
+ *  1. la classe de sécurité (rôle x visibilité, core/channel-policy.ts)
+ *     et l'exclusion des archivés ;
+ *  2. l'adhésion explicite (CanalMembre) : le Général est de droit pour
+ *     l'équipe interne ; l'admin et le conducteur membre du chantier
+ *     voient tous les canaux (ils les gèrent) ; les autres ne voient
+ *     que les canaux dont ils sont membres.
  */
 export async function listChannelsFor(
   user: CurrentUser,
@@ -32,9 +37,28 @@ export async function listChannelsFor(
   const canaux = await db.canal.findMany({
     where: { chantierId },
     orderBy: [{ ordre: "asc" }, { createdAt: "asc" }],
-    select: channelSelect,
+    select: {
+      ...channelSelect,
+      membres: { where: { userId: user.id }, select: { userId: true } },
+    },
   });
-  return visibleChannels(user.role, canaux);
+  const parClasse = visibleChannels(user.role, canaux);
+
+  let voitTout = user.isAdmin;
+  if (!voitTout && user.isConducteur) {
+    const membre = await db.chantierMembre.findUnique({
+      where: { chantierId_userId: { chantierId, userId: user.id } },
+      select: { id: true },
+    });
+    voitTout = membre !== null;
+  }
+
+  return parClasse
+    .filter(
+      (c) =>
+        voitTout || c.nom === GENERAL_CHANNEL_NAME || c.membres.length > 0
+    )
+    .map(({ membres: _membres, ...ref }) => ref);
 }
 
 /**
