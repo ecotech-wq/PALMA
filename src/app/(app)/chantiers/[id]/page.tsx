@@ -19,6 +19,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Onglets } from "@/components/ui/Onglets";
+import { BoutonConfirmation } from "@/components/ui/BoutonConfirmation";
 import { Badge } from "@/components/ui/Badge";
 import { ChantierForm } from "../ChantierForm";
 import { ChantierStatutBadge } from "../ChantierStatutBadge";
@@ -159,10 +160,14 @@ export default async function ChantierDetailPage({
             )}
             {me.isAdmin && (
               <form action={deleteAction}>
-                <Button type="submit" variant="danger" size="sm">
+                <BoutonConfirmation
+                  titre="Supprimer le chantier"
+                  message={`Supprimer « ${chantier.nom} » et toutes ses données (pointages, commandes, rapports, messages) ? Cette action est définitive.`}
+                  libelleConfirmer="Supprimer"
+                >
                   <Trash2 size={14} />
                   <span className="hidden sm:inline">Supprimer</span>
-                </Button>
+                </BoutonConfirmation>
               </form>
             )}
           </div>
@@ -262,12 +267,14 @@ export default async function ChantierDetailPage({
                           </span>
                         </Link>
                         <form action={detach}>
-                          <button
-                            type="submit"
-                            className="text-xs text-slate-500 dark:text-slate-500 hover:text-red-600"
+                          <BoutonConfirmation
+                            titre="Retirer l'équipe"
+                            message={`Retirer l'équipe « ${e.nom} » de ce chantier ? Ses ouvriers ne seront plus proposés au pointage ici.`}
+                            libelleConfirmer="Retirer"
+                            variant="outline"
                           >
                             Retirer
-                          </button>
+                          </BoutonConfirmation>
                         </form>
                       </div>
                     );

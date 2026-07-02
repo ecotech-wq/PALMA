@@ -4,6 +4,7 @@ import { Check, X, Trash2, Save, Undo2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { BoutonConfirmation } from "@/components/ui/BoutonConfirmation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Field, Input, Select } from "@/components/ui/Input";
@@ -267,15 +268,14 @@ export default async function PaiementDetailPage({
             </CardHeader>
             <CardBody>
               <form action={deleteAction}>
-                <Button
-                  type="submit"
-                  variant="danger"
-                  size="sm"
-                  className="w-full"
+                <BoutonConfirmation
+                  titre="Supprimer le paiement"
+                  message="Supprimer définitivement ce paiement ? Les avances réglées et retenues outils seront restaurées si le paiement n'était pas annulé."
+                  libelleConfirmer="Supprimer"
                 >
                   <Trash2 size={14} />
                   Supprimer ce paiement
-                </Button>
+                </BoutonConfirmation>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-2">
                   {paiement.statut === "ANNULE"
                     ? "Suppression sèche : l'historique disparaît définitivement."

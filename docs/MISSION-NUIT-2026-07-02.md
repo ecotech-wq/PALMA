@@ -15,14 +15,14 @@ ne JAMAIS cocher une case de cette liste avant que le commit correspondant exist
 
 ## Checklist (cocher UNIQUEMENT une fois le commit fait et vérifié)
 
-- [ ] A. BUG panneau « Créer » transparent chez lui (Firefox) : fond opaque
+- [x] A. (commit 0615344) BUG panneau « Créer » transparent chez lui (Firefox) : fond opaque
       INCONDITIONNEL (style inline calculé côté client, indépendant de la feuille de
       styles) sur TOUS les panneaux flottants : menu Créer, feuille « + » du composer,
       TagPicker, ChantierInfoSheet, popover Compiler rapport, sélecteur de réactions.
-- [ ] B. Mode discret PARTOUT : composant Montant sur paie, matériel, commandes,
+- [x] B. (commits c09cd3c partiel + 4745e5c) Mode discret PARTOUT : composant Montant sur paie, matériel, commandes,
       locations, chantiers (liste + fiche Finances), demandes, ouvriers, avances.
-- [ ] C. Fiche chantier en ONGLETS : Vue d'ensemble / Équipe / Documents / Finances.
-- [ ] D. AUDIT UX « comme un humain » par rôle (workflow d'agents sur le code, moi au
+- [x] C. (commit c09cd3c) Fiche chantier en ONGLETS : Vue d'ensemble / Équipe / Documents / Finances.
+- [x] D. (docs/AUDIT-UX-2026-07-03.md, 63 constats bruts a verifier) AUDIT UX « comme un humain » par rôle (workflow d'agents sur le code, moi au
       navigateur) : parcours ADMIN, CONDUCTEUR, CHEF (terrain d'abord), CLIENT.
       Relever : impasses de navigation, actions à plus de 2 gestes, écrans sans retour,
       interactions au survol seul, incohérences de vocabulaire, écrans surchargés.
@@ -41,3 +41,12 @@ da266ad (mode discret), 2ec4734 (accueil refondu), 097ba14 (+ accueil), 68814ca 
 mini-serveur local de redirection (les cookies ignorent les ports).
 
 ## Journal de nuit (append au fil de l'eau, avec les vrais hashes)
+
+- 0615344 : panneaux opaques (A). c09cd3c : onglets fiche chantier (C) + une partie du
+  balayage B embarquee par erreur (git add -A pendant que l'agent travaillait ; contenu
+  correct, message incomplet, assume). 4745e5c : fin du balayage B (41 montants, 12 fichiers).
+- Audit D : 63 constats bruts dans docs/AUDIT-UX-2026-07-03.md, TRIES par priorite.
+  ATTENTION agents faillibles : au moins un constat est FAUX (le backHref de la fiche
+  chantier existe). Verifier chaque constat dans le code avant de corriger, marquer
+  CONFIRME/REJETE/CORRIGE (hash) dans le document.
+- Reste : E (verifier puis corriger les P1-terrain d'abord), F (npm run build), G (rapport).
