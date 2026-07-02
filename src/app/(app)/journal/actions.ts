@@ -206,7 +206,9 @@ export async function insertSystemMessage(opts: {
     | "SYSTEM_RETOUR"
     | "SYSTEM_LOCATION"
     | "SYSTEM_LOCATION_FIN"
-    | "SYSTEM_PLAN";
+    | "SYSTEM_PLAN"
+    | "SYSTEM_TACHE"
+    | "SYSTEM_RESERVE";
   texte: string;
   authorId?: string;
   incidentId?: string;
@@ -214,6 +216,10 @@ export async function insertSystemMessage(opts: {
   commandeId?: string;
   rapportId?: string;
   sortieId?: string;
+  // v4.2 : fiches creees par tag + canal du message systeme (defaut : Général)
+  tacheId?: string;
+  reserveId?: string;
+  canalId?: string;
   photos?: string[];
   videos?: string[];
 }) {
@@ -236,6 +242,9 @@ export async function insertSystemMessage(opts: {
         commandeId: opts.commandeId,
         rapportId: opts.rapportId,
         sortieId: opts.sortieId,
+        tacheId: opts.tacheId,
+        reserveId: opts.reserveId,
+        canalId: opts.canalId,
       },
     });
   } catch (e) {

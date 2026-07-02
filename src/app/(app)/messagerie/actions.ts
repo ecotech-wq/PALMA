@@ -11,6 +11,7 @@ import {
 import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
 import { notifyAdmins, notify } from "@/lib/notifications";
 import { audit } from "@/lib/audit";
+import { getOrCreateGeneral } from "@/features/messaging";
 
 /* -------------------------------------------------------------------------
  *  Composer chat-first : un seul point d'entrée pour TOUTES les actions
@@ -41,6 +42,8 @@ type Categorie = (typeof CATEGORIES)[number];
 const baseSchema = z.object({
   chantierId: z.string().min(1, "Chantier requis"),
   category: z.enum(CATEGORIES),
+  // Canal du fil où poster (v4.2) ; vide = Général
+  canalId: z.string().optional().or(z.literal("")),
   texte: z.string().optional().or(z.literal("")),
   // Cachée du client (admin/conducteur uniquement)
   hiddenFromClient: z.coerce.boolean().optional(),
@@ -112,6 +115,7 @@ export async function postChantierMessage(formData: FormData) {
   const data = baseSchema.parse({
     chantierId: formData.get("chantierId"),
     category: formData.get("category") || "NOTE",
+    canalId: formData.get("canalId") || "",
     texte: formData.get("texte") || "",
     hiddenFromClient: formData.get("hiddenFromClient") === "1",
     titre: formData.get("titre") || "",
@@ -132,6 +136,12 @@ export async function postChantierMessage(formData: FormData) {
   // Seul un admin ou conducteur peut cacher au client
   const hiddenFromClient =
     !!data.hiddenFromClient && (me.isAdmin || me.isConducteur);
+
+  // Canal cible (v4.2) : celui fourni par le composer, sinon Général du chantier
+  const canalId =
+    data.canalId && data.canalId.trim() !== ""
+      ? data.canalId
+      : (await getOrCreateGeneral(data.chantierId)).id;
 
   const { photos, videos } = await uploadMedia(formData);
 
@@ -163,6 +173,7 @@ export async function postChantierMessage(formData: FormData) {
         photos,
         videos,
         hiddenFromClient,
+        canalId,
       },
     });
     await notifyChat(me, chantier, data.chantierId, data.texte || "[média]");
@@ -199,6 +210,7 @@ export async function postChantierMessage(formData: FormData) {
         videos,
         incidentId: incident.id,
         hiddenFromClient,
+        canalId,
       },
     });
     await notifyAdmins(
@@ -242,6 +254,7 @@ export async function postChantierMessage(formData: FormData) {
         videos,
         demandeId: demande.id,
         hiddenFromClient,
+        canalId,
       },
     });
     await notifyAdmins(
@@ -283,6 +296,7 @@ export async function postChantierMessage(formData: FormData) {
         videos,
         rapportId: rapport.id,
         hiddenFromClient,
+        canalId,
       },
     });
     await notifyAdmins(
@@ -332,6 +346,7 @@ export async function postChantierMessage(formData: FormData) {
         videos,
         sortieId: sortie.id,
         hiddenFromClient,
+        canalId,
       },
     });
     revalidatePath(`/chantiers/${data.chantierId}/journal`);
@@ -383,6 +398,7 @@ export async function postChantierMessage(formData: FormData) {
         videos,
         sortieId: sortie.id,
         hiddenFromClient,
+        canalId,
       },
     });
     revalidatePath(`/chantiers/${data.chantierId}/journal`);

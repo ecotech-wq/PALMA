@@ -101,12 +101,15 @@ const METEO_OPTIONS = [
 
 export function ChantierComposer({
   chantierId,
+  canalId,
   materiels,
   equipes,
   sortiesOuvertes,
   canHideFromClient = false,
 }: {
   chantierId: string;
+  /** Canal actif : les messages postés y sont rattachés (v4.2) */
+  canalId?: string | null;
   materiels: Materiel[];
   equipes: Equipe[];
   sortiesOuvertes: SortieOuverte[];
@@ -170,6 +173,7 @@ export function ChantierComposer({
     e.preventDefault();
     const fd = new FormData();
     fd.set("chantierId", chantierId);
+    if (canalId) fd.set("canalId", canalId);
     fd.set("category", category);
     fd.set("texte", texte);
     if (canHideFromClient && hiddenFromClient) fd.set("hiddenFromClient", "1");

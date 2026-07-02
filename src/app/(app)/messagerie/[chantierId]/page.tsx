@@ -10,6 +10,12 @@ import { CompileRapportButton } from "../CompileRapportButton";
 import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
 import { markResourceRead } from "@/lib/read-state";
 import { getPhotoMetadata } from "@/lib/upload";
+import {
+  listChannelsFor,
+  getOrCreateGeneral,
+  ChannelBar,
+  readResourceKey,
+} from "@/features/messaging";
 
 /**
  * Le fil d'un chantier — vue chat WhatsApp-like. Affiche les N derniers
@@ -18,15 +24,27 @@ import { getPhotoMetadata } from "@/lib/upload";
  */
 export default async function MessagerieChantierPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ chantierId: string }>;
+  searchParams: Promise<{ canal?: string }>;
 }) {
   const { chantierId } = await params;
+  const { canal } = await searchParams;
   const me = await requireAuth();
   if (me.isClient) redirect("/dashboard");
   await requireChantierAccess(me, chantierId);
-  // Marque le fil comme lu (badge sidebar décrémenté à la prochaine nav)
-  await markResourceRead(me.id, `chantier:${chantierId}`);
+
+  // v4.2 : canaux du chantier. On garantit le canal "Général" puis on
+  // choisit le canal actif (paramètre d'URL, sinon le premier visible).
+  const general = await getOrCreateGeneral(chantierId);
+  const channels = await listChannelsFor(me, chantierId);
+  const activeCanalId =
+    canal && channels.some((c) => c.id === canal) ? canal : (channels[0]?.id ?? general.id);
+  const isGeneralActive = activeCanalId === general.id;
+
+  // Marque le canal actif comme lu (badge sidebar décrémenté à la prochaine nav)
+  await markResourceRead(me.id, readResourceKey(chantierId, activeCanalId));
 
   // Fenêtre par défaut : 14 derniers jours
   const now = new Date();
@@ -46,12 +64,20 @@ export default async function MessagerieChantierPage({
         },
       }),
       db.journalMessage.findMany({
-        where: { chantierId, createdAt: { gte: since } },
+        where: {
+          chantierId,
+          createdAt: { gte: since },
+          // Canal actif ; les messages historiques sans canal restent au Général
+          ...(isGeneralActive
+            ? { OR: [{ canalId: activeCanalId }, { canalId: null }] }
+            : { canalId: activeCanalId }),
+        },
         include: {
           author: { select: { id: true, name: true, role: true } },
           reactions: {
             select: { emoji: true, userId: true },
           },
+          tags: { select: { tagCode: true } },
         },
         orderBy: { createdAt: "asc" },
       }),
@@ -134,6 +160,17 @@ export default async function MessagerieChantierPage({
         }
       />
 
+      {/* Barre des canaux (v4.2) */}
+      <div className="shrink-0 mb-2">
+        <ChannelBar
+          projectId={chantierId}
+          channels={channels}
+          activeId={activeCanalId}
+          hrefBase={`/messagerie/${chantierId}`}
+          user={{ isAdmin: me.isAdmin, isConducteur: me.isConducteur }}
+        />
+      </div>
+
       {/* Feed scrollable */}
       <div className="flex-1 min-h-0 overflow-hidden mb-3">
         <Card className="h-full">
@@ -160,8 +197,10 @@ export default async function MessagerieChantierPage({
                   emoji: r.emoji,
                   userId: r.userId,
                 })),
+                tags: m.tags.map((t) => t.tagCode),
               }))}
               currentUserId={me.id}
+              viewerRole={me.role}
               canEdit={me.isAdmin || me.isConducteur}
               canPilotDemandes={me.isAdmin || me.isConducteur}
               demandeInfo={demandeInfo}
@@ -175,6 +214,7 @@ export default async function MessagerieChantierPage({
       <div className="shrink-0">
         <ChantierComposer
           chantierId={chantierId}
+          canalId={activeCanalId}
           materiels={materiels}
           equipes={equipes}
           sortiesOuvertes={sortiesForComposer}

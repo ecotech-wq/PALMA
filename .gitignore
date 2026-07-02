@@ -58,3 +58,6 @@ next-env.d.ts
 # IDE
 /.idea
 /.vscode
+
+# logs de dev locaux
+.next-dev-*.log

@@ -1,5 +1,6 @@
 import "server-only";
 import nodemailer from "nodemailer";
+import { BRAND } from "@/lib/theme";
 
 /**
  * Service d'envoi d'email avec dégradation gracieuse :
@@ -61,7 +62,7 @@ export async function sendEmail(opts: SendOptions): Promise<boolean> {
   }
 
   const from =
-    process.env.SMTP_FROM ?? `Autonhome <no-reply@${getDomainFromUrl()}>`;
+    process.env.SMTP_FROM ?? `${BRAND.emailFromName} <no-reply@${getDomainFromUrl()}>`;
   await transporter.sendMail({
     from,
     to: opts.to,
@@ -74,14 +75,14 @@ export async function sendEmail(opts: SendOptions): Promise<boolean> {
 
 function getDomainFromUrl(): string {
   try {
-    const url = process.env.NEXTAUTH_URL ?? "https://autonhome.alphatek.fr";
+    const url = process.env.NEXTAUTH_URL ?? `https://${BRAND.domain}`;
     return new URL(url).hostname;
   } catch {
-    return "autonhome.alphatek.fr";
+    return BRAND.domain;
   }
 }
 
 export function appUrl(path: string): string {
-  const base = process.env.NEXTAUTH_URL ?? "https://autonhome.alphatek.fr";
+  const base = process.env.NEXTAUTH_URL ?? `https://${BRAND.domain}`;
   return new URL(path, base).toString();
 }

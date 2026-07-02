@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { PwaRegister } from "@/components/PwaRegister";
+import { BRAND } from "@/lib/theme";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,13 +16,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Autonhome — Gestion de chantier",
-  description: "Outil de gestion de chantier Autonhome — matériel, équipes, paie, planning",
+  title: `${BRAND.appName} : ${BRAND.tagline}`,
+  description: `${BRAND.appName}, outil de ${BRAND.tagline.toLowerCase()} : matériel, équipes, paie, planning`,
   manifest: "/manifest.webmanifest",
-  applicationName: "Autonhome",
+  applicationName: BRAND.appName,
   appleWebApp: {
     capable: true,
-    title: "Autonhome",
+    title: BRAND.shortName,
     statusBarStyle: "black-translucent",
   },
   icons: {
@@ -37,6 +38,8 @@ export const viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  // TODO tokens : aligner ces couleurs sur les tokens CSS de globals.css
+  // (elles restent en dur ici tant que le chantier tokens/thème n'est pas passé)
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#135858" },
     { media: "(prefers-color-scheme: dark)", color: "#0b1212" },

@@ -2,6 +2,7 @@ import "server-only";
 import { TOTP, Secret } from "otpauth";
 import { createHash, randomBytes } from "node:crypto";
 import qrcode from "qrcode";
+import { BRAND } from "@/lib/theme";
 
 /* -------------------------------------------------------------------------
  *  2FA TOTP (RFC 6238) — Authentificateur compatible Google Authenticator,
@@ -11,7 +12,7 @@ import qrcode from "qrcode";
  *  Window = 1 : on accepte le code courant ± un cycle de 30s (clock skew).
  * ----------------------------------------------------------------------- */
 
-const ISSUER = "Autonhome";
+const ISSUER = BRAND.totpIssuer;
 const WINDOW = 1;
 const DIGITS = 6;
 const PERIOD = 30;

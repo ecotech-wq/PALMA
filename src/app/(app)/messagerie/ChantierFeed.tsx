@@ -83,7 +83,16 @@ import {
 import { SmilePlus } from "lucide-react";
 import { Check, X } from "lucide-react";
 import { Lightbox, type PhotoMeta } from "@/components/Lightbox";
-import { MapPin } from "lucide-react";
+import { MapPin, Tag as TagIcon } from "lucide-react";
+import {
+  TagPicker,
+  TagChip,
+  canApplyTag,
+  listTagsForRole,
+  type Role as TagRole,
+  type TagCode,
+} from "@/features/tags";
+import { applyTagToMessage } from "./tag-actions";
 
 type ChatMessage = {
   id: string;
@@ -102,6 +111,8 @@ type ChatMessage = {
   rapportId: string | null;
   createdAt: Date | string;
   reactions?: { emoji: string; userId: string }[];
+  // v4.2 : tags déjà posés sur ce message (codes du catalogue)
+  tags?: string[];
 };
 
 const REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😂", "😮", "😢", "🙏"];
@@ -253,6 +264,7 @@ export function ChantierFeed({
   chantierId,
   messages,
   currentUserId,
+  viewerRole,
   canEdit,
   canPilotDemandes = false,
   demandeInfo = {},
@@ -261,6 +273,7 @@ export function ChantierFeed({
   chantierId: string;
   messages: ChatMessage[];
   currentUserId: string;
+  viewerRole: TagRole;
   canEdit: boolean;
   canPilotDemandes?: boolean;
   demandeInfo?: Record<string, DemandeInfo>;
@@ -447,6 +460,7 @@ export function ChantierFeed({
                 canPilotDemandes={canPilotDemandes}
                 demandeInfo={m.demandeId ? demandeInfo[m.demandeId] : undefined}
                 currentUserId={currentUserId}
+                viewerRole={viewerRole}
                 photoMeta={photoMeta}
               />
             ))}
@@ -472,6 +486,7 @@ export function ChantierFeed({
                 canPilotDemandes={canPilotDemandes}
                 demandeInfo={m.demandeId ? demandeInfo[m.demandeId] : undefined}
                 currentUserId={currentUserId}
+                viewerRole={viewerRole}
                 photoMeta={photoMeta}
               />
             ))}
@@ -491,6 +506,7 @@ function MessageBubble({
   canPilotDemandes,
   demandeInfo,
   currentUserId,
+  viewerRole,
   photoMeta,
 }: {
   msg: ChatMessage;
@@ -499,6 +515,7 @@ function MessageBubble({
   canPilotDemandes: boolean;
   demandeInfo: DemandeInfo | undefined;
   currentUserId: string;
+  viewerRole: TagRole;
   photoMeta: Record<string, PhotoMeta>;
 }) {
   // Groupage des réactions par emoji
@@ -511,13 +528,35 @@ function MessageBubble({
     grouped.set(r.emoji, cur);
   }
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
   const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const tags = msg.tags ?? [];
+
+  function handleApplyTag(code: TagCode) {
+    setTagPickerOpen(false);
+    startTransition(async () => {
+      try {
+        const res = await applyTagToMessage(msg.id, code);
+        toast.success(`${res.resume}`);
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Erreur");
+      }
+    });
+  }
   const meta = TYPE_META[msg.type] ?? TYPE_META.NOTE;
   const linkedHref = meta.href?.(msg) ?? null;
   const isTyped = msg.type !== "NOTE";
+  // Un tag se pose sur un vrai message (NOTE), pas sur une trace système,
+  // par un rôle qui en a le droit, et si le message n'a pas déjà ce tag.
+  const canTagThis =
+    !isTyped &&
+    listTagsForRole(viewerRole).some(
+      (d) => !tags.includes(d.code) && canApplyTag(viewerRole, d.code)
+    );
 
   function handleDelete() {
     if (!confirm("Supprimer ce message ?")) return;
@@ -632,6 +671,15 @@ function MessageBubble({
             <p className="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words leading-snug">
               {msg.texte}
             </p>
+          )}
+
+          {/* Tags posés (v4.2) : chaque tag renvoie à la fiche créée */}
+          {tags.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {tags.map((code) => (
+                <TagChip key={code} code={code} />
+              ))}
+            </div>
           )}
 
           {/* Photos */}
@@ -795,6 +843,28 @@ function MessageBubble({
             >
               <SmilePlus size={11} /> Réagir
             </button>
+            {canTagThis && (
+              <div className="relative inline-flex">
+                <button
+                  type="button"
+                  onClick={() => setTagPickerOpen((v) => !v)}
+                  disabled={pending}
+                  className="inline-flex items-center gap-0.5 hover:text-brand-600 dark:hover:text-brand-400 disabled:opacity-50"
+                  title="Taguer : ranger ce message dans une rubrique"
+                >
+                  <TagIcon size={11} /> Taguer
+                </button>
+                {tagPickerOpen && (
+                  <div className="absolute bottom-full left-0 mb-1 z-30">
+                    <TagPicker
+                      role={viewerRole}
+                      onSelect={handleApplyTag}
+                      disabled={pending}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
             {linkedHref && (
               <Link
                 href={linkedHref}
