@@ -252,23 +252,24 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-5">
-      {/* En-tête : le jour, pas un « tableau de bord » */}
-      <div>
-        <h1 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-slate-100">
-          {titreJour}
-        </h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-          {chantiersActifsList.length} chantier
-          {chantiersActifsList.length > 1 ? "s" : ""} en cours
-        </p>
+      {/* En-tête : le jour, pas un « tableau de bord ». Les actions de
+          création vivent derrière le « + », comme dans la messagerie. */}
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-slate-100">
+            {titreJour}
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            {chantiersActifsList.length} chantier
+            {chantiersActifsList.length > 1 ? "s" : ""} en cours
+          </p>
+        </div>
+        <QuickActionsBar
+          isAdmin={me.isAdmin}
+          isConducteur={me.isConducteur}
+          isChef={me.isChef}
+        />
       </div>
-
-      {/* Actions rapides selon le rôle */}
-      <QuickActionsBar
-        isAdmin={me.isAdmin}
-        isConducteur={me.isConducteur}
-        isChef={me.isChef}
-      />
 
       {/* Le mur du terrain : les photos du jour, chaque photo ramène à
           sa conversation */}

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { CalendarCheck, Users, AlertCircle, ArrowRight } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
 
 /**
  * Widget "Aujourd'hui" : un coup d'œil immédiat sur ce qui se passe
@@ -101,21 +100,12 @@ export async function TodayWidget() {
     (o) => o.equipe?.chantier && !pointesIds.has(o.id)
   );
 
-  const todayLabel = today.toLocaleDateString("fr-FR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
-
   return (
-    <Card className="mb-5">
+    <Card>
       <CardHeader className="flex items-center justify-between gap-2 flex-wrap">
         <CardTitle className="flex items-center gap-2">
           <CalendarCheck size={18} className="text-brand-600" />
-          Aujourd&apos;hui
-          <span className="text-xs font-normal text-slate-500 dark:text-slate-400 capitalize">
-            — {todayLabel}
-          </span>
+          Sur le terrain
         </CardTitle>
         <div className="flex items-center gap-2">
           <Link
@@ -134,6 +124,7 @@ export async function TodayWidget() {
             value={pointesIds.size}
             sub={`${totalJours} j-h`}
             color="green"
+            href="/pointage"
           />
           <Stat
             label="Manquants"
@@ -142,12 +133,14 @@ export async function TodayWidget() {
               nonPointes.length > 0 ? "à vérifier" : "Tous pointés"
             }
             color={nonPointes.length > 0 ? "amber" : "slate"}
+            href="/pointage"
           />
           <Stat
             label="Chantiers actifs"
             value={groupedArray.filter((g) => g.chantierId).length}
             sub="aujourd'hui"
-            color="blue"
+            color="slate"
+            href="/chantiers"
           />
         </div>
 
@@ -246,23 +239,27 @@ function Stat({
   value,
   sub,
   color,
+  href,
 }: {
   label: string;
   value: number;
   sub: string;
-  color: "green" | "amber" | "blue" | "slate";
+  color: "green" | "amber" | "slate";
+  href: string;
 }) {
   const map = {
     green:
       "bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-400",
     amber:
       "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400",
-    blue: "bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400",
     slate:
       "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300",
   };
   return (
-    <div className={`rounded-lg p-2 ${map[color]}`}>
+    <Link
+      href={href}
+      className={`block rounded-lg p-2 transition hover:ring-2 hover:ring-brand-400/60 ${map[color]}`}
+    >
       <div className="text-[10px] uppercase tracking-wider font-medium opacity-80">
         {label}
       </div>
@@ -270,6 +267,6 @@ function Stat({
         {value}
       </div>
       <div className="text-[10px] opacity-80 truncate">{sub}</div>
-    </div>
+    </Link>
   );
 }
