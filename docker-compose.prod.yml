@@ -63,6 +63,11 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+    ports:
+      # Publication sur l'hôte pour un reverse proxy externe (le serveur
+      # actuel utilise nginx -> 127.0.0.1:3010). Sans danger quand Caddy
+      # est utilisé : l'écoute reste limitée à 127.0.0.1.
+      - "127.0.0.1:${APP_LOCAL_PORT:-3010}:3000"
     volumes:
       # Photos uploadées : persistées hors du conteneur
       - uploads:/app/public/uploads
@@ -73,6 +78,10 @@ services:
     image: caddy:2-alpine
     container_name: ogc-caddy
     restart: unless-stopped
+    # Optionnel : uniquement pour une installation neuve SANS reverse
+    # proxy sur l'hôte. Démarrer avec : --profile caddy
+    # (le serveur actuel a déjà nginx sur 80/443, Caddy ne peut pas s'y lier)
+    profiles: ["caddy"]
     ports:
       - "80:80"
       - "443:443"
@@ -118,8 +127,15 @@ services:
       - ogc-net
 
 volumes:
+  # Noms épinglables : permet de réutiliser des volumes existants quand le
+  # nom de projet ou la clé de volume a changé (incident du 2026-07-02 :
+  # un renommage de clé avait fait monter des volumes neufs et vides à la
+  # place des données réelles). Sur le serveur actuel, .env.production
+  # fixe app_autonhome_postgres et app_autonhome_uploads.
   postgres_data:
+    name: ${POSTGRES_VOLUME_NAME:-ogc-postgres-data}
   uploads:
+    name: ${UPLOADS_VOLUME_NAME:-ogc-uploads}
   caddy_data:
   caddy_config:
 

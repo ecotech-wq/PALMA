@@ -76,7 +76,7 @@ AUTH_SECRET=<32+ char aléatoire>
 ## 5. Premier démarrage
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env.production --profile caddy up -d --build
 ```
 
 À la première exécution :
@@ -121,7 +121,7 @@ l'admin qui vient d'être créé.
 ```bash
 cd /opt/autonhome/app
 git pull
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env.production --profile caddy up -d --build
 ```
 
 Les migrations Prisma sont appliquées automatiquement au démarrage.
@@ -163,7 +163,7 @@ docker compose -f docker-compose.prod.yml restart app
 
 # Nettoyer et tout reconstruire (sans toucher aux volumes/data)
 docker compose -f docker-compose.prod.yml down
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env.production --profile caddy up -d --build
 ```
 
 ## 12. Sécurité — checklist initiale
