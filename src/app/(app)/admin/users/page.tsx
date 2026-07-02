@@ -51,7 +51,8 @@ export default async function AdminUsersPage() {
   return (
     <div>
       <PageHeader
-        title="Administration — Utilisateurs"
+        backHref="/dashboard"
+        title="Utilisateurs et accès"
         description={`${users.length} compte${users.length > 1 ? "s" : ""}${
           pendingCount > 0
             ? ` · ${pendingCount} en attente d'approbation`

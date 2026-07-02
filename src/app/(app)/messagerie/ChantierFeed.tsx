@@ -896,16 +896,16 @@ function MessageBubble({
                   type="button"
                   onClick={handleApproveDemande}
                   disabled={pending}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-600 text-white text-xs hover:bg-emerald-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 px-3 py-2 rounded-md bg-emerald-600 text-white text-xs hover:bg-emerald-700 disabled:opacity-50"
                   title="Approuver et créer la commande"
                 >
-                  <Check size={12} /> Approuver &amp; commander
+                  <Check size={12} /> Valider et commander
                 </button>
                 <button
                   type="button"
                   onClick={handleRefuseDemande}
                   disabled={pending}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white dark:bg-slate-900 border border-red-300 dark:border-red-900 text-red-700 dark:text-red-300 text-xs hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 px-3 py-2 rounded-md bg-white dark:bg-slate-900 border border-red-300 dark:border-red-900 text-red-700 dark:text-red-300 text-xs hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50"
                   title="Refuser cette demande"
                 >
                   <X size={12} /> Refuser
