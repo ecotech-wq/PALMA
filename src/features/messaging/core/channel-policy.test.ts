@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   canSeeChannel,
   canCreateChannel,
+  normalizeChannelName,
   visibleChannels,
 } from "./channel-policy";
 import type { ChannelRef, ChannelRole, ChannelVisibility } from "./types";
@@ -106,5 +107,39 @@ describe("visibleChannels", () => {
 
   it("liste vide -> liste vide", () => {
     expect(visibleChannels("ADMIN", [])).toEqual([]);
+  });
+});
+
+describe("normalizeChannelName", () => {
+  it("retire les accents : Général -> general", () => {
+    expect(normalizeChannelName("Général")).toBe("general");
+  });
+
+  it("Général, general et GENERAL sont équivalents (cas réel du doublon)", () => {
+    expect(normalizeChannelName("general")).toBe(
+      normalizeChannelName("Général")
+    );
+    expect(normalizeChannelName("  GENERAL ")).toBe(
+      normalizeChannelName("Général")
+    );
+  });
+
+  it("réduit les espaces internes multiples", () => {
+    expect(normalizeChannelName("Suivi   terrain")).toBe("suivi terrain");
+  });
+
+  it("couvre les diacritiques français courants", () => {
+    expect(normalizeChannelName("Réserves à lever (été)")).toBe(
+      "reserves a lever (ete)"
+    );
+    expect(normalizeChannelName("Contrôle béton çà et là")).toBe(
+      "controle beton ca et la"
+    );
+  });
+
+  it("deux noms réellement différents restent différents", () => {
+    expect(normalizeChannelName("terrain")).not.toBe(
+      normalizeChannelName("client")
+    );
   });
 });

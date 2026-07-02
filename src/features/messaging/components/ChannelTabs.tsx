@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Hash, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChannelRef, ChannelVisibility } from "../core/types";
 
@@ -54,6 +54,10 @@ export function ChannelTabs({
         );
         const content = (
           <>
+            <Hash
+              size={12}
+              className={active ? "text-brand-600" : "text-muted-foreground/60"}
+            />
             <span className="max-w-[10rem] truncate">{c.nom}</span>
             {badge && (
               <span className="rounded-full border border-border-default bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">

@@ -19,6 +19,7 @@ export {
   GENERAL_CHANNEL_NAME,
   canCreateChannel,
   canSeeChannel,
+  normalizeChannelName,
   visibleChannels,
 } from "./core/channel-policy";
 export { readResourceKey } from "./core/unread";
@@ -36,4 +37,5 @@ export { getOrCreateGeneral, listChannelsFor } from "./server/channel-queries";
 // Composants UI
 export { ChannelBar } from "./components/ChannelBar";
 export { ChannelCreateDialog } from "./components/ChannelCreateDialog";
+export { ChannelList } from "./components/ChannelList";
 export { ChannelTabs } from "./components/ChannelTabs";

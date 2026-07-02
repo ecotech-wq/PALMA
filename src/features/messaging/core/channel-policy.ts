@@ -8,6 +8,22 @@ import type { ChannelRef, ChannelRole, ChannelVisibility } from "./types";
 export const GENERAL_CHANNEL_NAME = "Général";
 
 /**
+ * Forme canonique d'un nom de canal pour la détection de doublons :
+ * minuscules, accents retirés, espaces réduits. Aux yeux d'un
+ * utilisateur, "Général", "general" et "  GENERAL " sont le même
+ * canal ; la contrainte unique en base ne voit que l'égalité stricte,
+ * cette normalisation comble l'écart côté application.
+ */
+export function normalizeChannelName(nom: string): string {
+  return nom
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
  * Politique de visibilité des canaux. Fonctions PURES (pas de DB, pas
  * d'auth) : la décision est testable exhaustivement en vitest.
  *

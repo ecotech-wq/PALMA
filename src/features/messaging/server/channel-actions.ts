@@ -7,7 +7,10 @@ import {
   requireAdminOrConducteur,
   requireChantierAccess,
 } from "@/lib/auth-helpers";
-import { GENERAL_CHANNEL_NAME } from "../core/channel-policy";
+import {
+  GENERAL_CHANNEL_NAME,
+  normalizeChannelName,
+} from "../core/channel-policy";
 import { isUniqueViolation } from "../core/db-errors";
 import type { ChannelVisibility } from "../core/types";
 
@@ -49,6 +52,20 @@ export async function createChannel(
   const me = await requireAdminOrConducteur();
   const data = createSchema.parse({ chantierId, nom, visibility });
   await requireChantierAccess(me, data.chantierId);
+
+  // Doublon "humain" : la contrainte unique en base ne voit que
+  // l'égalité stricte ; on refuse aussi "general" quand "Général"
+  // existe déjà (casse, accents, espaces).
+  const canon = normalizeChannelName(data.nom);
+  const freres = await db.canal.findMany({
+    where: { chantierId: data.chantierId, archivedAt: null },
+    select: { nom: true },
+  });
+  if (freres.some((f) => normalizeChannelName(f.nom) === canon)) {
+    throw new Error(
+      `Un canal nommé "${data.nom}" existe déjà sur ce chantier`
+    );
+  }
 
   const last = await db.canal.aggregate({
     where: { chantierId: data.chantierId },
@@ -94,6 +111,18 @@ export async function renameChannel(id: string, nom: string) {
   await requireChantierAccess(me, canal.chantierId);
   if (canal.nom === GENERAL_CHANNEL_NAME) {
     throw new Error("Le canal Général ne peut pas être renommé");
+  }
+
+  // Même garde anti-doublon "humain" qu'à la création (hors soi-même)
+  const canon = normalizeChannelName(cleaned);
+  const freres = await db.canal.findMany({
+    where: { chantierId: canal.chantierId, archivedAt: null, id: { not: id } },
+    select: { nom: true },
+  });
+  if (freres.some((f) => normalizeChannelName(f.nom) === canon)) {
+    throw new Error(
+      `Un canal nommé "${cleaned}" existe déjà sur ce chantier`
+    );
   }
 
   try {

@@ -31,9 +31,11 @@ export function CompileRapportButton({ chantierId }: { chantierId: string }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+        title="Compiler en rapport"
+        className="inline-flex items-center gap-1 px-2 py-1.5 sm:py-1 rounded-md border border-slate-300 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
       >
-        <FileDown size={14} /> Compiler en rapport
+        <FileDown size={14} />
+        <span className="hidden sm:inline">Compiler en rapport</span>
       </button>
 
       {open && (
