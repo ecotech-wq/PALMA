@@ -334,6 +334,8 @@ export function ChantierFeed({
   const bottomRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<string>("ALL");
+  // Recherche repliée par défaut : l'écran appartient aux messages.
+  const [searchOpen, setSearchOpen] = useState(false);
   // Résultats étendus chargés via API (au-delà des 14 jours)
   const [extendedResults, setExtendedResults] = useState<ChatMessage[]>([]);
   const [extendedSearching, setExtendedSearching] = useState(false);
@@ -417,76 +419,107 @@ export function ChantierFeed({
     groups.get(k)!.push(m);
   }
 
+  function fermerRecherche() {
+    setSearchOpen(false);
+    setQuery("");
+    setFilter("ALL");
+  }
+
   return (
     <div className="space-y-4 p-3">
-      {/* Barre recherche + filtres rapides (sticky en haut du feed) */}
-      <div className="sticky top-0 z-10 -m-3 mb-0 p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
-        <div className="relative">
-          <Search
-            size={14}
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
-          />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Rechercher dans le fil…"
-            className="w-full pl-8 pr-8 py-1.5 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
-          {query && (
+      {/* Recherche repliée : une loupe flottante qui suit le défilement,
+          sans prendre une ligne au fil. Dépliée : champ + filtres + X. */}
+      {!searchOpen ? (
+        <div className="sticky top-1.5 z-10 !mt-0 flex h-0 justify-end overflow-visible">
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            aria-label="Rechercher et filtrer le fil"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 text-slate-500 dark:text-slate-400 shadow-sm backdrop-blur transition-colors hover:text-slate-800 dark:hover:text-slate-200"
+          >
+            <Search size={14} />
+          </button>
+        </div>
+      ) : (
+        <div className="sticky top-0 z-10 -m-3 mb-0 p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-1.5">
+            <div className="relative flex-1">
+              <Search
+                size={14}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                type="search"
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Rechercher dans le fil…"
+                className="w-full pl-8 pr-8 py-1.5 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  aria-label="Effacer la recherche"
+                >
+                  <XIcon size={14} />
+                </button>
+              )}
+            </div>
             <button
               type="button"
-              onClick={() => setQuery("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-              aria-label="Effacer la recherche"
+              onClick={fermerRecherche}
+              aria-label="Fermer la recherche"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200"
             >
-              <XIcon size={14} />
+              <XIcon size={16} />
             </button>
+          </div>
+          {/* Une seule ligne défilante : au téléphone, l'empilement de
+              3 rangées de filtres mangeait le fil */}
+          <div className="mt-2 flex gap-1 overflow-x-auto pb-0.5">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(f.key)}
+                className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border transition ${
+                  filter === f.key
+                    ? "bg-brand-600 text-white border-brand-600"
+                    : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
+                }`}
+              >
+                <f.Icon size={11} />
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {isFiltering && (
+            <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400">
+              <span>
+                {visibleMessages.length} résultat
+                {visibleMessages.length > 1 ? "s" : ""} sur les 14 derniers jours
+              </span>
+              {query.trim().length >= 2 && (
+                <button
+                  type="button"
+                  onClick={loadExtendedHistory}
+                  disabled={extendedSearching}
+                  className="text-brand-600 dark:text-brand-400 hover:underline disabled:opacity-50"
+                >
+                  {extendedSearching
+                    ? "Recherche…"
+                    : lastExtendedQueryRef.current === query &&
+                        extendedResults.length > 0
+                      ? `${extendedResults.length} résultat${extendedResults.length > 1 ? "s" : ""} plus anciens`
+                      : "Chercher dans tout l'historique"}
+                </button>
+              )}
+            </div>
           )}
         </div>
-        {/* Une seule ligne défilante : au téléphone, l'empilement de
-            3 rangées de filtres mangeait le fil */}
-        <div className="mt-2 flex gap-1 overflow-x-auto pb-0.5">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => setFilter(f.key)}
-              className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border transition ${
-                filter === f.key
-                  ? "bg-brand-600 text-white border-brand-600"
-                  : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
-              }`}
-            >
-              <f.Icon size={11} />
-              {f.label}
-            </button>
-          ))}
-        </div>
-        {isFiltering && (
-          <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400">
-            <span>
-              {visibleMessages.length} résultat
-              {visibleMessages.length > 1 ? "s" : ""} sur les 14 derniers jours
-            </span>
-            {query.trim().length >= 2 && (
-              <button
-                type="button"
-                onClick={loadExtendedHistory}
-                disabled={extendedSearching}
-                className="text-brand-600 dark:text-brand-400 hover:underline disabled:opacity-50"
-              >
-                {extendedSearching
-                  ? "Recherche…"
-                  : lastExtendedQueryRef.current === query &&
-                      extendedResults.length > 0
-                    ? `${extendedResults.length} résultat${extendedResults.length > 1 ? "s" : ""} plus anciens`
-                    : "Chercher dans tout l'historique"}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      )}
 
       {visibleMessages.length === 0 && isFiltering && extendedResults.length === 0 && (
         <div className="p-6 text-center text-sm text-slate-500 dark:text-slate-400 italic">

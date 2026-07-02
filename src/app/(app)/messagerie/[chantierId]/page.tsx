@@ -1,25 +1,15 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import {
-  CalendarDays,
-  ChevronLeft,
-  ClipboardCheck,
-  FileText,
-  Hash,
-  Map as MapIcon,
-  Settings2,
-} from "lucide-react";
+import { ChevronLeft, Hash, Settings2 } from "lucide-react";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { Card, CardBody } from "@/components/ui/Card";
 import { ChantierComposer } from "../ChantierComposer";
 import { ChantierFeed } from "../ChantierFeed";
 import { CompileRapportButton } from "../CompileRapportButton";
-import {
-  RubriquesPanel,
-  RubriquesPills,
-  type Rubrique,
-} from "../ChantierRubriques";
+import { RubriquesPanel, type Rubrique } from "../ChantierRubriques";
+import { ChantierInfoSheet } from "../ChantierInfoSheet";
+import { documentsChantier } from "../chantier-documents";
 import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
 import { markResourceRead } from "@/lib/read-state";
 import { getPhotoMetadata } from "@/lib/upload";
@@ -209,16 +199,7 @@ export default async function MessagerieChantierPage({
     },
   ];
 
-  const documents = [
-    {
-      href: `/rapports?chantier=${chantierId}`,
-      label: "Rapports quotidiens",
-      Icon: FileText,
-    },
-    { href: "/rapports-hebdo", label: "Rapports hebdomadaires", Icon: CalendarDays },
-    { href: "/pv-reception", label: "PV de réception", Icon: ClipboardCheck },
-    { href: "/plans", label: "Plans", Icon: MapIcon },
-  ];
+  const documents = documentsChantier(chantierId);
 
   const sortiesForComposer = sortiesOuvertes.map((s) => ({
     id: s.id,
@@ -265,7 +246,10 @@ export default async function MessagerieChantierPage({
     // Hauteur : plein écran utile. Au téléphone, 131px de chrome (barre
     // haute 53 + marge 16 + barre basse 54 + 8 de respiration) ; le -mb-28
     // annule le rembourrage bas du gabarit pour que la page ne défile pas.
-    <div className="flex h-[calc(100dvh-131px)] md:h-[calc(100vh-64px)] min-h-[420px] flex-col -mb-28 md:mb-0">
+    // min-h bas (280px) : clavier virtuel ouvert, le 100dvh peut tomber
+    // vers 400-500px ; un minimum trop haut pousserait le composer sous
+    // la barre de navigation basse.
+    <div className="flex h-[calc(100dvh-131px)] md:h-[calc(100vh-64px)] min-h-[280px] flex-col -mb-28 md:mb-0">
       {/* En-tête compact : une seule ligne, lisible au téléphone */}
       <div className="mb-2 flex shrink-0 items-center gap-2 md:mb-3">
         <Link
@@ -291,11 +275,19 @@ export default async function MessagerieChantierPage({
         <Link
           href={`/chantiers/${chantierId}`}
           title="Fiche chantier"
-          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:py-1"
+          className="hidden shrink-0 items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:inline-flex"
         >
           <Settings2 size={14} />
-          <span className="hidden sm:inline">Fiche chantier</span>
+          Fiche chantier
         </Link>
+        {/* Téléphone et écrans moyens : rubriques + documents + fiche
+            dans une feuille, comme les infos de groupe WhatsApp */}
+        <ChantierInfoSheet
+          chantierId={chantierId}
+          chantierNom={chantier.nom}
+          rubriques={rubriques}
+          className="xl:hidden"
+        />
       </div>
 
       {/* Corps : rail gauche (lg+) / colonne du fil / rubriques (xl+) */}
@@ -322,12 +314,10 @@ export default async function MessagerieChantierPage({
 
         {/* Colonne centrale : canaux (mobile), fil, composer */}
         <section className="flex min-w-0 flex-1 flex-col">
-          {/* Mobile : onglets de canaux + pastilles des rubriques */}
+          {/* Mobile : onglets de canaux (les rubriques sont dans la
+              feuille d'infos, bouton en en-tête) */}
           <div className="mb-1.5 shrink-0 lg:hidden">
             <ChannelBar variant="tabs" {...channelBarProps} />
-          </div>
-          <div className="mb-2 shrink-0 lg:hidden">
-            <RubriquesPills rubriques={rubriques} />
           </div>
 
           {/* Écran large : rappel du canal actif au-dessus du fil */}
