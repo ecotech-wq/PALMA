@@ -27,9 +27,9 @@ ne JAMAIS cocher une case de cette liste avant que le commit correspondant exist
       Relever : impasses de navigation, actions à plus de 2 gestes, écrans sans retour,
       interactions au survol seul, incohérences de vocabulaire, écrans surchargés.
       Consigner dans docs/AUDIT-UX-2026-07-03.md.
-- [ ] E. Corriger les défauts de D, priorité terrain d'abord, par petits commits.
-- [ ] F. `npm run build` de production : zéro erreur.
-- [ ] G. Rapport final honnête : daily log + message du matin + ce qui reste
+- [x] E. (commits cd3c59f, c856c92, 8ed1944) Corriger les défauts de D, priorité terrain d'abord, par petits commits.
+- [x] F. (Compiled successfully, 2 passages) `npm run build` de production : zéro erreur.
+- [x] G. Rapport final honnête : daily log + message du matin + ce qui reste
       (déploiement lui-même, note CNIL pointage, pointage QR étape 2, membres de canal UI).
 
 ## État au départ (23 h)
@@ -50,3 +50,15 @@ mini-serveur local de redirection (les cookies ignorent les ports).
   chantier existe). Verifier chaque constat dans le code avant de corriger, marquer
   CONFIRME/REJETE/CORRIGE (hash) dans le document.
 - Reste : E (verifier puis corriger les P1-terrain d'abord), F (npm run build), G (rapport).
+
+- E : lot 1 confirmations destructives (cd3c59f : BoutonConfirmation sur suppression
+  chantier / retrait equipe / suppression paiement) ; lot 2 navigation (c856c92 :
+  4 backHref, vocabulaire valider, cibles tactiles fil) ; lot 3 flux rapport un geste
+  (8ed1944). Constat 4 (demandes) sans objet : ?chantierId= deja supporte.
+- F : npm run build = Compiled successfully (2 fois, avant et apres les derniers commits).
+- RESTE APRES LA NUIT (assumé, non fait) : remplacer les ~20 confirm() natifs restants
+  par BoutonConfirmation ; apercu des photos avant envoi dans Incident/RapportForm
+  (constat 56) ; etat vide rapports hebdo cote client (60) ; toast a la cloture de
+  location (61) ; alertes retard sur la liste chantiers (43) ; approbation de compte
+  avec choix du role explicite (50-51) ; messagerie clients (55, prevu v4.3 etape 3) ;
+  pointage QR (SPEC etape 2) ; note CNIL ; deploiement lui-meme (decision de Youssoufou).
