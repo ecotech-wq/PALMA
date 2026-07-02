@@ -1,30 +1,34 @@
 import Link from "next/link";
 import {
-  Hammer,
-  Users,
-  Wrench,
-  HardHat,
   AlertTriangle,
-  ArrowLeftRight,
-  Plus,
   Banknote,
-  CheckSquare,
-  ShoppingCart,
-  Truck,
+  ChevronRight,
+  Clock,
+  MessageSquare,
+  Package,
+  UserPlus,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { CommandeStatutBadge } from "@/app/(app)/commandes/CommandeStatutBadge";
-import { formatEuro, formatDate } from "@/lib/utils";
+import { formatEuro } from "@/lib/utils";
 import { Montant } from "@/features/discret";
 import { getFinanceChantier } from "@/lib/finances-chantier";
-import { ChantierFinanceCard } from "./ChantierFinanceCard";
 import { TodayWidget } from "./TodayWidget";
 import { ClientDashboard } from "./ClientDashboard";
 import { QuickActionsBar } from "./QuickActionsBar";
-import { requireAuth } from "@/lib/auth-helpers";
+import { MurDuTerrain, type PhotoTerrain } from "./MurDuTerrain";
+import { AnneauAvancement } from "./AnneauAvancement";
+import { requireAuth, getAccessibleChantierIds } from "@/lib/auth-helpers";
+import { unreadMessagerieFor } from "@/lib/read-state";
 
+/**
+ * L'accueil répond à UNE question : « qu'est-ce qui a besoin de moi
+ * maintenant ? ». Le mur du terrain (photos du jour), ce qu'il y a à
+ * traiter, le terrain en temps réel, les chantiers avec leur anneau
+ * d'avancement. Les finances sont au second rideau : deux chiffres
+ * sous mode discret et des barres de consommation SANS montants.
+ * Doctrine complète : docs/maquette-accueil.
+ */
 export default async function DashboardPage() {
   const me = await requireAuth();
 
@@ -34,101 +38,123 @@ export default async function DashboardPage() {
     return <ClientDashboard userId={me.id} userName={me.name} />;
   }
 
-  const debutMois = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  const today = new Date();
+  // v4.3 : chacun ne voit que SES chantiers (admin : tous).
+  const accessibleIds = await getAccessibleChantierIds(me);
+  const chantierFilter =
+    accessibleIds === null ? {} : { id: { in: accessibleIds } };
+  const parChantierId =
+    accessibleIds === null ? {} : { chantierId: { in: accessibleIds } };
+
+  const septJours = new Date();
+  septJours.setDate(septJours.getDate() - 7);
+  const debutJour = new Date();
+  debutJour.setHours(0, 0, 0, 0);
 
   const [
-    chantiersActifs,
-    chantiersTotal,
-    equipes,
-    ouvriersActifs,
-    materielTotal,
-    materielSorti,
-    materielHS,
-    sortiesActives,
     chantiersListe,
-    pointagesMois,
-    avancesNonReglees,
+    incidentsOuverts,
+    incidentsCount,
+    demandesCount,
     paiementsCalcules,
-    outilsRestants,
-    locationsEnRetard,
-    commandesEnLivraison,
-    locationsEnCoursTotal,
+    locationsRetardCount,
+    pendingUsersCount,
+    photosMessages,
+    avancements,
+    unread,
   ] = await Promise.all([
-    db.chantier.count({ where: { statut: { in: ["EN_COURS", "PAUSE"] } } }),
-    db.chantier.count(),
-    db.equipe.count(),
-    db.ouvrier.count({ where: { actif: true } }),
-    db.materiel.count(),
-    db.materiel.count({ where: { statut: "SORTI" } }),
-    db.materiel.count({ where: { statut: { in: ["HS", "PERDU"] } } }),
-    db.sortieMateriel.findMany({
-      where: { dateRetour: null },
-      include: {
-        materiel: { select: { nomCommun: true } },
-        equipe: { select: { nom: true } },
-        chantier: { select: { nom: true } },
-      },
-      orderBy: { dateSortie: "desc" },
-      take: 5,
-    }),
     db.chantier.findMany({
-      where: { statut: { in: ["EN_COURS", "PAUSE", "PLANIFIE"] } },
+      where: { statut: { in: ["EN_COURS", "PAUSE", "PLANIFIE"] }, ...chantierFilter },
       orderBy: [{ statut: "asc" }, { updatedAt: "desc" }],
       include: { _count: { select: { equipes: true } } },
     }),
-    db.pointage.aggregate({
-      where: { date: { gte: debutMois } },
-      _sum: { joursTravailles: true },
+    db.incident.findMany({
+      where: { statut: { not: "RESOLU" }, ...parChantierId },
+      select: { id: true, titre: true, chantier: { select: { nom: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 2,
     }),
-    db.avance.aggregate({
-      where: { reglee: false },
-      _sum: { montant: true },
-      _count: true,
+    db.incident.count({
+      where: { statut: { not: "RESOLU" }, ...parChantierId },
     }),
-    db.paiement.aggregate({
-      where: { statut: "CALCULE" },
-      _sum: { montantNet: true },
-      _count: true,
+    me.canPilot
+      ? db.demandeMateriel.count({ where: { statut: "DEMANDEE" } })
+      : 0,
+    me.isAdmin
+      ? db.paiement.aggregate({
+          where: { statut: "CALCULE" },
+          _sum: { montantNet: true },
+          _count: true,
+        })
+      : null,
+    me.canPilot
+      ? db.locationPret.count({
+          where: { cloture: false, dateFinPrevue: { lt: new Date() } },
+        })
+      : 0,
+    me.isAdmin ? db.user.count({ where: { status: "PENDING" } }) : 0,
+    db.journalMessage.findMany({
+      where: {
+        createdAt: { gte: septJours },
+        photos: { isEmpty: false },
+        ...parChantierId,
+      },
+      select: {
+        photos: true,
+        chantierId: true,
+        canalId: true,
+        createdAt: true,
+        chantier: { select: { nom: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 8,
     }),
-    db.outilPersonnel.aggregate({
-      where: { solde: false },
-      _sum: { restantDu: true },
-      _count: true,
+    db.tache.groupBy({
+      by: ["chantierId"],
+      where: { deletedAt: null, ...parChantierId },
+      _avg: { avancement: true },
     }),
-    db.locationPret.findMany({
-      where: { cloture: false, dateFinPrevue: { lt: today } },
-      select: { id: true, designation: true, dateFinPrevue: true, fournisseurNom: true },
-      orderBy: { dateFinPrevue: "asc" },
-      take: 5,
-    }),
-    db.commande.findMany({
-      where: { statut: { in: ["COMMANDEE", "EN_LIVRAISON"] }, deletedAt: null },
-      include: { chantier: { select: { nom: true } } },
-      orderBy: { dateLivraisonPrevue: "asc" },
-      take: 5,
-    }),
-    db.locationPret.aggregate({
-      where: { cloture: false, type: "LOCATION" },
-      _sum: { coutTotal: true },
-    }),
+    unreadMessagerieFor(me.id, accessibleIds),
   ]);
 
-  // Calcule les finances pour chaque chantier visible (actifs + planifiés)
-  const financeByChantier = new Map<string, Awaited<ReturnType<typeof getFinanceChantier>>>();
-  await Promise.all(
-    chantiersListe.map(async (c) => {
-      const f = await getFinanceChantier(c.id);
-      financeByChantier.set(c.id, f);
-    })
+  // Mur du terrain : aujourd'hui en priorité, sinon la semaine
+  const duJour = photosMessages.filter((m) => m.createdAt >= debutJour);
+  const sourcePhotos = duJour.length > 0 ? duJour : photosMessages;
+  const titreMur =
+    duJour.length > 0 ? "Le terrain, aujourd'hui" : "Le terrain, ces derniers jours";
+  const photos: PhotoTerrain[] = [];
+  for (const m of sourcePhotos) {
+    for (const url of m.photos) {
+      if (photos.length >= 12) break;
+      photos.push({
+        url,
+        chantierNom: m.chantier.nom,
+        href: m.canalId
+          ? `/messagerie/${m.chantierId}?canal=${m.canalId}`
+          : `/messagerie/${m.chantierId}`,
+      });
+    }
+  }
+
+  const avancementParChantier = new Map(
+    avancements.map((a) => [a.chantierId, a._avg.avancement])
   );
 
   const chantiersActifsList = chantiersListe.filter((c) =>
     ["EN_COURS", "PAUSE"].includes(c.statut)
   );
-  const chantiersPlanifies = chantiersListe.filter((c) => c.statut === "PLANIFIE");
 
-  // Agrégat global pour le bandeau du haut
+  // Finances (admin + conducteur uniquement) : agrégat + consommation
+  const financeByChantier = new Map<
+    string,
+    Awaited<ReturnType<typeof getFinanceChantier>>
+  >();
+  if (me.canSeePrices) {
+    await Promise.all(
+      chantiersActifsList.map(async (c) => {
+        financeByChantier.set(c.id, await getFinanceChantier(c.id));
+      })
+    );
+  }
   const budgetTotal = chantiersActifsList.reduce(
     (s, c) => s + (financeByChantier.get(c.id)?.budgetTotal ?? 0),
     0
@@ -137,66 +163,104 @@ export default async function DashboardPage() {
     (s, c) => s + (financeByChantier.get(c.id)?.coutTotal ?? 0),
     0
   );
-
-  const cards = [
-    {
-      label: "Chantiers actifs",
-      value: chantiersActifs,
-      sub: `${chantiersTotal} au total`,
-      icon: Hammer,
-      color: "text-orange-600 bg-orange-50",
-      href: "/chantiers",
-    },
-    {
-      label: "Équipes",
-      value: equipes,
-      sub: ouvriersActifs ? `${ouvriersActifs} ouvriers actifs` : "—",
-      icon: Users,
-      color: "text-brand-600 bg-brand-50",
-      href: "/equipes",
-    },
-    {
-      label: "Matériel",
-      value: materielTotal,
-      sub:
-        materielSorti > 0
-          ? `${materielSorti} sorti${materielSorti > 1 ? "s" : ""}`
-          : "tout au dépôt",
-      icon: Wrench,
-      color: "text-purple-600 bg-purple-50",
-      href: "/materiel",
-    },
-    {
-      label: "Ouvriers",
-      value: ouvriersActifs,
-      sub: "actifs",
-      icon: HardHat,
-      color: "text-green-600 bg-green-50",
-      href: "/ouvriers",
-    },
-  ];
-
-  const joursMois = Number(pointagesMois._sum.joursTravailles ?? 0);
-  const totalAvances = Number(avancesNonReglees._sum.montant ?? 0);
-  const totalACalculer = Number(paiementsCalcules._sum.montantNet ?? 0);
-  const totalOutilsRestant = Number(outilsRestants._sum.restantDu ?? 0);
-  const totalLocations = Number(locationsEnCoursTotal._sum.coutTotal ?? 0);
-  const consommePct =
-    budgetTotal > 0 ? Math.min(100, Math.round((coutTotalEngage / budgetTotal) * 100)) : 0;
-  const isOver = coutTotalEngage > budgetTotal && budgetTotal > 0;
   const margeGlobale = budgetTotal - coutTotalEngage;
+  const totalACalculer = Number(paiementsCalcules?._sum.montantNet ?? 0);
+
+  // Lignes « à traiter » : uniquement ce qui demande une action
+  const aTraiter: {
+    key: string;
+    dot: string;
+    titre: string;
+    sous: string;
+    href: string;
+    chip: string;
+  }[] = [];
+  if (incidentsCount > 0) {
+    aTraiter.push({
+      key: "incidents",
+      dot: "bg-red-500",
+      titre: `${incidentsCount} incident${incidentsCount > 1 ? "s" : ""} ouvert${incidentsCount > 1 ? "s" : ""}`,
+      sous: incidentsOuverts
+        .map((i) => `${i.titre} (${i.chantier?.nom ?? "sans chantier"})`)
+        .join(" · "),
+      href: "/incidents",
+      chip: "ouvrir",
+    });
+  }
+  if (demandesCount > 0) {
+    aTraiter.push({
+      key: "demandes",
+      dot: "bg-amber-500",
+      titre: `${demandesCount} demande${demandesCount > 1 ? "s" : ""} de matériel à valider`,
+      sous: "Approuver ou refuser, la commande suit",
+      href: "/demandes",
+      chip: "valider",
+    });
+  }
+  if (unread.total > 0) {
+    aTraiter.push({
+      key: "messages",
+      dot: "bg-brand-500",
+      titre: `${unread.total} message${unread.total > 1 ? "s" : ""} non lu${unread.total > 1 ? "s" : ""}`,
+      sous: "Dans les fils de tes chantiers",
+      href: "/messagerie",
+      chip: "lire",
+    });
+  }
+  if (locationsRetardCount > 0) {
+    aTraiter.push({
+      key: "locations",
+      dot: "bg-amber-500",
+      titre: `${locationsRetardCount} location${locationsRetardCount > 1 ? "s" : ""} en retard de retour`,
+      sous: "Restituer ou prolonger",
+      href: "/locations",
+      chip: "traiter",
+    });
+  }
+  if (pendingUsersCount > 0) {
+    aTraiter.push({
+      key: "comptes",
+      dot: "bg-brand-500",
+      titre: `${pendingUsersCount} compte${pendingUsersCount > 1 ? "s" : ""} en attente d'approbation`,
+      sous: "Nouveaux utilisateurs inscrits",
+      href: "/admin/users",
+      chip: "approuver",
+    });
+  }
+
+  const dateFmt = new Intl.DateTimeFormat("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  const dateDuJour = dateFmt.format(new Date());
+  const titreJour = dateDuJour.charAt(0).toUpperCase() + dateDuJour.slice(1);
+
+  const STATUT_LABEL: Record<string, string> = {
+    EN_COURS: "en cours",
+    PAUSE: "en pause",
+    PLANIFIE: "planifié",
+  };
+
+  const ICONE_TRAITER: Record<string, typeof AlertTriangle> = {
+    incidents: AlertTriangle,
+    demandes: Package,
+    messages: MessageSquare,
+    locations: Clock,
+    comptes: UserPlus,
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-            Tableau de bord
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Vue d&apos;ensemble de ton activité
-          </p>
-        </div>
+    <div className="space-y-5">
+      {/* En-tête : le jour, pas un « tableau de bord » */}
+      <div>
+        <h1 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-slate-100">
+          {titreJour}
+        </h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          {chantiersActifsList.length} chantier
+          {chantiersActifsList.length > 1 ? "s" : ""} en cours
+        </p>
       </div>
 
       {/* Actions rapides selon le rôle */}
@@ -206,408 +270,216 @@ export default async function DashboardPage() {
         isChef={me.isChef}
       />
 
-      {/* Widget Aujourd'hui (vue temps réel) */}
-      <TodayWidget />
+      {/* Le mur du terrain : les photos du jour, chaque photo ramène à
+          sa conversation */}
+      <MurDuTerrain photos={photos} titre={titreMur} />
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        {cards.map(({ label, value, sub, icon: Icon, color, href }) => (
-          <Link
-            key={label}
-            href={href}
-            className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4 md:p-5"
-          >
-            <div className={`inline-flex p-2 rounded-lg ${color}`}>
-              <Icon size={20} />
-            </div>
-            <div className="mt-3 text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
-              {value}
-            </div>
-            <div className="text-xs md:text-sm text-slate-500 dark:text-slate-400">
-              {label}
-            </div>
-            <div className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{sub}</div>
-          </Link>
-        ))}
-      </div>
-
-      {/* Budget global agrégé sur tous les chantiers actifs */}
-      {me.canSeePrices && budgetTotal > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Budget global — chantiers actifs</CardTitle>
-          </CardHeader>
-          <CardBody>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">Budget total</div>
-                <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                  <Montant>{formatEuro(budgetTotal)}</Montant>
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">Engagé</div>
-                <div
-                  className={`text-2xl font-bold ${
-                    isOver ? "text-red-600" : "text-slate-900 dark:text-slate-100"
-                  }`}
-                >
-                  <Montant>{formatEuro(coutTotalEngage)}</Montant>
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">Marge restante</div>
-                <div
-                  className={`text-2xl font-bold ${
-                    margeGlobale < 0 ? "text-red-600" : "text-green-600 dark:text-green-500"
-                  }`}
-                >
-                  <Montant>
-                    {margeGlobale >= 0 ? "+" : ""}
-                    {formatEuro(margeGlobale)}
-                  </Montant>
-                </div>
-              </div>
-            </div>
-            <div className="mt-3 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-              <div
-                className={`h-full transition-all ${
-                  isOver ? "bg-red-500" : consommePct >= 80 ? "bg-amber-500" : "bg-brand-500"
-                }`}
-                style={{ width: `${consommePct}%` }}
-              />
-            </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex justify-between">
-              <span>
-                {chantiersActifsList.length} chantier
-                {chantiersActifsList.length > 1 ? "s" : ""} actif
-                {chantiersActifsList.length > 1 ? "s" : ""}
-              </span>
-              <span>{consommePct}% consommé</span>
-            </div>
-          </CardBody>
-        </Card>
-      )}
-
-      {/* Détail budget par chantier (admin + conducteur) */}
-      {me.canSeePrices && chantiersActifsList.length > 0 && (
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle>Détail par chantier</CardTitle>
-            <Link href="/chantiers/nouveau">
-              <Button size="sm" variant="outline">
-                <Plus size={14} /> Nouveau
-              </Button>
-            </Link>
-          </CardHeader>
-          <CardBody>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
-              {chantiersActifsList.map((c) => {
-                const f = financeByChantier.get(c.id);
-                if (!f) return null;
-                return <ChantierFinanceCard key={c.id} chantier={c} finance={f} />;
-              })}
-            </div>
-          </CardBody>
-        </Card>
-      )}
-
-      {/* Pour les CHEFs (sans prix), version simple des chantiers actifs */}
-      {!me.canSeePrices && chantiersActifsList.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Chantiers en cours ({chantiersActifsList.length})</CardTitle>
-          </CardHeader>
-          <CardBody className="!p-0">
-            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-              {chantiersActifsList.map((c) => (
-                <li key={c.id}>
-                  <Link
-                    href={`/chantiers/${c.id}`}
-                    className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
-                        {c.nom}
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        {c._count.equipes} équipe
-                        {c._count.equipes > 1 ? "s" : ""}
-                      </div>
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </CardBody>
-        </Card>
-      )}
-
-      {/* Chantiers planifiés (si présents) — petite liste, pas de finance */}
-      {chantiersPlanifies.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Chantiers planifiés ({chantiersPlanifies.length})</CardTitle>
-          </CardHeader>
-          <CardBody className="!p-0">
-            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-              {chantiersPlanifies.map((c) => {
-                const budget = Number(c.budgetEspeces) + Number(c.budgetVirement);
-                return (
-                  <li key={c.id}>
-                    <Link
-                      href={`/chantiers/${c.id}`}
-                      className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
-                          {c.nom}
-                        </div>
-                        {me.canSeePrices && (
-                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                            Budget prévu : <Montant>{formatEuro(budget)}</Montant>
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-xs text-slate-500 dark:text-slate-400">
-                        {c._count.equipes} équipe{c._count.equipes > 1 ? "s" : ""}
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </CardBody>
-        </Card>
-      )}
-
-      {/* Vide ou pas de chantier actif */}
-      {chantiersActifsList.length === 0 && chantiersPlanifies.length === 0 && (
-        <Card>
-          <CardBody className="text-center py-8">
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
-              Aucun chantier en cours.
-            </p>
-            <Link href="/chantiers/nouveau">
-              <Button>
-                <Plus size={16} /> Créer ton premier chantier
-              </Button>
-            </Link>
-          </CardBody>
-        </Card>
-      )}
-
-      {/* Mini cards : pointage (tous), locations (canSeePrices), paie (admin) */}
-      <div
-        className={`grid grid-cols-1 ${
-          me.isAdmin
-            ? "lg:grid-cols-3"
-            : me.canSeePrices
-              ? "lg:grid-cols-2"
-              : ""
-        } gap-3 md:gap-4`}
-      >
-        <Link
-          href="/pointage"
-          className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4"
-        >
-          <div className="flex items-center gap-2 text-brand-600">
-            <CheckSquare size={18} />
-            <span className="text-sm font-medium">Pointage du mois</span>
-          </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
-            {joursMois}{" "}
-            <span className="text-sm font-normal text-slate-500 dark:text-slate-400">
-              jours-homme
-            </span>
-          </div>
-        </Link>
-
-        {me.isAdmin && (
-          <Link
-            href="/paie"
-            className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4"
-          >
-            <div className="flex items-center gap-2 text-amber-600">
-              <Banknote size={18} />
-              <span className="text-sm font-medium">À verser (paiements calculés)</span>
-            </div>
-            <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
-              <Montant>{formatEuro(totalACalculer)}</Montant>
-            </div>
-            <div className="text-xs text-slate-400 dark:text-slate-500">
-              {paiementsCalcules._count} paiement{paiementsCalcules._count > 1 ? "s" : ""} en
-              attente
-            </div>
-          </Link>
-        )}
-
-        {me.canSeePrices && (
-          <Link
-            href="/locations"
-            className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm transition p-4"
-          >
-            <div className="flex items-center gap-2 text-purple-600">
-              <Truck size={18} />
-              <span className="text-sm font-medium">Locations en cours</span>
-            </div>
-            <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
-              <Montant>{formatEuro(totalLocations)}</Montant>
-            </div>
-            {me.isAdmin && (
-              <div className="text-xs text-slate-400 dark:text-slate-500">
-                {totalAvances > 0 && (
-                  <>
-                    Avances : <Montant>{formatEuro(totalAvances)}</Montant>{" · "}
-                  </>
-                )}
-                {totalOutilsRestant > 0 && (
-                  <>
-                    Outils dus : <Montant>{formatEuro(totalOutilsRestant)}</Montant>
-                  </>
-                )}
-                {totalAvances === 0 && totalOutilsRestant === 0 && "Aucune avance ouverte"}
-              </div>
-            )}
-          </Link>
-        )}
-      </div>
-
-      {/* Cartes secondaires */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle>Commandes à venir</CardTitle>
-            <Link href="/commandes">
-              <Button size="sm" variant="outline">
-                <ShoppingCart size={14} /> Voir
-              </Button>
-            </Link>
-          </CardHeader>
-          <CardBody className="!p-0">
-            {commandesEnLivraison.length === 0 ? (
-              <div className="p-6 text-center text-sm text-slate-500 dark:text-slate-400">
-                Aucune commande en attente.
-              </div>
-            ) : (
-              <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-                {commandesEnLivraison.map((c) => (
-                  <li key={c.id}>
-                    <Link
-                      href={`/commandes/${c.id}`}
-                      className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate text-slate-900 dark:text-slate-100">
-                          {c.fournisseur}
-                        </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                          {c.chantier.nom}
-                          {c.dateLivraisonPrevue &&
-                            ` · livraison ${formatDate(c.dateLivraisonPrevue)}`}
-                        </div>
-                      </div>
-                      <CommandeStatutBadge statut={c.statut} />
-                      {me.canSeePrices && (
-                        <div className="font-semibold w-20 text-right shrink-0">
-                          <Montant>{formatEuro(c.coutTotal.toString())}</Montant>
-                        </div>
-                      )}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle>Matériel sorti</CardTitle>
-            <Link href="/sorties">
-              <Button size="sm" variant="outline">
-                <ArrowLeftRight size={14} /> Sorties
-              </Button>
-            </Link>
-          </CardHeader>
-          <CardBody className="!p-0">
-            {sortiesActives.length === 0 ? (
-              <div className="p-6 text-center text-sm text-slate-500 dark:text-slate-400">
-                Tout le matériel est au dépôt.
-              </div>
-            ) : (
-              <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-                {sortiesActives.map((s) => (
-                  <li key={s.id} className="p-3 text-sm flex items-center gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate text-slate-900 dark:text-slate-100">
-                        {s.materiel.nomCommun}
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                        {s.equipe?.nom || s.chantier?.nom || "—"} ·{" "}
-                        {formatDate(s.dateSortie)}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardBody>
-        </Card>
-
-        {locationsEnRetard.length > 0 && (
-          <Card className="border-red-200 dark:border-red-900">
-            <CardHeader className="flex items-center justify-between bg-red-50 dark:bg-red-950">
-              <CardTitle className="text-red-800 dark:text-red-300">
-                Locations en retard
-              </CardTitle>
-              <Link href="/locations">
-                <Button size="sm" variant="outline">
-                  Voir tout
-                </Button>
-              </Link>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="space-y-5 lg:col-span-2">
+          {/* À traiter : la raison d'être de l'accueil */}
+          <Card>
+            <CardHeader>
+              <CardTitle>À traiter</CardTitle>
             </CardHeader>
             <CardBody className="!p-0">
-              <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-                {locationsEnRetard.map((l) => (
-                  <li key={l.id}>
-                    <Link
-                      href={`/locations/${l.id}`}
-                      className="flex items-center gap-3 p-3 hover:bg-red-50 dark:hover:bg-red-950 text-sm"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate text-slate-900 dark:text-slate-100">
-                          {l.designation}
-                        </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                          {l.fournisseurNom} · à rendre {formatDate(l.dateFinPrevue)}
-                        </div>
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              {aTraiter.length === 0 ? (
+                <p className="p-5 text-sm italic text-slate-500 dark:text-slate-400">
+                  Rien d&apos;urgent. Le terrain tourne.
+                </p>
+              ) : (
+                <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {aTraiter.map((a) => {
+                    const Icone = ICONE_TRAITER[a.key] ?? AlertTriangle;
+                    return (
+                      <li key={a.key}>
+                        <Link
+                          href={a.href}
+                          className="flex items-center gap-3 p-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                        >
+                          <span
+                            className={`h-2 w-2 shrink-0 rounded-full ${a.dot}`}
+                          />
+                          <Icone
+                            size={16}
+                            className="shrink-0 text-slate-400 dark:text-slate-500"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-slate-800 dark:text-slate-200">
+                              {a.titre}
+                            </span>
+                            <span className="block truncate text-xs text-slate-500 dark:text-slate-400">
+                              {a.sous}
+                            </span>
+                          </span>
+                          <span className="shrink-0 rounded-full border border-slate-200 px-2 py-0.5 text-[11px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                            {a.chip}
+                          </span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </CardBody>
           </Card>
-        )}
-      </div>
 
-      {materielHS > 0 && (
-        <Card className="border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950">
-          <CardBody className="flex items-center gap-3">
-            <AlertTriangle className="text-amber-600 shrink-0" size={20} />
-            <div className="flex-1 text-sm text-amber-900 dark:text-amber-100">
-              <span className="font-medium">{materielHS}</span> matériel(s) hors service ou
-              perdu(s).
-            </div>
-            <Link href="/materiel?statut=HS">
-              <Button size="sm" variant="outline">
-                Voir
-              </Button>
-            </Link>
-          </CardBody>
-        </Card>
-      )}
+          {/* Chantiers : anneau d'avancement + non-lus, rien d'autre */}
+          {chantiersListe.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Chantiers</CardTitle>
+              </CardHeader>
+              <CardBody className="!p-0">
+                <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {chantiersListe.map((c) => {
+                    const nonLus = unread.byChantier[c.id] ?? 0;
+                    const avg = avancementParChantier.get(c.id);
+                    return (
+                      <li key={c.id}>
+                        <div className="flex items-center gap-3 p-3">
+                          <AnneauAvancement
+                            pct={avg === undefined || avg === null ? null : avg}
+                          />
+                          <Link
+                            href={`/chantiers/${c.id}`}
+                            className="min-w-0 flex-1"
+                          >
+                            <span className="block truncate text-sm font-medium text-slate-900 hover:text-brand-700 dark:text-slate-100 dark:hover:text-brand-400">
+                              {c.nom}
+                            </span>
+                            <span className="block text-xs text-slate-500 dark:text-slate-400">
+                              {STATUT_LABEL[c.statut] ?? c.statut}
+                              {c._count.equipes > 0 &&
+                                ` · ${c._count.equipes} équipe${c._count.equipes > 1 ? "s" : ""}`}
+                            </span>
+                          </Link>
+                          {nonLus > 0 && (
+                            <Link
+                              href={`/messagerie/${c.id}`}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-600 px-2 py-0.5 text-[11px] font-medium text-white"
+                              title={`${nonLus} message${nonLus > 1 ? "s" : ""} non lu${nonLus > 1 ? "s" : ""}`}
+                            >
+                              <MessageSquare size={11} />
+                              {nonLus}
+                            </Link>
+                          )}
+                          <Link
+                            href={`/chantiers/${c.id}`}
+                            aria-label={`Ouvrir ${c.nom}`}
+                            className="shrink-0 text-slate-300 dark:text-slate-600"
+                          >
+                            <ChevronRight size={16} />
+                          </Link>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </CardBody>
+            </Card>
+          )}
+        </div>
+
+        <div className="space-y-5">
+          {/* Le terrain en temps réel (pointage du jour) */}
+          <TodayWidget />
+
+          {/* Finances : second rideau. Deux chiffres sous mode discret,
+              et des barres de consommation SANS montants (lisibles même
+              masqué : la forme sans les valeurs). */}
+          {me.canSeePrices && budgetTotal > 0 && (
+            <Card>
+              <CardHeader className="flex items-center justify-between">
+                <CardTitle>Finances</CardTitle>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                  touche M pour masquer
+                </span>
+              </CardHeader>
+              <CardBody>
+                <div className="flex items-start gap-6">
+                  <div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      Marge active
+                    </div>
+                    <div
+                      className={`text-xl font-bold ${
+                        margeGlobale < 0
+                          ? "text-red-600"
+                          : "text-emerald-600 dark:text-emerald-500"
+                      }`}
+                    >
+                      <Montant>
+                        {margeGlobale >= 0 ? "+" : ""}
+                        {formatEuro(margeGlobale)}
+                      </Montant>
+                    </div>
+                  </div>
+                  {me.isAdmin && totalACalculer > 0 && (
+                    <Link href="/paie" className="group">
+                      <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                        <Banknote size={12} /> Paie à verser
+                      </div>
+                      <div className="text-xl font-bold text-slate-900 group-hover:text-brand-700 dark:text-slate-100">
+                        <Montant>{formatEuro(totalACalculer)}</Montant>
+                      </div>
+                    </Link>
+                  )}
+                </div>
+
+                {/* Consommation par chantier : la forme sans les valeurs */}
+                <div className="mt-4 space-y-2">
+                  {chantiersActifsList.map((c) => {
+                    const f = financeByChantier.get(c.id);
+                    if (!f || f.budgetTotal <= 0) return null;
+                    const pct = Math.min(
+                      100,
+                      Math.round((f.coutTotal / f.budgetTotal) * 100)
+                    );
+                    const over = f.coutTotal > f.budgetTotal;
+                    return (
+                      <Link
+                        key={c.id}
+                        href={`/chantiers/${c.id}`}
+                        className="block"
+                        title={`${c.nom} : ${pct} % du budget consommé`}
+                      >
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="truncate text-slate-600 dark:text-slate-300">
+                            {c.nom}
+                          </span>
+                          <span
+                            className={`ml-2 shrink-0 tabular-nums ${
+                              over
+                                ? "text-red-600"
+                                : pct >= 80
+                                  ? "text-amber-600"
+                                  : "text-slate-400 dark:text-slate-500"
+                            }`}
+                          >
+                            {pct} %
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                          <div
+                            className={`h-full rounded-full ${
+                              over
+                                ? "bg-red-500"
+                                : pct >= 80
+                                  ? "bg-amber-500"
+                                  : "bg-brand-500"
+                            }`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </CardBody>
+            </Card>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
