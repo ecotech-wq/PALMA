@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { formatEuro, formatDate } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth-helpers";
+import { Montant } from "@/features/discret";
 
 export default async function LocationsPage() {
   const me = await requireAuth();
@@ -111,12 +112,12 @@ export default async function LocationsPage() {
                       <div className="text-right shrink-0">
                         {l.type === "LOCATION" && (
                           <div className="text-sm font-semibold">
-                            {formatEuro(l.coutTotal.toString())}
+                            <Montant>{formatEuro(l.coutTotal.toString())}</Montant>
                           </div>
                         )}
                         {Number(l.coutJour) > 0 && (
                           <div className="text-xs text-slate-400 dark:text-slate-500">
-                            {formatEuro(l.coutJour.toString())}/j
+                            <Montant>{formatEuro(l.coutJour.toString())}</Montant>/j
                           </div>
                         )}
                       </div>
@@ -133,7 +134,7 @@ export default async function LocationsPage() {
       {me.isAdmin && totalLocationsEnCours > 0 && (
         <div className="mb-5 text-sm text-slate-600 dark:text-slate-500">
           Total locations en cours :{" "}
-          <span className="font-semibold">{formatEuro(totalLocationsEnCours)}</span>
+          <span className="font-semibold"><Montant>{formatEuro(totalLocationsEnCours)}</Montant></span>
         </div>
       )}
 
@@ -156,7 +157,7 @@ export default async function LocationsPage() {
                       </span>
                       {l.type === "LOCATION" && (
                         <span className="font-medium shrink-0">
-                          {formatEuro(l.coutTotal.toString())}
+                          <Montant>{formatEuro(l.coutTotal.toString())}</Montant>
                         </span>
                       )}
                     </div>

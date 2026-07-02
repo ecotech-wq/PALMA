@@ -66,6 +66,7 @@ export default async function CorbeillePage() {
   return (
     <div className="space-y-5">
       <PageHeader
+        backHref="/dashboard"
         title="Corbeille"
         description={`Éléments supprimés des 30 derniers jours — restauration possible, purge automatique au-delà.`}
       />

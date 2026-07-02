@@ -12,7 +12,7 @@
  *   Bump CACHE_VERSION quand tu changes la stratégie pour forcer un purge.
  */
 
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const SHELL_CACHE  = `autonhome-shell-${CACHE_VERSION}`;
 const PAGES_CACHE  = `autonhome-pages-${CACHE_VERSION}`;
 const UPLOADS_CACHE = `autonhome-uploads-${CACHE_VERSION}`;

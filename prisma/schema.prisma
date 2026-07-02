@@ -25,6 +25,12 @@ enum Role {
   /// sorties/retours matériel.
   CHEF
   CLIENT
+  /// v4.3 : compte ultraléger relié à un enregistrement Ouvrier.
+  /// Interface réduite au pointage (QR chantier, Arrivée/Départ).
+  OUVRIER
+  /// v4.3 : externe. Voit son canal, ses tâches/plans, SES documents.
+  /// Jamais les prix globaux ni les échanges clients.
+  SOUS_TRAITANT
 }
 
 enum UserStatus {
@@ -74,6 +80,49 @@ model User {
   chantierPins       UserChantierPin[]
   auditEntries       AuditEntry[]
   messageReactions   MessageReaction[]
+  canauxCrees        Canal[]              @relation("CanalCreateur")
+  messageTags        MessageTag[]         @relation("TagAuteur")
+  chantiersMembre     ChantierMembre[]    @relation("MembreUser")
+  membresAjoutes      ChantierMembre[]    @relation("MembreAjoutePar")
+  canauxMembre        CanalMembre[]       @relation("CanalMembreUser")
+  canalMembresAjoutes CanalMembre[]       @relation("CanalMembreAjoutePar")
+  ouvrierLie          Ouvrier?
+}
+
+/// v4.3 : une ligne = une personne sur un chantier, quel que soit son
+/// chapeau (le rôle reste global sur User). L'admin voit tout sans
+/// lignes ; conducteurs, chefs, ouvriers, sous-traitants et clients ne
+/// voient que les chantiers où ils sont membres. Ajout et retrait par
+/// l'admin ou un conducteur membre du chantier.
+model ChantierMembre {
+  id         String   @id @default(cuid())
+  chantierId String
+  chantier   Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation("MembreUser", fields: [userId], references: [id], onDelete: Cascade)
+  addedById  String?
+  addedBy    User?    @relation("MembreAjoutePar", fields: [addedById], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@unique([chantierId, userId])
+  @@index([userId])
+}
+
+/// v4.3 : composition explicite d'un canal. Le canal Général n'a pas de
+/// lignes : l'équipe interne du chantier y est de droit. Borne dure
+/// appliquée côté action : un externe n'est invitable que sur un canal
+/// de sa classe (CLIENT -> CLIENT, SOUS_TRAITANT -> SOUS_TRAITANT).
+model CanalMembre {
+  canalId   String
+  canal     Canal    @relation(fields: [canalId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("CanalMembreUser", fields: [userId], references: [id], onDelete: Cascade)
+  addedById String?
+  addedBy   User?    @relation("CanalMembreAjoutePar", fields: [addedById], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@id([canalId, userId])
+  @@index([userId])
 }
 
 // Token à usage unique pour réinitialiser un mot de passe.
@@ -138,6 +187,8 @@ model Chantier {
   labels           Label[]
   sections         Section[]
   pins             UserChantierPin[]
+  canaux           Canal[]
+  membres          ChantierMembre[]
 }
 
 model Equipe {
@@ -179,6 +230,10 @@ model Ouvrier {
   actif        Boolean     @default(true)
   equipeId     String?
   equipe       Equipe?     @relation(fields: [equipeId], references: [id], onDelete: SetNull)
+  /// v4.3 : compte OUVRIER lié (pointage QR). Optionnel : un ouvrier
+  /// sans smartphone reste un simple enregistrement pointé par le chef.
+  userId       String?     @unique
+  user         User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
   notes        String?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
@@ -758,6 +813,64 @@ enum JournalMessageType {
   /// Plan uploadé sur le chantier (depuis l'onglet plans)
   SYSTEM_PLAN
   BILAN_JOURNEE
+  /// v4.2 : tâche créée depuis un message tagué #tache (lien tacheId)
+  SYSTEM_TACHE
+  /// v4.2 : réserve de PV créée depuis un message tagué #reserve (lien reserveId)
+  SYSTEM_RESERVE
+}
+
+// =====================================================
+// V4.2 : CANAUX DE MESSAGERIE (vision "Slack de chantier")
+// Chaque chantier a des canaux ; la visibilité par canal est ce qui
+// permet d'ouvrir la messagerie aux externes (client, sous-traitant)
+// sans rien exposer de l'interne. Création réservée conducteur/admin.
+// =====================================================
+
+enum CanalVisibility {
+  /// Équipe interne uniquement (ADMIN, CONDUCTEUR, CHEF)
+  INTERNE
+  /// Visible aussi par les comptes CLIENT rattachés au chantier
+  CLIENT
+  /// Visible aussi par les sous-traitants rattachés au chantier (rôle à venir)
+  SOUS_TRAITANT
+}
+
+model Canal {
+  id          String          @id @default(cuid())
+  chantierId  String
+  chantier    Chantier        @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  nom         String
+  visibility  CanalVisibility @default(INTERNE)
+  ordre       Int             @default(0)
+  createdById String?
+  createdBy   User?           @relation("CanalCreateur", fields: [createdById], references: [id], onDelete: SetNull)
+  archivedAt  DateTime?
+  createdAt   DateTime        @default(now())
+
+  messages    JournalMessage[]
+  membres     CanalMembre[]
+
+  @@unique([chantierId, nom])
+  @@index([chantierId, ordre])
+}
+
+/// v4.2 : tag posé sur un message (catalogue fermé, droits par rôle).
+/// entity/entityId matérialisent la fiche créée par le tag (lien
+/// message -> fiche générique) ; le fil garde aussi ses colonnes de
+/// liaison historiques (incidentId, tacheId...) pour le rendu.
+model MessageTag {
+  messageId  String
+  tagCode    String
+  taggedById String?
+  taggedBy   User?    @relation("TagAuteur", fields: [taggedById], references: [id], onDelete: SetNull)
+  entity     String?
+  entityId   String?
+  createdAt  DateTime @default(now())
+
+  message    JournalMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, tagCode])
+  @@index([entity, entityId])
 }
 
 /// Message dans le fil de discussion du chantier (un fil par chantier × jour).
@@ -795,12 +908,18 @@ model JournalMessage {
   texte        String?
   photos       String[]           @default([])
   videos       String[]           @default([])
+  // v4.2 : canal du message (null = messages historiques, rattachés au canal Général par la migration)
+  canalId      String?
+  canal        Canal?             @relation(fields: [canalId], references: [id], onDelete: SetNull)
   // Liens vers événements existants (pour les messages SYSTEM_*)
   incidentId   String?
   demandeId    String?
   commandeId   String?
   rapportId    String?
   sortieId     String?
+  // v4.2 : liens des fiches créées par tag
+  tacheId      String?
+  reserveId    String?
   // Filtrage avant envoi au client (admin coche/décoche)
   hiddenFromClient Boolean        @default(false)
   // Auteur peut éditer dans les 5 min, admin tout le temps
@@ -809,7 +928,9 @@ model JournalMessage {
 
   @@index([chantierId, date])
   @@index([createdAt(sort: Desc)])
+  @@index([canalId])
   reactions    MessageReaction[]
+  tags         MessageTag[]
 }
 
 /// Réaction emoji sur un message du fil. Un utilisateur peut poser

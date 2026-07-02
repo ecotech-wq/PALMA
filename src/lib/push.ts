@@ -1,6 +1,7 @@
 import "server-only";
 import webpush from "web-push";
 import { db } from "@/lib/db";
+import { BRAND } from "@/lib/theme";
 
 /* -------------------------------------------------------------------------
  *  Web Push — envoi de notifications navigateur.
@@ -22,7 +23,7 @@ function ensureConfigured(): boolean {
   if (configured) return true;
   const pub = process.env.VAPID_PUBLIC_KEY;
   const priv = process.env.VAPID_PRIVATE_KEY;
-  const subj = process.env.VAPID_SUBJECT || "mailto:admin@autonhome.local";
+  const subj = process.env.VAPID_SUBJECT || BRAND.pushSubjectFallback;
   if (!pub || !priv) {
     return false;
   }

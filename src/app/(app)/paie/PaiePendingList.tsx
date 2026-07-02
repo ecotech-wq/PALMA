@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/Toast";
 import { marquerPaye, marquerPayesBulk } from "./actions";
 import { formatEuro, formatDate, cn } from "@/lib/utils";
+import { Montant } from "@/features/discret";
 
 type PendingPaiement = {
   id: string;
@@ -110,7 +111,7 @@ export function PaiePendingList({ paiements }: { paiements: PendingPaiement[] })
           <span className="text-slate-700 dark:text-slate-300 truncate">
             {selected.size === 0
               ? "Tout sélectionner"
-              : `${selected.size} séléct. · ${formatEuro(totalSelected)}`}
+              : <>{selected.size} séléct. · <Montant>{formatEuro(totalSelected)}</Montant></>}
           </span>
         </label>
         <Button
@@ -162,7 +163,7 @@ export function PaiePendingList({ paiements }: { paiements: PendingPaiement[] })
                       {p.ouvrierNom}
                     </Link>
                     <div className="font-semibold text-slate-900 dark:text-slate-100 shrink-0">
-                      {formatEuro(p.montantNet)}
+                      <Montant>{formatEuro(p.montantNet)}</Montant>
                     </div>
                   </div>
                   {/* Ligne 2 : badges + détails */}

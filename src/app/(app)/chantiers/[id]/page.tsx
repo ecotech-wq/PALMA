@@ -18,6 +18,8 @@ import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Onglets } from "@/components/ui/Onglets";
+import { BoutonConfirmation } from "@/components/ui/BoutonConfirmation";
 import { Badge } from "@/components/ui/Badge";
 import { ChantierForm } from "../ChantierForm";
 import { ChantierStatutBadge } from "../ChantierStatutBadge";
@@ -30,16 +32,27 @@ import {
 } from "../actions";
 import { CommandeStatutBadge } from "@/app/(app)/commandes/CommandeStatutBadge";
 import { formatEuro, formatDate } from "@/lib/utils";
+import { Montant } from "@/features/discret";
 import { getFinanceChantier } from "@/lib/finances-chantier";
 import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
 import { RapportsSection } from "@/app/(app)/rapports/RapportsSection";
+import {
+  canManageMembers,
+  isChantierMembre,
+  listChantierMembres,
+  listUtilisateursInvitables,
+} from "@/features/membership";
+import { MembresCard } from "@/features/membership/components/MembresCard";
 
 export default async function ChantierDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ onglet?: string }>;
 }) {
   const { id } = await params;
+  const { onglet: ongletBrut } = await searchParams;
   const me = await requireAuth();
   await requireChantierAccess(me, id);
   const [chantier, chefs, toutesEquipes, commandes, locations, finance, rapports] = await Promise.all([
@@ -79,6 +92,14 @@ export default async function ChantierDetailPage({
   ]);
   if (!chantier) notFound();
 
+  // v4.3 : équipe du chantier (membres + invitables pour la gestion)
+  const membres = await listChantierMembres(id);
+  const canManage = canManageMembers(
+    me,
+    me.isConducteur ? await isChantierMembre(me.id, id) : false
+  );
+  const invitables = canManage ? await listUtilisateursInvitables(id) : [];
+
   const updateAction = updateChantier.bind(null, id);
   const deleteAction = deleteChantier.bind(null, id);
   const archiverAction = archiverChantier.bind(null, id);
@@ -92,6 +113,19 @@ export default async function ChantierDetailPage({
       : 0;
   const isOver = finance.coutTotal > finance.budgetTotal && finance.budgetTotal > 0;
 
+  // Onglets (v4.3, doctrine « une question par écran ») : la fiche ne
+  // s'empile plus, elle se feuillette. Finances réservé aux prix.
+  const onglets = [
+    { id: "vue", label: "Vue d'ensemble" },
+    { id: "equipe", label: "Équipe" },
+    { id: "documents", label: "Documents" },
+    ...(me.canSeePrices ? [{ id: "finances", label: "Finances" }] : []),
+  ].map((t) => ({
+    ...t,
+    href: t.id === "vue" ? `/chantiers/${id}` : `/chantiers/${id}?onglet=${t.id}`,
+  }));
+  const onglet = onglets.some((t) => t.id === ongletBrut) ? ongletBrut! : "vue";
+
   return (
     <div>
       <PageHeader
@@ -102,28 +136,10 @@ export default async function ChantierDetailPage({
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <ChantierStatutBadge statut={chantier.statut} />
             {isArchived && <Badge color="slate">Archivé</Badge>}
-            <Link href={`/chantiers/${id}/journal`}>
+            <Link href={`/messagerie/${id}`}>
               <Button size="sm">
                 <MessageSquare size={14} />
-                <span className="hidden sm:inline">Journal</span>
-              </Button>
-            </Link>
-            <Link href={`/chantiers/${id}/plans`}>
-              <Button size="sm" variant="outline">
-                <FileText size={14} />
-                <span className="hidden sm:inline">Plans</span>
-              </Button>
-            </Link>
-            <Link href={`/chantiers/${id}/rapport-hebdo`}>
-              <Button size="sm" variant="outline">
-                <CalendarRange size={14} />
-                <span className="hidden sm:inline">Rapport hebdo</span>
-              </Button>
-            </Link>
-            <Link href={`/chantiers/${id}/pv-reception`}>
-              <Button size="sm" variant="outline">
-                <ClipboardCheck size={14} />
-                <span className="hidden sm:inline">PV réception</span>
+                <span className="hidden sm:inline">Messagerie</span>
               </Button>
             </Link>
             {me.isAdmin && !isArchived && (
@@ -144,18 +160,24 @@ export default async function ChantierDetailPage({
             )}
             {me.isAdmin && (
               <form action={deleteAction}>
-                <Button type="submit" variant="danger" size="sm">
+                <BoutonConfirmation
+                  titre="Supprimer le chantier"
+                  message={`Supprimer « ${chantier.nom} » et toutes ses données (pointages, commandes, rapports, messages) ? Cette action est définitive.`}
+                  libelleConfirmer="Supprimer"
+                >
                   <Trash2 size={14} />
                   <span className="hidden sm:inline">Supprimer</span>
-                </Button>
+                </BoutonConfirmation>
               </form>
             )}
           </div>
         }
       />
 
-      <div className={`grid grid-cols-1 ${me.canSeePrices ? "lg:grid-cols-3" : ""} gap-5`}>
-        <div className={me.canSeePrices ? "lg:col-span-2 space-y-5" : "space-y-5"}>
+      {!me.isClient && <Onglets items={onglets} actif={onglet} />}
+
+      <div className="grid grid-cols-1 gap-5">
+        <div className="space-y-5">
           {me.isClient && (
             <Card>
               <CardHeader>
@@ -173,7 +195,7 @@ export default async function ChantierDetailPage({
               </CardBody>
             </Card>
           )}
-          {!me.isClient && <Card>
+          {!me.isClient && onglet === "vue" && <Card className="max-w-2xl">
             <CardHeader>
               <CardTitle>Informations</CardTitle>
             </CardHeader>
@@ -198,7 +220,29 @@ export default async function ChantierDetailPage({
             </CardBody>
           </Card>}
 
-          {!me.isClient && <Card>
+          {!me.isClient && onglet === "equipe" && <Card className="max-w-2xl">
+            <CardHeader>
+              <CardTitle>Équipe du chantier</CardTitle>
+            </CardHeader>
+            <CardBody>
+              <MembresCard
+                chantierId={id}
+                membres={membres.map((m) => ({
+                  userId: m.userId,
+                  nom: m.nom,
+                  role: m.role,
+                }))}
+                invitables={invitables.map((u) => ({
+                  id: u.id,
+                  name: u.name,
+                  role: u.role,
+                }))}
+                canManage={canManage}
+              />
+            </CardBody>
+          </Card>}
+
+          {!me.isClient && onglet === "equipe" && <Card className="max-w-2xl">
             <CardHeader>
               <CardTitle>Équipes affectées</CardTitle>
             </CardHeader>
@@ -223,12 +267,14 @@ export default async function ChantierDetailPage({
                           </span>
                         </Link>
                         <form action={detach}>
-                          <button
-                            type="submit"
-                            className="text-xs text-slate-500 dark:text-slate-500 hover:text-red-600"
+                          <BoutonConfirmation
+                            titre="Retirer l'équipe"
+                            message={`Retirer l'équipe « ${e.nom} » de ce chantier ? Ses ouvriers ne seront plus proposés au pointage ici.`}
+                            libelleConfirmer="Retirer"
+                            variant="outline"
                           >
                             Retirer
-                          </button>
+                          </BoutonConfirmation>
                         </form>
                       </div>
                     );
@@ -268,8 +314,64 @@ export default async function ChantierDetailPage({
             </CardBody>
           </Card>}
 
+          {/* Documents : les espaces documentaires du chantier + rapports */}
+          {!me.isClient && onglet === "documents" && (
+            <Card className="max-w-2xl">
+              <CardHeader>
+                <CardTitle>Espaces du chantier</CardTitle>
+              </CardHeader>
+              <CardBody className="!p-0">
+                <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {[
+                    {
+                      href: `/chantiers/${id}/journal`,
+                      label: "Journal",
+                      sous: "Le fil historique du chantier",
+                      Icon: MessageSquare,
+                    },
+                    {
+                      href: `/chantiers/${id}/plans`,
+                      label: "Plans",
+                      sous: "Plans et documents graphiques",
+                      Icon: FileText,
+                    },
+                    {
+                      href: `/chantiers/${id}/rapport-hebdo`,
+                      label: "Rapports hebdomadaires",
+                      sous: "Synthèses envoyées au client",
+                      Icon: CalendarRange,
+                    },
+                    {
+                      href: `/chantiers/${id}/pv-reception`,
+                      label: "PV de réception",
+                      sous: "Réserves et signatures",
+                      Icon: ClipboardCheck,
+                    },
+                  ].map((d) => (
+                    <li key={d.href}>
+                      <Link
+                        href={d.href}
+                        className="flex items-center gap-3 p-3 text-sm transition hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                      >
+                        <d.Icon size={16} className="shrink-0 text-slate-400" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-medium text-slate-800 dark:text-slate-200">
+                            {d.label}
+                          </span>
+                          <span className="block text-xs text-slate-500 dark:text-slate-400">
+                            {d.sous}
+                          </span>
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </CardBody>
+            </Card>
+          )}
+
           {/* Rapports de chantier journaliers */}
-          <Card>
+          {(me.isClient || onglet === "documents") && <Card>
             <CardHeader>
               <CardTitle>Rapports de chantier ({rapports.length})</CardTitle>
             </CardHeader>
@@ -292,9 +394,9 @@ export default async function ChantierDetailPage({
                 }))}
               />
             </CardBody>
-          </Card>
+          </Card>}
 
-          {!me.isClient && <Card>
+          {!me.isClient && onglet === "finances" && me.canSeePrices && <Card className="max-w-2xl">
             <CardHeader className="flex items-center justify-between">
               <CardTitle>Commandes ({commandes.length})</CardTitle>
               <Link href={`/commandes/nouvelle?chantierId=${id}`}>
@@ -338,7 +440,7 @@ export default async function ChantierDetailPage({
             </CardBody>
           </Card>}
 
-          {!me.isClient && <Card>
+          {!me.isClient && onglet === "finances" && me.canSeePrices && <Card className="max-w-2xl">
             <CardHeader className="flex items-center justify-between">
               <CardTitle>Locations / prêts ({locations.length})</CardTitle>
               <Link href="/locations/nouvelle">
@@ -397,9 +499,9 @@ export default async function ChantierDetailPage({
           </Card>}
         </div>
 
-        {me.canSeePrices && (
+        {me.canSeePrices && onglet === "finances" && (
         <div className="space-y-5">
-          <Card>
+          <Card className="max-w-2xl">
             <CardHeader>
               <CardTitle>Finances</CardTitle>
             </CardHeader>
@@ -407,11 +509,11 @@ export default async function ChantierDetailPage({
               <div>
                 <div className="text-xs text-slate-500 dark:text-slate-500">Budget</div>
                 <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                  {formatEuro(finance.budgetTotal)}
+                  <Montant>{formatEuro(finance.budgetTotal)}</Montant>
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-500 mt-1">
-                  {formatEuro(finance.budgetEspeces)} espèces ·{" "}
-                  {formatEuro(finance.budgetVirement)} virement
+                  <Montant>{formatEuro(finance.budgetEspeces)}</Montant> espèces ·{" "}
+                  <Montant>{formatEuro(finance.budgetVirement)}</Montant> virement
                 </div>
               </div>
 
@@ -423,7 +525,7 @@ export default async function ChantierDetailPage({
                       isOver ? "text-red-600" : "text-slate-900 dark:text-slate-100"
                     }`}
                   >
-                    {formatEuro(finance.coutTotal)}
+                    <Montant>{formatEuro(finance.coutTotal)}</Montant>
                   </span>
                 </div>
                 <div className="mt-1 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -442,19 +544,19 @@ export default async function ChantierDetailPage({
                   <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-500">
                     <Banknote size={12} /> Main d&apos;œuvre
                   </span>
-                  <span className="font-medium">{formatEuro(finance.coutMainOeuvre)}</span>
+                  <span className="font-medium"><Montant>{formatEuro(finance.coutMainOeuvre)}</Montant></span>
                 </div>
                 <div className="flex justify-between">
                   <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-500">
                     <ShoppingCart size={12} /> Commandes
                   </span>
-                  <span className="font-medium">{formatEuro(finance.coutCommandes)}</span>
+                  <span className="font-medium"><Montant>{formatEuro(finance.coutCommandes)}</Montant></span>
                 </div>
                 <div className="flex justify-between">
                   <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-500">
                     <Truck size={12} /> Locations
                   </span>
-                  <span className="font-medium">{formatEuro(finance.coutLocations)}</span>
+                  <span className="font-medium"><Montant>{formatEuro(finance.coutLocations)}</Montant></span>
                 </div>
               </div>
 
@@ -466,7 +568,7 @@ export default async function ChantierDetailPage({
                       finance.marge < 0 ? "text-red-600" : "text-green-600"
                     }`}
                   >
-                    {formatEuro(finance.marge)}
+                    <Montant>{formatEuro(finance.marge)}</Montant>
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-400 dark:text-slate-500 text-right">

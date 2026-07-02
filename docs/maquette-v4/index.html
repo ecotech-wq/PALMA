@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LYNX V4, maquette : messagerie, canaux, tags et rubriques</title>
+<style>
+  /* ============ TOKENS (marque blanche : tout se change ici) ============ */
+  :root{
+    --brand:#259a82; --brand-dark:#1a6b5a; --brand-soft:rgba(37,154,130,.14);
+    --accent:#cc9a64;
+    --bg:#0d1117; --bg2:#131a22; --panel:#161f29; --panel2:#1b2632;
+    --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.16);
+    --ink:#e8edf2; --ink2:#9aa8b4; --ink3:#61707d;
+    --ok:#3fa76a; --warn:#d9a23c; --bad:#d96c5c;
+    --r:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font:14px/1.5 Inter,system-ui,sans-serif;height:100vh;overflow:hidden}
+  .top{height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 16px;background:var(--bg2)}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:.4px}
+  .logo .mark{width:26px;height:26px;border-radius:8px;background:linear-gradient(140deg,var(--brand),var(--brand-dark));display:grid;place-items:center;color:#fff;font-size:13px;font-weight:800}
+  .crumb{color:var(--ink3);font-size:12.5px}
+  .crumb b{color:var(--ink2);font-weight:600}
+  .roles{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)}
+  .roles button{background:var(--panel);border:1px solid var(--line);color:var(--ink2);padding:6px 12px;border-radius:8px;cursor:pointer;font-size:12.5px}
+  .roles button.on{background:var(--brand-soft);border-color:var(--brand);color:var(--ink)}
+  .wrap{display:grid;grid-template-columns:230px 1fr 320px;height:calc(100vh - 52px)}
+
+  /* ---- colonne canaux ---- */
+  .side{background:var(--bg2);border-right:1px solid var(--line);padding:14px 10px;overflow-y:auto}
+  .side h3{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink3);padding:0 8px;margin:14px 0 6px}
+  .chan{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;color:var(--ink2);cursor:pointer;font-size:13.5px}
+  .chan:hover{background:var(--panel)}
+  .chan.on{background:var(--brand-soft);color:var(--ink)}
+  .chan .h{color:var(--ink3);font-weight:600}
+  .chan .lock{margin-left:auto;font-size:10px;color:var(--ink3);border:1px solid var(--line);padding:1px 6px;border-radius:99px}
+  .chan .ext{margin-left:auto;font-size:10px;color:var(--accent);border:1px solid var(--accent);opacity:.8;padding:1px 6px;border-radius:99px}
+  .newchan{margin:10px 8px 0;font-size:12px;color:var(--ink3);border:1px dashed var(--line2);border-radius:8px;padding:6px 10px;text-align:center;cursor:pointer}
+  .newchan:hover{color:var(--ink2)}
+  .side .proj{font-weight:700;font-size:15px;padding:4px 8px}
+  .side .proj small{display:block;color:var(--ink3);font-weight:400;font-size:11.5px}
+
+  /* ---- fil ---- */
+  .feed{display:flex;flex-direction:column;background:var(--bg)}
+  .feedhead{padding:12px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .feedhead b{font-size:15px}
+  .feedhead span{color:var(--ink3);font-size:12.5px}
+  .msgs{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:16px}
+  .msg{display:flex;gap:12px;max-width:760px}
+  .av{width:36px;height:36px;border-radius:10px;flex:0 0 36px;display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff}
+  .m-body{flex:1}
+  .m-head{display:flex;align-items:baseline;gap:8px}
+  .m-head b{font-size:13.5px}
+  .m-head time{color:var(--ink3);font-size:11.5px}
+  .m-text{color:var(--ink);margin-top:2px}
+  .m-photos{display:flex;gap:8px;margin-top:8px}
+  .ph{width:120px;height:86px;border-radius:8px;background:linear-gradient(150deg,#2a3742,#1d2833);border:1px solid var(--line2);display:grid;place-items:center;color:var(--ink3);font-size:10.5px}
+  .vocal{margin-top:8px;display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:7px 14px;width:260px}
+  .vocal .play{width:26px;height:26px;border-radius:50%;background:var(--brand);display:grid;place-items:center;color:#fff;cursor:pointer;font-size:10px}
+  .vocal .wave{flex:1;height:18px;background:repeating-linear-gradient(90deg,var(--ink3) 0 2px,transparent 2px 5px);opacity:.5;border-radius:2px}
+  .vocal span{color:var(--ink3);font-size:11.5px}
+  .m-tools{margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .tagbtn{font-size:11.5px;color:var(--ink3);border:1px dashed var(--line2);background:none;border-radius:99px;padding:3px 10px;cursor:pointer}
+  .tagbtn:hover{color:var(--ink);border-color:var(--brand)}
+  .chip{font-size:11.5px;border-radius:99px;padding:3px 10px;border:1px solid;display:inline-flex;gap:5px;align-items:center}
+  .chip.inc{color:#e89f93;border-color:#8a4a40;background:rgba(217,108,92,.12)}
+  .chip.tac{color:#8fd0b8;border-color:#2f6e57;background:rgba(63,167,106,.12)}
+  .chip.res{color:#e4c07e;border-color:#8a6b32;background:rgba(217,162,60,.12)}
+  .sys{align-self:center;font-size:12px;color:var(--ink3);background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:4px 14px}
+  .composer{margin:0 20px 16px;border:1px solid var(--line2);border-radius:var(--r);background:var(--panel);padding:10px 14px}
+  .composer .row{display:flex;align-items:center;gap:10px}
+  .composer input{flex:1;background:none;border:none;outline:none;color:var(--ink);font-size:13.5px}
+  .cbtn{background:none;border:1px solid var(--line);color:var(--ink3);border-radius:8px;padding:5px 10px;font-size:11.5px;cursor:pointer}
+  .cbtn:hover{color:var(--ink2);border-color:var(--line2)}
+  .send{background:var(--brand);color:#fff;border:none;border-radius:8px;padding:6px 16px;font-size:12.5px;font-weight:600;cursor:pointer}
+
+  /* ---- menu tags ---- */
+  .tagmenu{position:absolute;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:6px;box-shadow:0 16px 40px rgba(0,0,0,.5);z-index:50;min-width:230px}
+  .tagmenu h4{font-size:10.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px;padding:5px 9px 3px}
+  .tagmenu button{display:flex;width:100%;text-align:left;gap:8px;align-items:center;background:none;border:none;color:var(--ink);padding:7px 9px;border-radius:7px;cursor:pointer;font-size:13px}
+  .tagmenu button:hover{background:var(--brand-soft)}
+  .tagmenu button small{margin-left:auto;color:var(--ink3);font-size:10.5px}
+  .dot{width:8px;height:8px;border-radius:50%}
+
+  /* ---- rubriques ---- */
+  .rub{background:var(--bg2);border-left:1px solid var(--line);display:flex;flex-direction:column}
+  .rub h2{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink3);padding:14px 16px 8px}
+  .tabs{display:flex;gap:4px;padding:0 12px 10px;border-bottom:1px solid var(--line)}
+  .tabs button{background:none;border:1px solid var(--line);color:var(--ink2);font-size:12px;border-radius:99px;padding:4px 11px;cursor:pointer}
+  .tabs button.on{background:var(--brand-soft);border-color:var(--brand);color:var(--ink)}
+  .cards{flex:1;overflow-y:auto;padding:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:11px 13px;margin-bottom:10px;animation:pop .25s ease}
+  @keyframes pop{from{transform:translateY(6px);opacity:0}to{transform:none;opacity:1}}
+  .card .t{display:flex;gap:8px;align-items:center;font-size:12.5px;font-weight:600}
+  .card .meta{color:var(--ink3);font-size:11px;margin-top:4px}
+  .card .lien{margin-top:7px;font-size:11.5px;color:var(--brand);cursor:pointer}
+  .card .badge{margin-left:auto;font-size:10px;padding:2px 8px;border-radius:99px}
+  .b-open{background:rgba(217,108,92,.15);color:#e89f93}
+  .b-todo{background:rgba(63,167,106,.15);color:#8fd0b8}
+  .b-res{background:rgba(217,162,60,.15);color:#e4c07e}
+  .empty{color:var(--ink3);font-size:12px;text-align:center;padding:30px 10px}
+  .note{margin:0 12px 12px;background:var(--brand-soft);border:1px solid var(--brand);border-radius:10px;padding:9px 12px;font-size:12px;color:var(--ink2)}
+  .note b{color:var(--ink)}
+  .hide{display:none !important}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="logo"><span class="mark">LX</span> LYNX <span style="color:var(--ink3);font-weight:400;font-size:11px">V4 maquette</span></div>
+  <div class="crumb">Espace <b>Autonhome</b> / Chantier <b>Salajee</b></div>
+  <div class="roles">
+    Je regarde en tant que :
+    <button class="on" data-role="conducteur">Conducteur</button>
+    <button data-role="chef">Chef de chantier</button>
+    <button data-role="client">Client</button>
+    <button data-role="soustraitant">Sous-traitant</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <!-- CANAUX -->
+  <aside class="side">
+    <div class="proj">Chantier Salajee<small>Villa R+1, Sainte-Marie</small></div>
+    <h3>Canaux</h3>
+    <div class="chan on" data-chan="general" data-int="1"><span class="h">#</span> général</div>
+    <div class="chan" data-chan="terrain" data-int="1"><span class="h">#</span> terrain <span class="lock">interne</span></div>
+    <div class="chan" data-chan="photos" data-int="1"><span class="h">#</span> photos <span class="lock">interne</span></div>
+    <div class="chan" data-chan="client" data-int="0" data-vis="client"><span class="h">#</span> client <span class="ext">externe</span></div>
+    <div class="chan" data-chan="soustraitants" data-int="0" data-vis="soustraitant"><span class="h">#</span> sous-traitants <span class="ext">externe</span></div>
+    <div class="newchan" id="newchan">+ Nouveau canal</div>
+    <h3 id="h-rap">Documents</h3>
+    <div class="chan" data-int="0" data-vis="client"><span class="h">▤</span> Rapports hebdomadaires</div>
+    <div class="chan" data-int="0" data-vis="client"><span class="h">▤</span> PV de réception</div>
+    <div class="chan" data-int="0" data-vis="client"><span class="h">▤</span> Contrats et devis signés</div>
+    <div class="chan" data-int="0" data-vis="client"><span class="h">▤</span> Situations de chantier <span class="lock">signature</span></div>
+    <div class="chan" data-int="0" data-vis="soustraitant"><span class="h">▤</span> Mes tâches et plans</div>
+    <div class="chan" data-int="0" data-vis="soustraitant"><span class="h">▤</span> Mes contrats et situations</div>
+  </aside>
+
+  <!-- FIL -->
+  <main class="feed">
+    <div class="feedhead"><b id="chan-title"># terrain</b><span>7 membres, interne</span></div>
+    <div class="msgs" id="msgs">
+      <div class="msg">
+        <div class="av" style="background:#4a6a8a">MB</div>
+        <div class="m-body">
+          <div class="m-head"><b>Mamadou (maçon)</b><time>08:12</time></div>
+          <div class="m-text">La poutre du R+1 côté est, elle est fissurée sur environ 40 cm, je vous envoie les photos et le vocal.</div>
+          <div class="m-photos"><div class="ph">photo 1 : poutre</div><div class="ph">photo 2 : détail fissure</div></div>
+          <div class="vocal"><div class="play">►</div><div class="wave"></div><span>0:38</span></div>
+          <div class="m-tools" id="msg1-tools">
+            <button class="tagbtn" data-msg="1">+ Taguer</button>
+          </div>
+        </div>
+      </div>
+      <div class="msg">
+        <div class="av" style="background:#7a5a3a">BE</div>
+        <div class="m-body">
+          <div class="m-head"><b>Ben (chef de chantier)</b><time>08:16</time></div>
+          <div class="m-text">Vu. On étaie ce matin, personne ne travaille dessous. Il faut prévoir la visite du BET.</div>
+          <div class="m-tools" id="msg2-tools">
+            <button class="tagbtn" data-msg="2">+ Taguer</button>
+          </div>
+        </div>
+      </div>
+      <div class="sys" id="sysline" style="display:none"></div>
+    </div>
+    <div class="composer">
+      <div class="row">
+        <input placeholder="Écrire dans #terrain... (le tag est un bonus, jamais une obligation)">
+        <button class="cbtn">Photo</button><button class="cbtn">Vocal</button><button class="cbtn" id="composer-tag">Tag</button>
+        <button class="send">Envoyer</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- RUBRIQUES -->
+  <aside class="rub">
+    <h2>Rubriques du chantier</h2>
+    <div class="tabs">
+      <button class="on" data-tab="inc">Incidents <span id="n-inc">(0)</span></button>
+      <button data-tab="tac">Tâches <span id="n-tac">(0)</span></button>
+      <button data-tab="res">Réserves <span id="n-res">(0)</span></button>
+    </div>
+    <div class="cards" id="cards"><div class="empty">Aucune fiche pour l'instant.<br>Taguez un message pour en créer une.</div></div>
+    <div class="note"><b>Le principe :</b> un tag posé sur un message crée la fiche dans la rubrique, avec le lien vers la conversation. Les modules deviennent des vues de ce qui se dit.</div>
+  </aside>
+</div>
+
+<div class="tagmenu hide" id="tagmenu">
+  <h4>Catalogue de l'espace Autonhome</h4>
+  <button data-tag="inc"><span class="dot" style="background:#d96c5c"></span> #incident <small>fiche incident</small></button>
+  <button data-tag="tac"><span class="dot" style="background:#3fa76a"></span> #tâche <small>planning</small></button>
+  <button data-tag="res"><span class="dot" style="background:#d9a23c"></span> #réserve <small>PV de réception</small></button>
+</div>
+
+<script>
+// ================= état =================
+let role = 'conducteur';
+let currentMsg = null;
+const fiches = { inc: [], tac: [], res: [] };
+const LABELS = { inc: ['#incident','chip inc','Incident', 'b-open', 'Ouvert'], tac: ['#tâche','chip tac','Tâche','b-todo','À faire'], res: ['#réserve','chip res','Réserve','b-res','À lever'] };
+// droits par rôle (catalogue fermé filtré par droits)
+const DROITS = { conducteur: ['inc','tac','res'], chef: ['inc','tac'], client: ['res'], soustraitant: ['inc'] };
+
+// ================= rôles =================
+document.querySelectorAll('.roles button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.roles button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  role = b.dataset.role;
+  appliqueRole();
+});
+function appliqueRole(){
+  const externe = role === 'client' || role === 'soustraitant';
+  // canaux internes : caches aux externes
+  document.querySelectorAll('.chan[data-int="1"]').forEach(c => c.classList.toggle('hide', externe));
+  // elements a visibilite ciblee (canaux externes et documents) : chacun ne voit que les siens
+  document.querySelectorAll('.chan[data-vis]').forEach(c => {
+    c.classList.toggle('hide', externe && c.dataset.vis !== role);
+  });
+  document.getElementById('newchan').classList.toggle('hide', role !== 'conducteur');
+  if (role === 'client') selectChan(document.querySelector('.chan[data-chan="client"]'));
+  else if (role === 'soustraitant') selectChan(document.querySelector('.chan[data-chan="soustraitants"]'));
+  else selectChan(document.querySelector('.chan[data-chan="terrain"]') || document.querySelector('.chan'));
+}
+
+// ================= canaux =================
+document.querySelectorAll('.chan[data-chan]').forEach(c => c.onclick = () => selectChan(c));
+function selectChan(c){
+  if (!c) return;
+  document.querySelectorAll('.chan').forEach(x => x.classList.remove('on'));
+  c.classList.add('on');
+  const nom = c.dataset.chan;
+  document.getElementById('chan-title').textContent = '# ' + nom;
+  // le fil de démonstration ne vit que dans #terrain
+  const terrain = nom === 'terrain';
+  document.getElementById('msgs').style.opacity = terrain ? 1 : .35;
+  document.querySelector('.composer input').placeholder = 'Écrire dans #' + nom + '...';
+}
+document.getElementById('newchan').onclick = () => alert('Création de canal : réservée au conducteur et à l\'admin (décision du 2026-07-02).');
+
+// ================= menu tags =================
+document.querySelectorAll('.tagbtn, #composer-tag').forEach(b => b.onclick = (e) => {
+  e.stopPropagation();
+  const menu = document.getElementById('tagmenu');
+  // filtre du catalogue selon les droits du rôle courant
+  menu.querySelectorAll('button').forEach(t => t.classList.toggle('hide', !DROITS[role].includes(t.dataset.tag)));
+  currentMsg = b.dataset.msg || null;
+  menu.classList.remove('hide');
+  const r = b.getBoundingClientRect();
+  menu.style.left = Math.min(r.left, innerWidth - 260) + 'px';
+  menu.style.top = (r.bottom + 6) + 'px';
+});
+document.body.onclick = () => document.getElementById('tagmenu').classList.add('hide');
+
+// ================= tag -> fiche =================
+document.querySelectorAll('#tagmenu button').forEach(t => t.onclick = (e) => {
+  e.stopPropagation();
+  const kind = t.dataset.tag;
+  const [libelle, chipClass, nomFiche, badgeClass, badgeTxt] = LABELS[kind];
+  // chip sur le message
+  if (currentMsg){
+    const tools = document.getElementById('msg' + currentMsg + '-tools');
+    const chip = document.createElement('span');
+    chip.className = chipClass;
+    chip.textContent = libelle;
+    tools.prepend(chip);
+  }
+  // fiche dans la rubrique
+  fiches[kind].push({
+    titre: currentMsg === '1' ? 'Poutre R+1 fissurée (40 cm), côté est' : 'Étaiement posé, visite BET à planifier',
+    par: currentMsg === '1' ? 'Mamadou, via #terrain' : 'Ben, via #terrain',
+    badge: [badgeClass, badgeTxt],
+  });
+  document.getElementById('n-' + kind).textContent = '(' + fiches[kind].length + ')';
+  montreTab(kind);
+  // message système dans le fil (aller-retour conversation <-> module)
+  const sys = document.getElementById('sysline');
+  sys.style.display = '';
+  sys.textContent = nomFiche + ' n°' + fiches[kind].length + ' créé(e) depuis le message, lien conservé vers la conversation';
+  document.getElementById('tagmenu').classList.add('hide');
+});
+
+// ================= rubriques =================
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => montreTab(b.dataset.tab));
+function montreTab(tab){
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
+  const zone = document.getElementById('cards');
+  zone.innerHTML = '';
+  if (!fiches[tab].length){
+    zone.innerHTML = '<div class="empty">Aucune fiche pour l\'instant.<br>Taguez un message pour en créer une.</div>';
+    return;
+  }
+  fiches[tab].forEach((f, i) => {
+    const d = document.createElement('div');
+    d.className = 'card';
+    d.innerHTML = '<div class="t">' + LABELS[tab][2] + ' n°' + (i+1) +
+      '<span class="badge ' + f.badge[0] + '">' + f.badge[1] + '</span></div>' +
+      '<div class="meta">' + f.titre + '</div>' +
+      '<div class="meta">Créé par tag, ' + f.par + '</div>' +
+      '<div class="lien">Voir la conversation d\'origine</div>';
+    zone.appendChild(d);
+  });
+}
+appliqueRole();
+</script>
+</body>
+</html>

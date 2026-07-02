@@ -73,6 +73,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
 import {
   deleteChantierMessage,
   toggleMessageClientVisibility,
@@ -83,7 +84,22 @@ import {
 import { SmilePlus } from "lucide-react";
 import { Check, X } from "lucide-react";
 import { Lightbox, type PhotoMeta } from "@/components/Lightbox";
-import { MapPin } from "lucide-react";
+import {
+  MapPin,
+  CalendarCheck,
+  ClipboardList,
+  MessageSquare,
+  LayoutList,
+} from "lucide-react";
+import {
+  TagPicker,
+  TagChip,
+  canApplyTag,
+  listTagsForRole,
+  type Role as TagRole,
+  type TagCode,
+} from "@/features/tags";
+import { applyTagToMessage } from "./tag-actions";
 
 type ChatMessage = {
   id: string;
@@ -100,8 +116,14 @@ type ChatMessage = {
   commandeId: string | null;
   sortieId: string | null;
   rapportId: string | null;
+  // v4.2 : fiches créées par tag (optionnels : l'API de recherche
+  // historique peut renvoyer des messages antérieurs à ces colonnes)
+  tacheId?: string | null;
+  reserveId?: string | null;
   createdAt: Date | string;
   reactions?: { emoji: string; userId: string }[];
+  // v4.2 : tags déjà posés sur ce message (codes du catalogue)
+  tags?: string[];
 };
 
 const REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😂", "😮", "😢", "🙏"];
@@ -122,33 +144,59 @@ function dayKey(d: Date | string): string {
 }
 
 /** Filtres rapides — chaque entrée mappe vers une liste de types JournalMessage. */
-const FILTERS: { key: string; label: string; types: string[] }[] = [
-  { key: "ALL", label: "Tout", types: [] },
-  { key: "NOTE", label: "💬 Messages", types: ["NOTE"] },
+const FILTERS: {
+  key: string;
+  label: string;
+  Icon: typeof AlertTriangle;
+  types: string[];
+}[] = [
+  { key: "ALL", label: "Tout", Icon: LayoutList, types: [] },
+  { key: "NOTE", label: "Messages", Icon: MessageSquare, types: ["NOTE"] },
   {
     key: "INCIDENT",
-    label: "⚠️ Incidents",
+    label: "Incidents",
+    Icon: AlertTriangle,
     types: ["SYSTEM_INCIDENT", "SYSTEM_INCIDENT_RESOLU"],
   },
-  { key: "DEMANDE", label: "📦 Demandes", types: ["SYSTEM_DEMANDE"] },
+  { key: "TACHE", label: "Tâches", Icon: CalendarCheck, types: ["SYSTEM_TACHE"] },
+  {
+    key: "RESERVE",
+    label: "Réserves",
+    Icon: ClipboardList,
+    types: ["SYSTEM_RESERVE"],
+  },
+  { key: "DEMANDE", label: "Demandes", Icon: Package, types: ["SYSTEM_DEMANDE"] },
   {
     key: "COMMANDE",
-    label: "🛒 Commandes",
+    label: "Commandes",
+    Icon: ShoppingCart,
     types: ["SYSTEM_COMMANDE", "SYSTEM_COMMANDE_LIVREE"],
   },
-  { key: "RAPPORT", label: "📝 Rapports", types: ["SYSTEM_RAPPORT"] },
-  { key: "MATERIEL", label: "🧰 Matériel", types: ["SYSTEM_SORTIE", "SYSTEM_RETOUR"] },
+  { key: "RAPPORT", label: "Rapports", Icon: FileText, types: ["SYSTEM_RAPPORT"] },
+  {
+    key: "MATERIEL",
+    label: "Matériel",
+    Icon: PackageOpen,
+    types: ["SYSTEM_SORTIE", "SYSTEM_RETOUR"],
+  },
   {
     key: "LOCATION",
-    label: "🚚 Locations",
+    label: "Locations",
+    Icon: Truck,
     types: ["SYSTEM_LOCATION", "SYSTEM_LOCATION_FIN"],
   },
-  { key: "PLAN", label: "📐 Plans", types: ["SYSTEM_PLAN"] },
+  { key: "PLAN", label: "Plans", Icon: ImageIcon, types: ["SYSTEM_PLAN"] },
 ];
 
 const TYPE_META: Record<
   string,
-  { Icon: typeof AlertTriangle; label: string; bg: string; text: string; href?: (m: ChatMessage) => string | null }
+  {
+    Icon: typeof AlertTriangle;
+    label: string;
+    bg: string;
+    text: string;
+    href?: (m: ChatMessage, chantierId: string) => string | null;
+  }
 > = {
   NOTE: { Icon: AlertTriangle, label: "", bg: "", text: "" }, // pas de badge
   SYSTEM_INCIDENT: {
@@ -228,6 +276,20 @@ const TYPE_META: Record<
     text: "text-cyan-700 dark:text-cyan-300",
     href: () => null,
   },
+  SYSTEM_TACHE: {
+    Icon: CalendarCheck,
+    label: "Tâche planifiée",
+    bg: "bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-900",
+    text: "text-sky-700 dark:text-sky-300",
+    href: (_m, chantierId) => `/planning?chantier=${chantierId}`,
+  },
+  SYSTEM_RESERVE: {
+    Icon: ClipboardList,
+    label: "Réserve",
+    bg: "bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900",
+    text: "text-rose-700 dark:text-rose-300",
+    href: () => "/pv-reception",
+  },
   BILAN_JOURNEE: {
     Icon: FileText,
     label: "Bilan",
@@ -253,6 +315,7 @@ export function ChantierFeed({
   chantierId,
   messages,
   currentUserId,
+  viewerRole,
   canEdit,
   canPilotDemandes = false,
   demandeInfo = {},
@@ -261,6 +324,7 @@ export function ChantierFeed({
   chantierId: string;
   messages: ChatMessage[];
   currentUserId: string;
+  viewerRole: TagRole;
   canEdit: boolean;
   canPilotDemandes?: boolean;
   demandeInfo?: Record<string, DemandeInfo>;
@@ -271,6 +335,8 @@ export function ChantierFeed({
   const bottomRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<string>("ALL");
+  // Recherche repliée par défaut : l'écran appartient aux messages.
+  const [searchOpen, setSearchOpen] = useState(false);
   // Résultats étendus chargés via API (au-delà des 14 jours)
   const [extendedResults, setExtendedResults] = useState<ChatMessage[]>([]);
   const [extendedSearching, setExtendedSearching] = useState(false);
@@ -340,7 +406,8 @@ export function ChantierFeed({
   if (messages.length === 0) {
     return (
       <div className="p-10 text-center text-sm text-slate-500 dark:text-slate-400 italic">
-        Aucun message. Démarre la conversation avec le composer en bas 👇
+        Aucun message sur ce canal pour l&apos;instant. Écris le premier
+        message ci-dessous.
       </div>
     );
   }
@@ -353,73 +420,107 @@ export function ChantierFeed({
     groups.get(k)!.push(m);
   }
 
+  function fermerRecherche() {
+    setSearchOpen(false);
+    setQuery("");
+    setFilter("ALL");
+  }
+
   return (
     <div className="space-y-4 p-3">
-      {/* Barre recherche + filtres rapides (sticky en haut du feed) */}
-      <div className="sticky top-0 z-10 -m-3 mb-0 p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
-        <div className="relative">
-          <Search
-            size={14}
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
-          />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Rechercher dans le fil…"
-            className="w-full pl-8 pr-8 py-1.5 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
-          {query && (
+      {/* Recherche repliée : une loupe flottante qui suit le défilement,
+          sans prendre une ligne au fil. Dépliée : champ + filtres + X. */}
+      {!searchOpen ? (
+        <div className="sticky top-1.5 z-10 !mt-0 flex h-0 justify-end overflow-visible">
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            aria-label="Rechercher et filtrer le fil"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 text-slate-500 dark:text-slate-400 shadow-sm backdrop-blur transition-colors hover:text-slate-800 dark:hover:text-slate-200"
+          >
+            <Search size={14} />
+          </button>
+        </div>
+      ) : (
+        <div className="sticky top-0 z-10 -m-3 mb-0 p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-1.5">
+            <div className="relative flex-1">
+              <Search
+                size={14}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                type="search"
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Rechercher dans le fil…"
+                className="w-full pl-8 pr-8 py-1.5 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  aria-label="Effacer la recherche"
+                >
+                  <XIcon size={14} />
+                </button>
+              )}
+            </div>
             <button
               type="button"
-              onClick={() => setQuery("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-              aria-label="Effacer la recherche"
+              onClick={fermerRecherche}
+              aria-label="Fermer la recherche"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200"
             >
-              <XIcon size={14} />
+              <XIcon size={16} />
             </button>
+          </div>
+          {/* Une seule ligne défilante : au téléphone, l'empilement de
+              3 rangées de filtres mangeait le fil */}
+          <div className="mt-2 flex gap-1 overflow-x-auto pb-0.5">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(f.key)}
+                className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border transition ${
+                  filter === f.key
+                    ? "bg-brand-600 text-white border-brand-600"
+                    : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
+                }`}
+              >
+                <f.Icon size={11} />
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {isFiltering && (
+            <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400">
+              <span>
+                {visibleMessages.length} résultat
+                {visibleMessages.length > 1 ? "s" : ""} sur les 14 derniers jours
+              </span>
+              {query.trim().length >= 2 && (
+                <button
+                  type="button"
+                  onClick={loadExtendedHistory}
+                  disabled={extendedSearching}
+                  className="text-brand-600 dark:text-brand-400 hover:underline disabled:opacity-50"
+                >
+                  {extendedSearching
+                    ? "Recherche…"
+                    : lastExtendedQueryRef.current === query &&
+                        extendedResults.length > 0
+                      ? `${extendedResults.length} résultat${extendedResults.length > 1 ? "s" : ""} plus anciens`
+                      : "Chercher dans tout l'historique"}
+                </button>
+              )}
+            </div>
           )}
         </div>
-        <div className="mt-2 flex flex-wrap gap-1 overflow-x-auto">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => setFilter(f.key)}
-              className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border transition ${
-                filter === f.key
-                  ? "bg-brand-600 text-white border-brand-600"
-                  : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        {isFiltering && (
-          <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400">
-            <span>
-              {visibleMessages.length} résultat
-              {visibleMessages.length > 1 ? "s" : ""} sur les 14 derniers jours
-            </span>
-            {query.trim().length >= 2 && (
-              <button
-                type="button"
-                onClick={loadExtendedHistory}
-                disabled={extendedSearching}
-                className="text-brand-600 dark:text-brand-400 hover:underline disabled:opacity-50"
-              >
-                {extendedSearching
-                  ? "Recherche…"
-                  : lastExtendedQueryRef.current === query &&
-                      extendedResults.length > 0
-                    ? `${extendedResults.length} résultat${extendedResults.length > 1 ? "s" : ""} plus anciens`
-                    : "Chercher dans tout l'historique"}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      )}
 
       {visibleMessages.length === 0 && isFiltering && extendedResults.length === 0 && (
         <div className="p-6 text-center text-sm text-slate-500 dark:text-slate-400 italic">
@@ -441,12 +542,14 @@ export function ChantierFeed({
             {extendedResults.map((m) => (
               <MessageBubble
                 key={`ext-${m.id}`}
+                chantierId={chantierId}
                 msg={m}
                 isOwn={m.authorId === currentUserId}
                 canEdit={canEdit}
                 canPilotDemandes={canPilotDemandes}
                 demandeInfo={m.demandeId ? demandeInfo[m.demandeId] : undefined}
                 currentUserId={currentUserId}
+                viewerRole={viewerRole}
                 photoMeta={photoMeta}
               />
             ))}
@@ -466,12 +569,14 @@ export function ChantierFeed({
             {msgs.map((m) => (
               <MessageBubble
                 key={m.id}
+                chantierId={chantierId}
                 msg={m}
                 isOwn={m.authorId === currentUserId}
                 canEdit={canEdit}
                 canPilotDemandes={canPilotDemandes}
                 demandeInfo={m.demandeId ? demandeInfo[m.demandeId] : undefined}
                 currentUserId={currentUserId}
+                viewerRole={viewerRole}
                 photoMeta={photoMeta}
               />
             ))}
@@ -485,20 +590,24 @@ export function ChantierFeed({
 }
 
 function MessageBubble({
+  chantierId,
   msg,
   isOwn,
   canEdit,
   canPilotDemandes,
   demandeInfo,
   currentUserId,
+  viewerRole,
   photoMeta,
 }: {
+  chantierId: string;
   msg: ChatMessage;
   isOwn: boolean;
   canEdit: boolean;
   canPilotDemandes: boolean;
   demandeInfo: DemandeInfo | undefined;
   currentUserId: string;
+  viewerRole: TagRole;
   photoMeta: Record<string, PhotoMeta>;
 }) {
   // Groupage des réactions par emoji
@@ -511,13 +620,34 @@ function MessageBubble({
     grouped.set(r.emoji, cur);
   }
   const [pickerOpen, setPickerOpen] = useState(false);
+  const panneau = usePanneauOpaque();
   const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const tags = msg.tags ?? [];
+
+  function handleApplyTag(code: TagCode) {
+    startTransition(async () => {
+      try {
+        const res = await applyTagToMessage(msg.id, code);
+        toast.success(`${res.resume}`);
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Erreur");
+      }
+    });
+  }
   const meta = TYPE_META[msg.type] ?? TYPE_META.NOTE;
-  const linkedHref = meta.href?.(msg) ?? null;
+  const linkedHref = meta.href?.(msg, chantierId) ?? null;
   const isTyped = msg.type !== "NOTE";
+  // Un tag se pose sur un vrai message (NOTE), pas sur une trace système,
+  // par un rôle qui en a le droit, et si le message n'a pas déjà ce tag.
+  const canTagThis =
+    !isTyped &&
+    listTagsForRole(viewerRole).some(
+      (d) => !tags.includes(d.code) && canApplyTag(viewerRole, d.code)
+    );
 
   function handleDelete() {
     if (!confirm("Supprimer ce message ?")) return;
@@ -634,6 +764,27 @@ function MessageBubble({
             </p>
           )}
 
+          {/* Tags posés (v4.2) : chaque tag renvoie à la fiche créée.
+              La puce « Taguer » est TOUJOURS visible (pas de survol :
+              l'app se pilote au pouce sur téléphone). */}
+          {(tags.length > 0 || canTagThis) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+              {tags.map((code) => (
+                <TagChip key={code} code={code} />
+              ))}
+              {canTagThis && (
+                <TagPicker
+                  role={viewerRole}
+                  onSelect={handleApplyTag}
+                  disabled={pending}
+                  label="Taguer"
+                  compact
+                  direction="up"
+                />
+              )}
+            </div>
+          )}
+
           {/* Photos */}
           {msg.photos.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -711,7 +862,10 @@ function MessageBubble({
                     className="fixed inset-0 z-20"
                     onClick={() => setPickerOpen(false)}
                   />
-                  <div className="absolute bottom-full left-0 mb-1 z-30 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-1 flex gap-0.5 flex-wrap max-w-[240px]">
+                  <div
+                    className="absolute bottom-full left-0 mb-1 z-30 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-1 flex gap-0.5 flex-wrap max-w-[240px]"
+                    style={panneau}
+                  >
                     {REACTION_EMOJIS.map((em) => (
                       <button
                         key={em}
@@ -742,16 +896,16 @@ function MessageBubble({
                   type="button"
                   onClick={handleApproveDemande}
                   disabled={pending}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-600 text-white text-xs hover:bg-emerald-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 px-3 py-2 rounded-md bg-emerald-600 text-white text-xs hover:bg-emerald-700 disabled:opacity-50"
                   title="Approuver et créer la commande"
                 >
-                  <Check size={12} /> Approuver &amp; commander
+                  <Check size={12} /> Valider et commander
                 </button>
                 <button
                   type="button"
                   onClick={handleRefuseDemande}
                   disabled={pending}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white dark:bg-slate-900 border border-red-300 dark:border-red-900 text-red-700 dark:text-red-300 text-xs hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 px-3 py-2 rounded-md bg-white dark:bg-slate-900 border border-red-300 dark:border-red-900 text-red-700 dark:text-red-300 text-xs hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50"
                   title="Refuser cette demande"
                 >
                   <X size={12} /> Refuser
@@ -785,8 +939,9 @@ function MessageBubble({
             </div>
           )}
 
-          {/* Footer : actions */}
-          <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition">
+          {/* Footer : actions. Visible en permanence sur écran tactile ;
+              sur un poste avec souris, n'apparaît qu'au survol. */}
+          <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 transition [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:focus-within:opacity-100">
             <button
               type="button"
               onClick={() => setPickerOpen((v) => !v)}

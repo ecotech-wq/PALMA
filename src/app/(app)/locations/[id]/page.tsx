@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/Badge";
 import { LocationForm } from "../LocationForm";
 import { updateLocation, deleteLocation, cloturerLocation } from "../actions";
 import { formatEuro, formatDate } from "@/lib/utils";
+import { Montant } from "@/features/discret";
 
 export default async function LocationDetailPage({
   params,
@@ -130,7 +131,7 @@ export default async function LocationDetailPage({
               {location.type === "LOCATION" && (
                 <div className="flex justify-between">
                   <span className="text-slate-500 dark:text-slate-500">Coût total</span>
-                  <span className="font-semibold">{formatEuro(location.coutTotal.toString())}</span>
+                  <span className="font-semibold"><Montant>{formatEuro(location.coutTotal.toString())}</Montant></span>
                 </div>
               )}
             </CardBody>

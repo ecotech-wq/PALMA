@@ -34,6 +34,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BRAND } from "@/lib/theme";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SearchTrigger } from "@/components/SearchTrigger";
 
@@ -194,15 +195,15 @@ function BrandHeader({
   return (
     <Link href={href} className="flex items-center gap-3 min-w-0">
       <Image
-        src="/brand/logo-icon.webp"
-        alt="Autonhome"
+        src={BRAND.logoIcon}
+        alt={BRAND.appName}
         width={36}
         height={36}
         className="rounded-md object-contain shrink-0 bg-white"
       />
       <div className="min-w-0">
         <div className="font-bold text-brand-700 dark:text-brand-700 leading-tight">
-          Autonhome
+          {BRAND.appName}
         </div>
         {subtitle && (
           <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
@@ -453,15 +454,15 @@ export function DesktopSidebar({
           title="Mon profil"
         >
           <Image
-            src="/brand/logo-icon.webp"
-            alt="Autonhome"
+            src={BRAND.logoIcon}
+            alt={BRAND.appName}
             width={32}
             height={32}
             className="rounded-md object-contain shrink-0 bg-white"
           />
           <div className="min-w-0">
             <div className="font-bold text-brand-700 dark:text-brand-700 leading-tight text-sm">
-              Autonhome
+              {BRAND.appName}
             </div>
             <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
               <UserCircle size={10} />

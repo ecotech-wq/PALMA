@@ -1,23 +1,24 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Plus,
-  ClipboardList,
   Package,
   AlertTriangle,
-  MessageSquare,
   Wrench,
   Banknote,
   ShoppingCart,
+  Hammer,
 } from "lucide-react";
+import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
 
 /**
- * Bandeau d'actions rapides en haut du dashboard. Les boutons varient
- * selon le rôle pour ne pas exposer ce que l'utilisateur n'a pas le
- * droit de faire.
- *
- *  - CHEF       : Pointage, Demander matériel, Signaler incident, Messagerie
- *  - CONDUCTEUR : + Nouvelle commande, Nouveau matériel
- *  - ADMIN      : + Nouveau chantier, Générer paie
+ * Le « + » de l'accueil : un seul bouton, les actions de création se
+ * déplient à la demande (feuille bas d'écran au téléphone, menu ancré
+ * sur grand écran). Remplace l'ancienne rangée de huit raccourcis, qui
+ * dupliquait la navigation et chargeait l'écran. Pointage et messagerie
+ * ne figurent plus ici : ils ont leur place dans la barre du bas.
  */
 export function QuickActionsBar({
   isAdmin,
@@ -28,98 +29,141 @@ export function QuickActionsBar({
   isConducteur: boolean;
   isChef: boolean;
 }) {
-  type Action = {
-    label: string;
-    href: string;
-    Icon: typeof Plus;
-    color: string;
-    show: boolean;
-  };
+  const [ouvert, setOuvert] = useState(false);
+  const conteneurRef = useRef<HTMLDivElement>(null);
+  const panneau = usePanneauOpaque();
+  void isChef;
+
+  useEffect(() => {
+    if (!ouvert) return;
+    const surClic = (e: MouseEvent) => {
+      if (conteneurRef.current && !conteneurRef.current.contains(e.target as Node)) {
+        setOuvert(false);
+      }
+    };
+    const surTouche = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOuvert(false);
+    };
+    document.addEventListener("mousedown", surClic);
+    document.addEventListener("keydown", surTouche);
+    return () => {
+      document.removeEventListener("mousedown", surClic);
+      document.removeEventListener("keydown", surTouche);
+    };
+  }, [ouvert]);
 
   const canPilot = isAdmin || isConducteur;
 
-  const actions: Action[] = [
+  const actions = [
     {
-      label: "Pointage",
-      href: "/pointage",
-      Icon: ClipboardList,
-      color: "bg-brand-600 hover:bg-brand-700 text-white",
-      show: true,
-    },
-    {
-      label: "Messagerie",
-      href: "/messagerie",
-      Icon: MessageSquare,
-      color:
-        "bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800",
-      show: true,
-    },
-    {
-      label: "Demander matériel",
-      href: "/demandes/nouvelle",
-      Icon: Package,
-      color:
-        "bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800",
-      show: true,
-    },
-    {
-      label: "Signaler incident",
+      label: "Signaler un incident",
+      sous: "Ouvre une fiche à instruire",
       href: "/incidents/nouveau",
       Icon: AlertTriangle,
-      color:
-        "bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-900 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40",
+      couleur: "text-red-500",
+      show: true,
+    },
+    {
+      label: "Demander du matériel",
+      sous: "À valider par le conducteur ou l'admin",
+      href: "/demandes/nouvelle",
+      Icon: Package,
+      couleur: "text-blue-500",
       show: true,
     },
     {
       label: "Nouvelle commande",
+      sous: "Achat fournisseur pour un chantier",
       href: "/commandes/nouvelle",
       Icon: ShoppingCart,
-      color:
-        "bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800",
+      couleur: "text-amber-500",
       show: canPilot,
     },
     {
       label: "Nouveau matériel",
+      sous: "Entrée dans le parc",
       href: "/materiel/nouveau",
       Icon: Wrench,
-      color:
-        "bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800",
+      couleur: "text-slate-500",
       show: canPilot,
     },
     {
       label: "Nouveau chantier",
+      sous: "Création complète",
       href: "/chantiers/nouveau",
-      Icon: Plus,
-      color:
-        "bg-white dark:bg-slate-900 border border-brand-300 dark:border-brand-900 text-brand-700 dark:text-brand-300 hover:bg-brand-50 dark:hover:bg-brand-950/40",
+      Icon: Hammer,
+      couleur: "text-brand-500",
       show: isAdmin,
     },
     {
-      label: "Générer paie",
+      label: "Générer la paie",
+      sous: "Depuis les pointages du mois",
       href: "/paie/nouveau",
       Icon: Banknote,
-      color:
-        "bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800",
+      couleur: "text-emerald-600",
       show: isAdmin,
     },
-  ];
-
-  const visible = actions.filter((a) => a.show);
-  // Évite l'avertissement de variable non utilisée
-  void isChef;
+  ].filter((a) => a.show);
 
   return (
-    <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
-      {visible.map((a) => (
-        <Link
-          key={a.href}
-          href={a.href}
-          className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition snap-start ${a.color}`}
-        >
-          <a.Icon size={14} />
-          {a.label}
-        </Link>
-      ))}
+    <div ref={conteneurRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOuvert((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={ouvert}
+        aria-label="Créer (incident, demande, commande...)"
+        title="Créer"
+        className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+          ouvert
+            ? "bg-brand-100 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300"
+            : "bg-brand-600 text-white hover:bg-brand-700"
+        }`}
+      >
+        <Plus size={20} className={`transition-transform ${ouvert ? "rotate-45" : ""}`} />
+      </button>
+
+      {ouvert && (
+        <>
+          <button
+            type="button"
+            aria-label="Fermer"
+            onClick={() => setOuvert(false)}
+            className="fixed inset-0 z-40 cursor-default bg-black/25 sm:hidden"
+          />
+          <div
+            role="menu"
+            className="fixed inset-x-3 bottom-3 z-50 rounded-lg border border-slate-200 bg-white p-1.5 shadow-xl ring-1 ring-black/5 dark:border-slate-600 dark:bg-slate-900 dark:ring-white/10 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:z-40 sm:mt-2 sm:w-72 sm:rounded-md sm:p-1 sm:shadow-2xl"
+            style={{
+              ...panneau,
+              paddingBottom: "max(0.375rem, env(safe-area-inset-bottom))",
+            }}
+          >
+            <div className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+              Créer
+            </div>
+            {actions.map((a) => (
+              <Link
+                key={a.href}
+                href={a.href}
+                role="menuitem"
+                onClick={() => setOuvert(false)}
+                className="flex w-full items-start gap-2.5 rounded px-2 py-2 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 sm:py-1.5"
+              >
+                <a.Icon size={15} className={`mt-0.5 shrink-0 ${a.couleur}`} />
+                <span className="min-w-0">
+                  <span className="block text-xs font-medium text-slate-800 dark:text-slate-200">
+                    {a.label}
+                  </span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">
+                    {a.sous}
+                  </span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

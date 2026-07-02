@@ -6,6 +6,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Field, Textarea, Select } from "@/components/ui/Input";
 import { formatEuro } from "@/lib/utils";
+import { Montant } from "@/features/discret";
 
 type Chantier = { id: string; nom: string };
 type Ligne = { designation: string; quantite: number; prixUnitaire: number };
@@ -216,7 +217,7 @@ export function CommandeForm({
                   />
                 </div>
                 <div className="sm:col-span-2 flex items-center justify-end pr-2 font-medium">
-                  {formatEuro(total)}
+                  <Montant>{formatEuro(total)}</Montant>
                 </div>
                 <div className="sm:col-span-1 flex items-center justify-center">
                   <button
@@ -237,7 +238,7 @@ export function CommandeForm({
         <div className="mt-3 flex justify-end pr-4">
           <div className="text-right">
             <div className="text-xs text-slate-500 dark:text-slate-500">Total commande</div>
-            <div className="text-2xl font-bold">{formatEuro(total)}</div>
+            <div className="text-2xl font-bold"><Montant>{formatEuro(total)}</Montant></div>
           </div>
         </div>
       </div>

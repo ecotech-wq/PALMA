@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { ChantierStatutBadge } from "./ChantierStatutBadge";
 import { formatEuro, formatDate } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth-helpers";
+import { Montant } from "@/features/discret";
 
 export default async function ChantiersListPage({
   searchParams,
@@ -170,7 +171,7 @@ export default async function ChantiersListPage({
                     <div>
                       <div className="text-slate-400 dark:text-slate-500">Budget</div>
                       <div className="font-medium text-slate-900 dark:text-slate-100">
-                        {formatEuro(budgetTotal)}
+                        <Montant>{formatEuro(budgetTotal)}</Montant>
                       </div>
                     </div>
                   )}

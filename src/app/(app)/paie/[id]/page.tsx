@@ -4,6 +4,7 @@ import { Check, X, Trash2, Save, Undo2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { BoutonConfirmation } from "@/components/ui/BoutonConfirmation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Field, Input, Select } from "@/components/ui/Input";
@@ -15,6 +16,7 @@ import {
   deletePaiement,
 } from "../actions";
 import { formatEuro, formatDate } from "@/lib/utils";
+import { Montant } from "@/features/discret";
 
 const contratLabel: Record<string, string> = {
   FIXE: "Salarié fixe",
@@ -112,7 +114,7 @@ export default async function PaiementDetailPage({
                     {Number(paiement.joursTravailles)} jour
                     {Number(paiement.joursTravailles) > 1 ? "s" : ""}
                   </span>
-                  <span className="font-medium">{formatEuro(paiement.montantBrut.toString())}</span>
+                  <span className="font-medium"><Montant>{formatEuro(paiement.montantBrut.toString())}</Montant></span>
                 </div>
 
                 {Number(paiement.avancesDeduites) > 0 && (
@@ -121,7 +123,7 @@ export default async function PaiementDetailPage({
                       Avances déduites ({paiement.avances.length})
                     </span>
                     <span className="font-medium text-orange-600">
-                      -{formatEuro(paiement.avancesDeduites.toString())}
+                      -<Montant>{formatEuro(paiement.avancesDeduites.toString())}</Montant>
                     </span>
                   </div>
                 )}
@@ -132,7 +134,7 @@ export default async function PaiementDetailPage({
                       Retenue outils ({paiement.retenuesOutils.length})
                     </span>
                     <span className="font-medium text-orange-600">
-                      -{formatEuro(paiement.retenueOutil.toString())}
+                      -<Montant>{formatEuro(paiement.retenueOutil.toString())}</Montant>
                     </span>
                   </div>
                 )}
@@ -144,7 +146,7 @@ export default async function PaiementDetailPage({
                       Number(paiement.montantNet) < 0 ? "text-red-600" : "text-slate-900 dark:text-slate-100"
                     }`}
                   >
-                    {formatEuro(paiement.montantNet.toString())}
+                    <Montant>{formatEuro(paiement.montantNet.toString())}</Montant>
                   </span>
                 </div>
 
@@ -169,7 +171,7 @@ export default async function PaiementDetailPage({
                         {formatDate(a.date)} · {a.mode === "ESPECES" ? "Espèces" : "Virement"}
                         {a.note && <span className="ml-2 italic text-slate-500 dark:text-slate-500">{a.note}</span>}
                       </span>
-                      <span className="font-medium">{formatEuro(a.montant.toString())}</span>
+                      <span className="font-medium"><Montant>{formatEuro(a.montant.toString())}</Montant></span>
                     </li>
                   ))}
                 </ul>
@@ -187,7 +189,7 @@ export default async function PaiementDetailPage({
                   {paiement.retenuesOutils.map((r) => (
                     <li key={r.id} className="px-5 py-2 flex items-center justify-between text-sm">
                       <span className="text-slate-600 dark:text-slate-500">{r.outilPersonnel.nom}</span>
-                      <span className="font-medium">{formatEuro(r.montant.toString())}</span>
+                      <span className="font-medium"><Montant>{formatEuro(r.montant.toString())}</Montant></span>
                     </li>
                   ))}
                 </ul>
@@ -212,7 +214,7 @@ export default async function PaiementDetailPage({
                 {contratLabel[paiement.ouvrier.typeContrat]}
               </div>
               <div className="text-sm text-slate-500 dark:text-slate-500">
-                Tarif : {formatEuro(paiement.ouvrier.tarifBase.toString())}
+                Tarif : <Montant>{formatEuro(paiement.ouvrier.tarifBase.toString())}</Montant>
               </div>
             </CardBody>
           </Card>
@@ -266,15 +268,14 @@ export default async function PaiementDetailPage({
             </CardHeader>
             <CardBody>
               <form action={deleteAction}>
-                <Button
-                  type="submit"
-                  variant="danger"
-                  size="sm"
-                  className="w-full"
+                <BoutonConfirmation
+                  titre="Supprimer le paiement"
+                  message="Supprimer définitivement ce paiement ? Les avances réglées et retenues outils seront restaurées si le paiement n'était pas annulé."
+                  libelleConfirmer="Supprimer"
                 >
                   <Trash2 size={14} />
                   Supprimer ce paiement
-                </Button>
+                </BoutonConfirmation>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-2">
                   {paiement.statut === "ANNULE"
                     ? "Suppression sèche : l'historique disparaît définitivement."

@@ -29,6 +29,7 @@ import {
   removePointagePhoto,
 } from "../../pointage/actions";
 import { formatEuro, formatDate } from "@/lib/utils";
+import { Montant } from "@/features/discret";
 
 export default async function OuvrierDetailPage({
   params,
@@ -229,7 +230,7 @@ export default async function OuvrierDetailPage({
                     return (
                       <li key={a.id} className="py-2 flex items-center gap-3 text-sm">
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium">{formatEuro(a.montant.toString())}</div>
+                          <div className="font-medium"><Montant>{formatEuro(a.montant.toString())}</Montant></div>
                           <div className="text-xs text-slate-500 dark:text-slate-500">
                             {formatDate(a.date)} ·{" "}
                             <Badge color={a.mode === "ESPECES" ? "yellow" : "blue"}>
@@ -304,13 +305,13 @@ export default async function OuvrierDetailPage({
                           <div className="flex-1 min-w-0">
                             <div className="font-medium text-slate-900 dark:text-slate-100">{o.nom}</div>
                             <div className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">
-                              Acheté {formatDate(o.dateAchat)} · {formatEuro(o.prixTotal.toString())}{" "}
-                              · {formatEuro(o.mensualite.toString())}/mois
+                              Acheté {formatDate(o.dateAchat)} · <Montant>{formatEuro(o.prixTotal.toString())}</Montant>{" "}
+                              · <Montant>{formatEuro(o.mensualite.toString())}</Montant>/mois
                             </div>
                           </div>
                           <div className="text-right">
                             <div className="text-sm font-medium">
-                              Reste {formatEuro(o.restantDu.toString())}
+                              Reste <Montant>{formatEuro(o.restantDu.toString())}</Montant>
                             </div>
                             <div className="text-xs text-slate-400 dark:text-slate-500">{progression}% remboursé</div>
                           </div>
@@ -385,7 +386,7 @@ export default async function OuvrierDetailPage({
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="font-semibold">{formatEuro(p.montantNet.toString())}</div>
+                        <div className="font-semibold"><Montant>{formatEuro(p.montantNet.toString())}</Montant></div>
                         <div className="text-xs text-slate-400 dark:text-slate-500">net</div>
                       </div>
                       <Link href={`/paie/${p.id}`} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-slate-500">
@@ -455,7 +456,7 @@ export default async function OuvrierDetailPage({
                     Avances en cours
                   </span>
                   <span className="font-medium">
-                    {formatEuro(totalAvancesEnCours)}
+                    <Montant>{formatEuro(totalAvancesEnCours)}</Montant>
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -463,7 +464,7 @@ export default async function OuvrierDetailPage({
                     Restant dû outils
                   </span>
                   <span className="font-medium">
-                    {formatEuro(totalOutilsRestant)}
+                    <Montant>{formatEuro(totalOutilsRestant)}</Montant>
                   </span>
                 </div>
                 <div className="pt-2 border-t border-slate-100 flex justify-between">
@@ -471,7 +472,7 @@ export default async function OuvrierDetailPage({
                     Total à déduire
                   </span>
                   <span className="font-semibold">
-                    {formatEuro(totalAvancesEnCours + totalOutilsRestant)}
+                    <Montant>{formatEuro(totalAvancesEnCours + totalOutilsRestant)}</Montant>
                   </span>
                 </div>
                 <div className="text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-100 flex items-center gap-1">

@@ -21,6 +21,7 @@ export default async function ExportsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
+        backHref="/dashboard"
         title="Exports"
         description="Données comptables et opérationnelles en CSV/FEC, prêtes pour Excel ou ton expert-comptable."
       />

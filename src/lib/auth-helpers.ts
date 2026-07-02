@@ -9,7 +9,13 @@ export type ClientVisibility = {
   showRapportsHebdo: boolean;
 };
 
-export type Role = "ADMIN" | "CONDUCTEUR" | "CHEF" | "CLIENT";
+export type Role =
+  | "ADMIN"
+  | "CONDUCTEUR"
+  | "CHEF"
+  | "CLIENT"
+  | "OUVRIER"
+  | "SOUS_TRAITANT";
 
 export type CurrentUser = {
   id: string;
@@ -50,13 +56,13 @@ export async function requireAuth(): Promise<CurrentUser> {
   if (!session?.user) throw new Error("Non authentifié");
   const raw = session.user.role;
   const role: Role =
-    raw === "ADMIN"
-      ? "ADMIN"
-      : raw === "CONDUCTEUR"
-        ? "CONDUCTEUR"
-        : raw === "CLIENT"
-          ? "CLIENT"
-          : "CHEF";
+    raw === "ADMIN" ||
+    raw === "CONDUCTEUR" ||
+    raw === "CLIENT" ||
+    raw === "OUVRIER" ||
+    raw === "SOUS_TRAITANT"
+      ? raw
+      : "CHEF";
 
   // Pour les clients on charge les flags depuis la DB (sinon defaults true)
   let visibility: ClientVisibility = {
@@ -135,41 +141,76 @@ export async function requireAdminOrConducteur(): Promise<CurrentUser> {
 
 /**
  * Renvoie la liste des chantiers auxquels l'utilisateur peut accéder.
- * - ADMIN / CONDUCTEUR : tous les chantiers (null = pas de filtre)
- * - CHEF : tous les chantiers pour l'instant (à restreindre si besoin
- *   plus tard — il faudrait une table de mapping chantier ↔ chef)
- * - CLIENT : seulement ceux où il est rattaché en tant que client
+ * v4.3 : l'accès est porté par la table ChantierMembre.
+ * - ADMIN : tous les chantiers (null = pas de filtre)
+ * - tout autre rôle : les chantiers où il est membre
+ * - CLIENT : union avec l'ancienne relation chantiersClient (double
+ *   lecture le temps de la transition, l'admin écrit encore par elle)
  */
 export async function getAccessibleChantierIds(
   user: CurrentUser
 ): Promise<string[] | null> {
-  if (user.isAdmin || user.isConducteur || user.isChef) return null;
-  const u = await db.user.findUnique({
-    where: { id: user.id },
-    select: { chantiersClient: { select: { id: true } } },
+  if (user.isAdmin) return null;
+  const membres = await db.chantierMembre.findMany({
+    where: { userId: user.id },
+    select: { chantierId: true },
   });
-  return (u?.chantiersClient ?? []).map((c) => c.id);
+  const ids = new Set(membres.map((m) => m.chantierId));
+  if (user.isClient) {
+    const u = await db.user.findUnique({
+      where: { id: user.id },
+      select: { chantiersClient: { select: { id: true } } },
+    });
+    for (const c of u?.chantiersClient ?? []) ids.add(c.id);
+  }
+  return [...ids];
 }
 
 /**
  * Vérifie qu'un utilisateur peut accéder à un chantier précis.
- * Lève sinon. Pour ADMIN/CONDUCTEUR/CHEF : toujours true.
+ * Lève sinon. v4.3 : ADMIN toujours ; les autres par leur adhésion
+ * (ChantierMembre), les clients aussi par l'ancienne relation.
  */
 export async function requireChantierAccess(
   user: CurrentUser,
   chantierId: string
 ): Promise<void> {
-  if (user.isAdmin || user.isConducteur || user.isChef) return;
-  const u = await db.user.findUnique({
-    where: { id: user.id },
-    select: {
-      chantiersClient: {
-        where: { id: chantierId },
-        select: { id: true },
-      },
-    },
+  if (user.isAdmin) return;
+  const membre = await db.chantierMembre.findUnique({
+    where: { chantierId_userId: { chantierId, userId: user.id } },
+    select: { id: true },
   });
-  if (!u || u.chantiersClient.length === 0) {
-    throw new Error("Accès refusé à ce chantier");
+  if (membre) return;
+  if (user.isClient) {
+    const u = await db.user.findUnique({
+      where: { id: user.id },
+      select: {
+        chantiersClient: { where: { id: chantierId }, select: { id: true } },
+      },
+    });
+    if (u && u.chantiersClient.length > 0) return;
   }
+  throw new Error("Accès refusé à ce chantier");
+}
+
+/**
+ * Gestionnaire d'un chantier : ADMIN, ou CONDUCTEUR membre de CE
+ * chantier. À utiliser pour les actions locales à un chantier (membres,
+ * canaux, validations). Lève sinon.
+ */
+export async function requireChantierManager(
+  user: CurrentUser,
+  chantierId: string
+): Promise<void> {
+  if (user.isAdmin) return;
+  if (user.isConducteur) {
+    const membre = await db.chantierMembre.findUnique({
+      where: { chantierId_userId: { chantierId, userId: user.id } },
+      select: { id: true },
+    });
+    if (membre) return;
+  }
+  throw new Error(
+    "Action réservée à l'administrateur ou au conducteur de ce chantier"
+  );
 }

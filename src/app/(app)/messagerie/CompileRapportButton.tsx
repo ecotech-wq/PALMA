@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { FileDown, Users, Send } from "lucide-react";
+import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
 
 /**
  * Bouton "Compiler en rapport" : ouvre un mini dialogue avec
@@ -11,6 +12,7 @@ import { FileDown, Users, Send } from "lucide-react";
  */
 export function CompileRapportButton({ chantierId }: { chantierId: string }) {
   const [open, setOpen] = useState(false);
+  const panneau = usePanneauOpaque();
   const today = todayIso();
   const [from, setFrom] = useState(daysAgoIso(6));
   const [to, setTo] = useState(today);
@@ -31,9 +33,11 @@ export function CompileRapportButton({ chantierId }: { chantierId: string }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+        title="Compiler en rapport"
+        className="inline-flex items-center gap-1 px-2 py-1.5 sm:py-1 rounded-md border border-slate-300 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
       >
-        <FileDown size={14} /> Compiler en rapport
+        <FileDown size={14} />
+        <span className="hidden sm:inline">Compiler en rapport</span>
       </button>
 
       {open && (
@@ -43,7 +47,10 @@ export function CompileRapportButton({ chantierId }: { chantierId: string }) {
             className="fixed inset-0 z-40"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute right-0 mt-2 z-50 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xl p-3">
+          <div
+            className="absolute right-0 mt-2 z-50 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xl p-3"
+            style={panneau}
+          >
             <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
               Période
             </div>

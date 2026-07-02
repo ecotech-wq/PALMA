@@ -76,6 +76,7 @@ export default async function AuditPage({
   return (
     <div className="space-y-5">
       <PageHeader
+        backHref="/dashboard"
         title="Journal d'audit"
         description="Trace append-only des actions sensibles (paie, validations, rôles, suppressions). Lecture seule, ne peut pas être modifié."
       />
