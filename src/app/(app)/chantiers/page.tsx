@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { ChantierStatutBadge } from "./ChantierStatutBadge";
 import { formatEuro, formatDate } from "@/lib/utils";
-import { requireAuth } from "@/lib/auth-helpers";
+import { requireAuth, chantierEspaceFilter } from "@/lib/auth-helpers";
 import { Montant } from "@/features/discret";
 
 export default async function ChantiersListPage({
@@ -31,6 +31,8 @@ export default async function ChantiersListPage({
     where: {
       AND: [
         accessibleIds !== null ? { id: { in: accessibleIds } } : {},
+        // Socle espaces : liste bornée à l'espace courant.
+        chantierEspaceFilter(me),
         showArchives ? { archivedAt: { not: null } } : { archivedAt: null },
         statut ? { statut: statut as never } : {},
         q

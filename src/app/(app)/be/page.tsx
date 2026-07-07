@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ChantierStatutBadge } from "../chantiers/ChantierStatutBadge";
-import { requireAuth, getAccessibleChantierIds } from "@/lib/auth-helpers";
+import { requireAuth, getAccessibleChantierIds, chantierEspaceFilter } from "@/lib/auth-helpers";
 
 // ─── Bureau d'études : liste des études (Chantier de type ETUDE) ────────────
 // Mobile d'abord : cartes empilées, actions accessibles au pouce.
@@ -23,6 +23,8 @@ export default async function EtudesPage() {
         { type: "ETUDE" },
         { archivedAt: null },
         accessibles !== null ? { id: { in: accessibles } } : {},
+        // Socle espaces : bornage à l'espace courant.
+        chantierEspaceFilter(me),
       ],
     },
     include: {

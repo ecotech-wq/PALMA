@@ -1,6 +1,10 @@
 import "server-only";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import {
+  chargerContexteEspaces,
+  type EspaceResume,
+} from "@/lib/espaces";
 
 export type ClientVisibility = {
   showJournal: boolean;
@@ -45,6 +49,15 @@ export type CurrentUser = {
   canPilot: boolean;
   // Visibility uniquement utile côté CLIENT. Pour les autres, tout est true.
   visibility: ClientVisibility;
+  // ── Socle plateforme (2026-07-07) : contexte d'espace (entreprise) ──
+  /** Espaces dont l'utilisateur est membre, avec son rôle PAR espace. */
+  espaces: EspaceResume[];
+  /** Espace courant (cookie), ou null en mode « tous » / sans adhésion. */
+  espaceCourant: EspaceResume | null;
+  /** Bornage des requêtes projets : null = pas de bornage (hérité). */
+  espaceIds: string[] | null;
+  /** Modules (apps) visibles dans ce contexte : "chantier", "be"... */
+  modules: string[];
 };
 
 /**
@@ -91,16 +104,23 @@ export async function requireAuth(): Promise<CurrentUser> {
     }
   }
 
-  const isAdmin = role === "ADMIN";
-  const isConducteur = role === "CONDUCTEUR";
-  const isChef = role === "CHEF";
-  const isClient = role === "CLIENT";
+  // Socle plateforme : le rôle EFFECTIF est celui de l'espace courant
+  // (une projeteuse peut être CHEF côté BE sans exister côté chantier).
+  // En mode « tous », droits les plus restrictifs ; sans adhésion, rôle
+  // global hérité (aucun verrouillage pendant la transition).
+  const ctx = await chargerContexteEspaces(session.user.id as string);
+  const roleEffectif: Role = ctx.roleEffectif ?? role;
+
+  const isAdmin = roleEffectif === "ADMIN";
+  const isConducteur = roleEffectif === "CONDUCTEUR";
+  const isChef = roleEffectif === "CHEF";
+  const isClient = roleEffectif === "CLIENT";
 
   return {
     id: session.user.id as string,
     name: session.user.name as string,
     email: session.user.email as string,
-    role,
+    role: roleEffectif,
     isAdmin,
     isConducteur,
     isChef,
@@ -109,7 +129,28 @@ export async function requireAuth(): Promise<CurrentUser> {
     canSeePaie: isAdmin,
     canPilot: isAdmin || isConducteur,
     visibility,
+    espaces: ctx.espaces,
+    espaceCourant: ctx.courant,
+    espaceIds: ctx.espaceIds,
+    modules: ctx.modules,
   };
+}
+
+/** Fragment Prisma pour borner les requêtes Chantier à l'espace courant
+ *  (ou aux espaces de l'utilisateur en mode « tous »). */
+export function chantierEspaceFilter(user: CurrentUser) {
+  return user.espaceIds ? { espaceId: { in: user.espaceIds } } : {};
+}
+
+/** Exige un espace courant UNIQUE (créations) : en mode « tous », on ne
+ *  sait pas dans quelle entreprise ranger le nouvel objet. */
+export function requireEspaceCourant(user: CurrentUser): EspaceResume {
+  if (!user.espaceCourant) {
+    throw new Error(
+      "Choisissez d'abord un espace (entreprise) dans le sélecteur"
+    );
+  }
+  return user.espaceCourant;
 }
 
 /**

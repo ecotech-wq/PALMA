@@ -67,6 +67,7 @@ model User {
   chantiersGeres     Chantier[]           @relation("ChefChantier")
   chantiersClient    Chantier[]           @relation("ChantierClients")
   tempsPasses      TempsPasse[]
+  espaces            EspaceMembre[]
   passwordResets     PasswordResetToken[]
   rapportsCrees      RapportChantier[]
   incidentsRapportes Incident[]           @relation("IncidentReporter")
@@ -171,6 +172,8 @@ model Chantier {
   dateFin         DateTime?
   statut          StatutChantier @default(PLANIFIE)
   type            TypeProjet     @default(CHANTIER)
+  espaceId        String
+  espace          Espace         @relation(fields: [espaceId], references: [id], onDelete: Restrict)
   budgetEspeces   Decimal        @default(0) @db.Decimal(12, 2)
   budgetVirement  Decimal        @default(0) @db.Decimal(12, 2)
   chefId          String?
@@ -203,6 +206,7 @@ model Chantier {
   tempsPasses      TempsPasse[]
 
   @@index([type])
+  @@index([espaceId])
 }
 
 model Equipe {
@@ -1208,4 +1212,38 @@ model TempsPasse {
 
   @@index([userId, date])
   @@index([chantierId, date])
+}
+
+// ─── Socle plateforme : ESPACES (arbitrage du 2026-07-07) ───────────────────
+// Une entreprise = un espace (modèle Odoo : une seule app, une seule base,
+// sélecteur d entreprise, modules activables par espace, rôle PAR espace).
+// La séparation des équipes chantier / bureau d études se joue ici.
+
+model Espace {
+  id        String   @id @default(cuid())
+  nom       String
+  slug      String   @unique
+  couleur   String?
+  /// Modules (apps) actifs : "chantier", "be" (extensible : "permis"...).
+  modules   String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  membres   EspaceMembre[]
+  chantiers Chantier[]
+}
+
+/// Adhésion d un utilisateur à un espace, avec un rôle PROPRE à cet espace
+/// (une projeteuse peut être CHEF côté BE et ne pas exister côté chantier).
+model EspaceMembre {
+  id        String   @id @default(cuid())
+  espaceId  String
+  espace    Espace   @relation(fields: [espaceId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @default(CHEF)
+  createdAt DateTime @default(now())
+
+  @@unique([espaceId, userId])
+  @@index([userId])
 }

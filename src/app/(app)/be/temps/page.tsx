@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
-import { requireAuth, getAccessibleChantierIds } from "@/lib/auth-helpers";
+import { requireAuth, getAccessibleChantierIds, chantierEspaceFilter } from "@/lib/auth-helpers";
 import { formatDate } from "@/lib/utils";
 import { TempsForm } from "./TempsForm";
 import { supprimerTemps } from "../actions";
@@ -28,6 +28,8 @@ export default async function MesTempsPage({
         { type: "ETUDE" },
         { archivedAt: null },
         accessibles !== null ? { id: { in: accessibles } } : {},
+        // Socle espaces : bornage à l'espace courant.
+        chantierEspaceFilter(me),
       ],
     },
     select: {

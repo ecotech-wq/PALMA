@@ -9,6 +9,7 @@ import {
   requireAdminOrConducteur,
   requireAuth,
   requireChantierManager,
+  requireEspaceCourant,
 } from "@/lib/auth-helpers";
 
 const chantierSchema = z.object({
@@ -57,7 +58,18 @@ function parseChantier(formData: FormData) {
 export async function createChantier(formData: FormData) {
   const me = await requireAdmin();
   const data = parseChantier(formData);
-  const created = await db.chantier.create({ data });
+  // Socle espaces : tout projet naît dans l'espace courant, dont le module
+  // correspondant doit être actif (une étude naît dans un espace « be »).
+  const espace = requireEspaceCourant(me);
+  const moduleRequis = data.type === "ETUDE" ? "be" : "chantier";
+  if (!espace.modules.includes(moduleRequis)) {
+    throw new Error(
+      `Le module « ${moduleRequis} » n'est pas actif dans l'espace ${espace.nom}`
+    );
+  }
+  const created = await db.chantier.create({
+    data: { ...data, espaceId: espace.id },
+  });
   // Gabarit d'étude : canaux par défaut « conception » (interne) et
   // « client » (visible client), en plus du « Général » créé à la volée
   // par la messagerie. Un chantier garde son gabarit historique.

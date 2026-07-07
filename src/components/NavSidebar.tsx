@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/theme";
+import { EspaceSwitcher } from "@/features/espaces/EspaceSwitcher";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SearchTrigger } from "@/components/SearchTrigger";
 
@@ -50,6 +51,8 @@ type NavItem = {
   pilotOnly?: boolean;
   /** Caché pour le rôle CLIENT */
   clientHidden?: boolean;
+  /** Module (app) requis : "chantier", "be"... (socle espaces 2026-07-07). */
+  module?: string;
 };
 
 type NavGroup = {
@@ -61,6 +64,8 @@ type NavGroup = {
   clientHidden?: boolean;
   adminOnly?: boolean;
   pilotOnly?: boolean;
+  /** Module (app) requis pour tout le groupe. */
+  module?: string;
 };
 
 // Item solo (Tableau de bord = toujours en haut, jamais dans un groupe)
@@ -85,6 +90,7 @@ const groups: NavGroup[] = [
     key: "chantiers",
     label: "Chantiers & équipes",
     icon: Hammer,
+    module: "chantier",
     items: [
       { href: "/chantiers", label: "Chantiers", icon: Hammer },
       { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true },
@@ -100,6 +106,7 @@ const groups: NavGroup[] = [
     label: "OPC",
     icon: ClipboardList,
     pilotOnly: true,
+    module: "chantier",
     items: [
       { href: "/planning", label: "Planning", icon: Calendar },
       { href: "/rapports-hebdo", label: "Rapports hebdo", icon: CalendarRange },
@@ -110,6 +117,7 @@ const groups: NavGroup[] = [
     key: "terrain",
     label: "Suivi terrain",
     icon: FileText,
+    module: "chantier",
     items: [
       { href: "/pointage", label: "Pointage", icon: CheckSquare, clientHidden: true },
       { href: "/rapports", label: "Rapports quotidiens", icon: FileText },
@@ -123,6 +131,7 @@ const groups: NavGroup[] = [
     label: "Bureau d'études",
     icon: DraftingCompass,
     clientHidden: true,
+    module: "be",
     items: [
       { href: "/be", label: "Études", icon: DraftingCompass },
       { href: "/be/temps", label: "Mes temps", icon: Timer },
@@ -133,6 +142,7 @@ const groups: NavGroup[] = [
     label: "Matériel & achats",
     icon: Wrench,
     clientHidden: true,
+    module: "chantier",
     items: [
       // Matériel & sorties : tout le monde (prix masqués pour CHEF)
       { href: "/materiel", label: "Matériel", icon: Wrench },
@@ -148,6 +158,7 @@ const groups: NavGroup[] = [
     label: "Finances",
     icon: Banknote,
     adminOnly: true,
+    module: "chantier",
     items: [{ href: "/paie", label: "Paie", icon: Banknote }],
   },
 ];
@@ -183,8 +194,8 @@ const mobilePrimaryClient: NavItem[] = [
 const mobileMore: NavItem[] = [
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
   // Bureau d'études : saisie des temps au téléphone (stand-up du matin)
-  { href: "/be", label: "Études", icon: DraftingCompass, clientHidden: true },
-  { href: "/be/temps", label: "Mes temps", icon: Timer, clientHidden: true },
+  { href: "/be", label: "Études", icon: DraftingCompass, clientHidden: true, module: "be" },
+  { href: "/be/temps", label: "Mes temps", icon: Timer, clientHidden: true, module: "be" },
   { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true },
   { href: "/materiel", label: "Matériel", icon: Wrench, clientHidden: true },
   { href: "/sorties", label: "Sorties / Retours", icon: ArrowLeftRight, clientHidden: true },
@@ -420,6 +431,9 @@ export function DesktopSidebar({
   clientVisibility,
   signOutAction,
   bell,
+  modules,
+  espaces,
+  espaceCourantId,
 }: {
   userName: string;
   userRole: string;
@@ -428,6 +442,10 @@ export function DesktopSidebar({
   clientVisibility?: ClientVisibility;
   signOutAction: () => Promise<void>;
   bell?: React.ReactNode;
+  /** Modules (apps) actifs dans l'espace courant (socle espaces). */
+  modules?: string[];
+  espaces?: { id: string; nom: string }[];
+  espaceCourantId?: string | null;
 }) {
   const pathname = usePathname();
   const isAdmin = userRole === "ADMIN";
@@ -442,7 +460,8 @@ export function DesktopSidebar({
         (g) =>
           (!g.adminOnly || isAdmin) &&
           (!g.pilotOnly || canPilot) &&
-          (!g.clientHidden || !isClient)
+          (!g.clientHidden || !isClient) &&
+          (!g.module || !modules || modules.includes(g.module))
       )
       .map((g) => ({
         ...g,
@@ -455,7 +474,7 @@ export function DesktopSidebar({
         ),
       }))
       .filter((g) => g.items.length > 0);
-  }, [isAdmin, isConducteur, canPilot, isClient, clientVisibility]);
+  }, [isAdmin, isConducteur, canPilot, isClient, clientVisibility, modules]);
 
   const isOnDashboard = pathname === "/dashboard";
   const isOnProfile = pathname?.startsWith("/profil");
@@ -489,6 +508,13 @@ export function DesktopSidebar({
         </Link>
         {bell}
       </div>
+
+      {/* Sélecteur d'entreprise (socle espaces) : rendu si plusieurs espaces */}
+      {espaces && espaces.length > 1 && (
+        <div className="border-b border-slate-200 dark:border-slate-800">
+          <EspaceSwitcher espaces={espaces} courantId={espaceCourantId ?? null} />
+        </div>
+      )}
 
       {/* Trigger de recherche globale (ouvre la palette Ctrl+K) */}
       <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800">
@@ -594,6 +620,7 @@ export function MobileBottomNav({
   pendingUsersCount,
   navBadges,
   clientVisibility,
+  modules,
 }: {
   isAdmin?: boolean;
   isConducteur?: boolean;
@@ -601,6 +628,8 @@ export function MobileBottomNav({
   pendingUsersCount?: number;
   navBadges?: NavBadges;
   clientVisibility?: ClientVisibility;
+  /** Modules (apps) actifs dans l'espace courant. */
+  modules?: string[];
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -641,6 +670,7 @@ export function MobileBottomNav({
       (!m.adminOnly || isAdmin) &&
       (!m.pilotOnly || canPilot) &&
       (!m.clientHidden || !isClient) &&
+      (!m.module || !modules || modules.includes(m.module)) &&
       (!isClient || applyClientVisibility(m, clientVisibility))
   );
 

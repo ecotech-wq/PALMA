@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { auth, signOut } from "@/auth";
+import { requireAuth } from "@/lib/auth-helpers";
 import { DiscretProvider, DiscretToggle } from "@/features/discret";
 import { db } from "@/lib/db";
 import { DesktopSidebar, MobileBottomNav, MobileTopBar } from "@/components/NavSidebar";
@@ -12,6 +13,8 @@ import { OfflineBanner } from "@/components/OfflineBanner";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+  // Socle espaces : contexte d'entreprise (rôle effectif, modules actifs).
+  const me = await requireAuth();
 
   // Compteurs pour les badges de notification dans la nav
   const isAdmin = session.user.role === "ADMIN";
@@ -159,7 +162,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="min-h-screen flex bg-slate-50 dark:bg-slate-950">
         <DesktopSidebar
           userName={session.user.name}
-          userRole={session.user.role}
+          userRole={me.role}
+          modules={me.modules}
+          espaces={me.espaces.map((e) => ({ id: e.id, nom: e.nom }))}
+          espaceCourantId={me.espaceCourant?.id ?? null}
           pendingUsersCount={pendingUsersCount}
           navBadges={navBadges}
           clientVisibility={clientVisibility}
@@ -178,9 +184,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </div>
           </main>
           <MobileBottomNav
-            isAdmin={isAdmin}
-            isConducteur={isConducteur}
-            isClient={isClient}
+            isAdmin={me.isAdmin}
+            isConducteur={me.isConducteur}
+            isClient={me.isClient}
+            modules={me.modules}
             pendingUsersCount={pendingUsersCount}
             navBadges={navBadges}
             clientVisibility={clientVisibility}

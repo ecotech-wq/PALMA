@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import {
   requireAuth,
   getAccessibleChantierIds,
+  chantierEspaceFilter,
 } from "@/lib/auth-helpers";
 import { unreadMessagerieFor } from "@/lib/read-state";
 import { PinChantierButton } from "./PinChantierButton";
@@ -67,6 +68,8 @@ export default async function MessagerieHubPage() {
     where: {
       archivedAt: null,
       ...(accessibleIds !== null ? { id: { in: accessibleIds } } : {}),
+      // Socle espaces : le hub ne montre que l'espace courant.
+      ...chantierEspaceFilter(me),
     },
     select: {
       id: true,

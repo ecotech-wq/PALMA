@@ -40,10 +40,26 @@ export default async function DashboardPage() {
 
   // v4.3 : chacun ne voit que SES chantiers (admin : tous).
   const accessibleIds = await getAccessibleChantierIds(me);
+  // Socle espaces : le tableau de bord est borné à l'espace courant (ou aux
+  // espaces de l'utilisateur en mode « tous ») en PLUS des adhésions projet.
+  const idsEspace = me.espaceIds
+    ? (
+        await db.chantier.findMany({
+          where: { espaceId: { in: me.espaceIds } },
+          select: { id: true },
+        })
+      ).map((c) => c.id)
+    : null;
+  const idsVisibles =
+    accessibleIds === null
+      ? idsEspace
+      : idsEspace === null
+        ? accessibleIds
+        : accessibleIds.filter((id) => idsEspace.includes(id));
   const chantierFilter =
-    accessibleIds === null ? {} : { id: { in: accessibleIds } };
+    idsVisibles === null ? {} : { id: { in: idsVisibles } };
   const parChantierId =
-    accessibleIds === null ? {} : { chantierId: { in: accessibleIds } };
+    idsVisibles === null ? {} : { chantierId: { in: idsVisibles } };
 
   const septJours = new Date();
   septJours.setDate(septJours.getDate() - 7);
