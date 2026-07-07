@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Calendar, CalendarRange, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { db } from "@/lib/db";
+import { requireAuth, getAccessibleChantierIds } from "@/lib/auth-helpers";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -31,6 +33,8 @@ export default async function PointagePage({
     month?: string;
   }>;
 }) {
+  const me = await requireAuth();
+  if (me.isClient) redirect("/dashboard");
   const {
     date: dateParam,
     mode: modeParam,
@@ -54,6 +58,10 @@ export default async function PointagePage({
     }
   }
 
+  // Socle espaces : bornage des chantiers du sélecteur à l'espace courant.
+  const accessibleIds = await getAccessibleChantierIds(me);
+  const borneId = accessibleIds === null ? {} : { id: { in: accessibleIds } };
+
   const [ouvriers, chantiers] = await Promise.all([
     db.ouvrier.findMany({
       where: { actif: true },
@@ -64,7 +72,7 @@ export default async function PointagePage({
       orderBy: [{ equipeId: "asc" }, { nom: "asc" }],
     }),
     db.chantier.findMany({
-      where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] } },
+      where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] }, ...borneId },
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),

@@ -26,16 +26,34 @@ async function ensureAdmin() {
   return session.user;
 }
 
+/**
+ * Socle espaces : un compte ACTIF doit appartenir à au moins un espace,
+ * sinon il est verrouillé (deny par défaut). À l'approbation / la création,
+ * on le rattache à l'espace principal (le premier créé) avec son rôle
+ * global ; l'ajout à un projet accorde ensuite l'adhésion à l'espace du
+ * projet. Idempotent.
+ */
+async function rattacherEspaceParDefaut(userId: string, role: string) {
+  const principal = await db.espace.findFirst({ orderBy: { createdAt: "asc" } });
+  if (!principal) return;
+  await db.espaceMembre.upsert({
+    where: { espaceId_userId: { espaceId: principal.id, userId } },
+    update: {},
+    create: { espaceId: principal.id, userId, role: role as never },
+  });
+}
+
 export async function approveUser(userId: string) {
   const me = await ensureAdmin();
   const target = await db.user.findUnique({
     where: { id: userId },
-    select: { name: true, email: true },
+    select: { name: true, email: true, role: true },
   });
   await db.user.update({
     where: { id: userId },
     data: { status: "ACTIVE" },
   });
+  if (target) await rattacherEspaceParDefaut(userId, target.role);
   if (target) {
     await audit(actor(me), {
       action: "USER_APPROVED",
@@ -298,6 +316,9 @@ export async function adminCreateUser(formData: FormData): Promise<{
           : undefined,
     },
   });
+
+  // Socle espaces : rattachement par défaut (compte ACTIF sinon verrouillé).
+  await rattacherEspaceParDefaut(user.id, data.role);
 
   // Génère le lien d'invitation (= reset password 24h)
   const { url, expiresAt } = await createResetTokenForUser(user.id, 24 * 60);

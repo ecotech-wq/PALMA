@@ -53,8 +53,18 @@ export async function addChantierMembre(chantierId: string, userId: string) {
   // la logique d'invitation des chantiers.
   const projet = await db.chantier.findUnique({
     where: { id: chantierId },
-    select: { type: true },
+    select: { type: true, espaceId: true },
   });
+  // Socle espaces : rejoindre un projet, c'est rejoindre son espace, sinon
+  // le nouveau membre serait borné à néant et ne verrait pas le projet.
+  // Rôle d'espace = rôle global de l'utilisateur (affinable ensuite).
+  if (projet) {
+    await db.espaceMembre.upsert({
+      where: { espaceId_userId: { espaceId: projet.espaceId, userId } },
+      update: {},
+      create: { espaceId: projet.espaceId, userId, role: user.role },
+    });
+  }
   if (projet?.type === "ETUDE") {
     const canaux = await db.canal.findMany({
       where: { chantierId, archivedAt: null },

@@ -79,7 +79,7 @@ export default async function ChantiersListPage({
                 </Button>
               </Link>
             )}
-            {me.isAdmin && !showArchives && (
+            {me.isGlobalAdmin && me.espaceCourant && !showArchives && (
               <Link href="/chantiers/nouveau">
                 <Button>
                   <Plus size={16} />

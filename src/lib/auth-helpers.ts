@@ -47,6 +47,12 @@ export type CurrentUser = {
    * → ADMIN ou CONDUCTEUR.
    */
   canPilot: boolean;
+  /**
+   * Propriétaire de la PLATEFORME (User.role global = ADMIN) : gère les
+   * comptes, la paie, les exports, indépendamment de l'espace courant.
+   * À distinguer de isAdmin, qui est le rôle EFFECTIF dans l'espace.
+   */
+  isGlobalAdmin: boolean;
   // Visibility uniquement utile côté CLIENT. Pour les autres, tout est true.
   visibility: ClientVisibility;
   // ── Socle plateforme (2026-07-07) : contexte d'espace (entreprise) ──
@@ -128,6 +134,10 @@ export async function requireAuth(): Promise<CurrentUser> {
     canSeePrices: isAdmin || isConducteur,
     canSeePaie: isAdmin,
     canPilot: isAdmin || isConducteur,
+    // Rôle GLOBAL (JWT), pas le rôle effectif d'espace : gouverne la
+    // plateforme (comptes, paie, exports). role = rôle global calculé plus
+    // haut avant l'override par le rôle d'espace.
+    isGlobalAdmin: role === "ADMIN",
     visibility,
     espaces: ctx.espaces,
     espaceCourant: ctx.courant,
@@ -159,7 +169,9 @@ export function requireEspaceCourant(user: CurrentUser): EspaceResume {
  */
 export async function requireAdmin(): Promise<CurrentUser> {
   const user = await requireAuth();
-  if (!user.isAdmin) {
+  // Propriétaire de plateforme (rôle global), PAS admin d'un espace : la
+  // paie, les comptes et les exports ne sont pas des données d'espace.
+  if (!user.isGlobalAdmin) {
     throw new Error("Action réservée aux administrateurs");
   }
   return user;
@@ -181,17 +193,34 @@ export async function requireAdminOrConducteur(): Promise<CurrentUser> {
 }
 
 /**
- * Renvoie la liste des chantiers auxquels l'utilisateur peut accéder.
- * v4.3 : l'accès est porté par la table ChantierMembre.
- * - ADMIN : tous les chantiers (null = pas de filtre)
- * - tout autre rôle : les chantiers où il est membre
- * - CLIENT : union avec l'ancienne relation chantiersClient (double
- *   lecture le temps de la transition, l'admin écrit encore par elle)
+ * Ids des chantiers des espaces de l'utilisateur (frontière d'espace).
+ * null = régime hérité (aucune adhésion connue, pas de bornage) ; [] = deny
+ * (l'utilisateur n'a d'espace vers rien). S'applique AUSSI aux admins : un
+ * admin d'un espace ne voit pas les projets d'un autre par URL directe.
+ */
+async function chantierIdsDesEspaces(
+  user: CurrentUser
+): Promise<string[] | null> {
+  if (!user.espaceIds) return null; // hérité (sans adhésion : voir chargerContexte)
+  const rows = await db.chantier.findMany({
+    where: { espaceId: { in: user.espaceIds } },
+    select: { id: true },
+  });
+  return rows.map((c) => c.id);
+}
+
+/**
+ * Renvoie la liste des chantiers accessibles, BORNÉE PAR L'ESPACE courant
+ * (arbitrage socle 2026-07-07). null = pas de bornage (régime hérité).
+ * - admin d'espace : tous les chantiers DE SES ESPACES (plus « tous ») ;
+ * - autres rôles : leurs adhésions ChantierMembre, intersectées avec l'espace ;
+ * - CLIENT : union avec l'ancienne relation chantiersClient, intersectée.
  */
 export async function getAccessibleChantierIds(
   user: CurrentUser
 ): Promise<string[] | null> {
-  if (user.isAdmin) return null;
+  const borneEspace = await chantierIdsDesEspaces(user);
+  if (user.isAdmin) return borneEspace; // admin borné à ses espaces (null = hérité)
   const membres = await db.chantierMembre.findMany({
     where: { userId: user.id },
     select: { chantierId: true },
@@ -204,7 +233,25 @@ export async function getAccessibleChantierIds(
     });
     for (const c of u?.chantiersClient ?? []) ids.add(c.id);
   }
-  return [...ids];
+  const arr = [...ids];
+  return borneEspace ? arr.filter((id) => borneEspace.includes(id)) : arr;
+}
+
+/** Frontière d'espace pour l'accès à UN chantier : lève si le projet
+ *  n'appartient pas à un espace de l'utilisateur. Appliqué avant le
+ *  court-circuit admin. Régime hérité (espaceIds null) : pas de bornage. */
+async function verifierEspaceDuChantier(
+  user: CurrentUser,
+  chantierId: string
+): Promise<void> {
+  if (!user.espaceIds) return;
+  const c = await db.chantier.findUnique({
+    where: { id: chantierId },
+    select: { espaceId: true },
+  });
+  if (!c || !user.espaceIds.includes(c.espaceId)) {
+    throw new Error("Ce projet n'appartient pas à votre espace");
+  }
 }
 
 /**
@@ -216,6 +263,9 @@ export async function requireChantierAccess(
   user: CurrentUser,
   chantierId: string
 ): Promise<void> {
+  // Frontière d'espace AVANT le court-circuit admin : un admin d'espace
+  // n'accède pas aux projets d'un autre espace.
+  await verifierEspaceDuChantier(user, chantierId);
   if (user.isAdmin) return;
   const membre = await db.chantierMembre.findUnique({
     where: { chantierId_userId: { chantierId, userId: user.id } },
@@ -243,6 +293,7 @@ export async function requireChantierManager(
   user: CurrentUser,
   chantierId: string
 ): Promise<void> {
+  await verifierEspaceDuChantier(user, chantierId);
   if (user.isAdmin) return;
   if (user.isConducteur) {
     const membre = await db.chantierMembre.findUnique({

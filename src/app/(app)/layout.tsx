@@ -17,6 +17,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const me = await requireAuth();
 
   // Compteurs pour les badges de notification dans la nav
+  // Badges plateforme (comptes en attente, paie a verser) : rôle GLOBAL, à
+  // dessein (données non bornées par espace). La NAV, elle, suit le rôle
+  // effectif d'espace (me.role) plus bas.
   const isAdmin = session.user.role === "ADMIN";
   const isConducteur = session.user.role === "CONDUCTEUR";
   const isClient = session.user.role === "CLIENT";

@@ -68,14 +68,17 @@ export async function chargerContexteEspaces(
     role: a.role as Role,
   }));
 
-  // Sans adhésion : comportement hérité (pas de bornage, rôle global).
+  // Sans adhésion : DENY par défaut (arbitrage sécurité 2026-07-07). Un
+  // utilisateur sans espace ne voit aucun module et aucun projet (espaceIds
+  // vide borne à néant), au lieu de « voit tout ». Les nouveaux comptes
+  // reçoivent une adhésion à l'approbation / à l'ajout sur un projet.
   if (espaces.length === 0) {
     return {
       espaces: [],
       courant: null,
-      espaceIds: null,
+      espaceIds: [],
       roleEffectif: null,
-      modules: Object.values(MODULES),
+      modules: [],
     };
   }
 

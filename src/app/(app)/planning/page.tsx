@@ -8,7 +8,7 @@ import { CreateTacheForm } from "./TacheForm";
 import { TacheList } from "./TacheList";
 import { PlanningViews } from "./PlanningViews";
 import { QuickAddBar } from "./QuickAddBar";
-import { requireAuth } from "@/lib/auth-helpers";
+import { requireAuth, getAccessibleChantierIds } from "@/lib/auth-helpers";
 import { createTache, deleteTache, setAvancement, updateTache } from "./actions";
 
 type Vue = "gantt" | "liste" | "pert" | "kanban" | "calendrier";
@@ -34,12 +34,17 @@ export default async function PlanningPage({
             ? "calendrier"
             : "gantt";
 
+  // Socle espaces : bornage aux chantiers accessibles (espace courant).
+  const accessibleIds = await getAccessibleChantierIds(me);
+  const borne = accessibleIds === null ? {} : { chantierId: { in: accessibleIds } };
+  const borneId = accessibleIds === null ? {} : { id: { in: accessibleIds } };
+
   const [taches, chantiers, equipes, commandes, locations, sections, ouvriers] =
     await Promise.all([
     db.tache.findMany({
       where: chantier
-        ? { chantierId: chantier, deletedAt: null }
-        : { deletedAt: null },
+        ? { chantierId: chantier, deletedAt: null, ...borne }
+        : { deletedAt: null, ...borne },
       include: {
         chantier: { select: { id: true, nom: true } },
         equipe: { select: { id: true, nom: true } },
@@ -59,7 +64,7 @@ export default async function PlanningPage({
       orderBy: [{ ordre: "asc" }, { priorite: "asc" }, { dateDebut: "asc" }],
     }),
     db.chantier.findMany({
-      where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] } },
+      where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] }, ...borneId },
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),
