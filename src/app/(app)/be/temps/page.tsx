@@ -41,8 +41,11 @@ export default async function MesTempsPage({
     orderBy: { updatedAt: "desc" },
   });
 
+  // Bornes calées à minuit UTC : les dates TempsPasse sont des DATE (minuit
+  // UTC), une borne avec heure exclurait le jour limite.
   const depuis = new Date();
   depuis.setDate(depuis.getDate() - 14);
+  depuis.setUTCHours(0, 0, 0, 0);
   const mesLignes = await db.tempsPasse.findMany({
     where: { userId: me.id, date: { gte: depuis } },
     include: {
@@ -53,16 +56,18 @@ export default async function MesTempsPage({
     take: 40,
   });
 
+  const borne7 = new Date();
+  borne7.setDate(borne7.getDate() - 7);
+  borne7.setUTCHours(0, 0, 0, 0);
   const totalSemaine = mesLignes
-    .filter((l) => {
-      const j = new Date();
-      j.setDate(j.getDate() - 7);
-      return l.date >= j;
-    })
+    .filter((l) => l.date >= borne7)
     .reduce((s, l) => s + Number(l.heures), 0);
 
-  // La veille par défaut : on saisit le réalisé d'hier au stand-up du matin.
-  const hier = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
+  // La veille par défaut, dans le fuseau de La Réunion (le serveur est en
+  // UTC : entre 00 h et 04 h locales, l'UTC afficherait J-2).
+  const hier = new Intl.DateTimeFormat("fr-CA", {
+    timeZone: "Indian/Reunion",
+  }).format(new Date(Date.now() - 24 * 3600 * 1000));
 
   return (
     <div>
@@ -104,7 +109,10 @@ export default async function MesTempsPage({
                 </p>
               ) : (
                 <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {mesLignes.map((l) => (
+                  {mesLignes.map((l) => {
+                    // Ne capturer que l'id dans l'action en ligne.
+                    const ligneId = l.id;
+                    return (
                     <li key={l.id} className="flex items-center gap-3 py-2">
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm text-slate-900 dark:text-slate-100">
@@ -123,7 +131,7 @@ export default async function MesTempsPage({
                       <form
                         action={async () => {
                           "use server";
-                          await supprimerTemps(l.id);
+                          await supprimerTemps(ligneId);
                         }}
                       >
                         <Button variant="ghost" size="icon" type="submit" aria-label="Supprimer">
@@ -131,7 +139,8 @@ export default async function MesTempsPage({
                         </Button>
                       </form>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
             </CardBody>

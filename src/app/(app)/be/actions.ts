@@ -16,10 +16,11 @@ import {
 async function verifierEtude(chantierId: string) {
   const projet = await db.chantier.findUnique({
     where: { id: chantierId },
-    select: { type: true },
+    select: { type: true, archivedAt: true },
   });
   if (!projet) throw new Error("Étude introuvable");
   if (projet.type !== "ETUDE") throw new Error("Ce projet n'est pas une étude");
+  if (projet.archivedAt) throw new Error("Étude archivée : saisie fermée");
 }
 
 // ─── Temps passés ───────────────────────────────────────────────────────────
@@ -27,7 +28,17 @@ async function verifierEtude(chantierId: string) {
 const tempsSchema = z.object({
   chantierId: z.string().min(1, "Étude requise"),
   phaseId: z.string().optional().or(z.literal("")),
-  date: z.string().min(1, "Date requise"),
+  // Garde-fou : date calendaire réelle et plausible (les listes filtrent,
+  // mais l'action doit tenir seule face à un POST forgé).
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date invalide")
+    .refine((v) => !Number.isNaN(Date.parse(v)), "Date invalide")
+    .refine((v) => v >= "2020-01-01", "Date trop ancienne")
+    .refine(
+      (v) => Date.parse(v) <= Date.now() + 48 * 3600 * 1000,
+      "Date dans le futur"
+    ),
   heures: z.coerce
     .number()
     .min(0.25, "Minimum 0,25 h")
@@ -38,12 +49,14 @@ const tempsSchema = z.object({
 export async function saisirTemps(formData: FormData) {
   const me = await requireAuth();
   if (me.isClient) throw new Error("Accès refusé");
+  // FormData.get renvoie null pour un champ absent, que zod
+  // .optional().or(z.literal("")) REFUSE : toujours replier sur "".
   const d = tempsSchema.parse({
-    chantierId: formData.get("chantierId"),
-    phaseId: formData.get("phaseId"),
-    date: formData.get("date"),
-    heures: formData.get("heures"),
-    note: formData.get("note"),
+    chantierId: formData.get("chantierId") ?? "",
+    phaseId: formData.get("phaseId") ?? "",
+    date: formData.get("date") ?? "",
+    heures: formData.get("heures") ?? "",
+    note: formData.get("note") ?? "",
   });
   await requireChantierAccess(me, d.chantierId);
   await verifierEtude(d.chantierId);
@@ -100,14 +113,16 @@ const phaseSchema = z.object({
 
 export async function creerPhase(formData: FormData) {
   const me = await requireAuth();
+  // Même repli null -> "" : le formulaire ne rend pas (encore) les champs
+  // de dates, et zod rejette null (bloquant attrapé en contre-vérification).
   const d = phaseSchema.parse({
-    chantierId: formData.get("chantierId"),
-    code: formData.get("code"),
-    libelle: formData.get("libelle"),
+    chantierId: formData.get("chantierId") ?? "",
+    code: formData.get("code") ?? "",
+    libelle: formData.get("libelle") ?? "",
     montantVendu: formData.get("montantVendu") || 0,
     budgetHeures: formData.get("budgetHeures") || undefined,
-    dateDebut: formData.get("dateDebut"),
-    dateFin: formData.get("dateFin"),
+    dateDebut: formData.get("dateDebut") ?? "",
+    dateFin: formData.get("dateFin") ?? "",
   });
   await requireChantierManager(me, d.chantierId);
   await verifierEtude(d.chantierId);
@@ -131,12 +146,14 @@ export async function creerPhase(formData: FormData) {
 }
 
 export async function supprimerPhase(id: string) {
+  // Garde AVANT toute lecture : pas d'oracle d'existence d'ids pour un
+  // appelant non authentifié.
+  const me = await requireAuth();
   const phase = await db.phaseEtude.findUnique({
     where: { id },
-    select: { chantierId: true, _count: { select: { tempsPasses: true } } },
+    select: { chantierId: true },
   });
   if (!phase) return;
-  const me = await requireAuth();
   await requireChantierManager(me, phase.chantierId);
   // Les temps déjà saisis ne sont pas perdus : la FK passe la phase à null.
   await db.phaseEtude.delete({ where: { id } });

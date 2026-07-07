@@ -46,6 +46,39 @@ export async function addChantierMembre(chantierId: string, userId: string) {
     create: { chantierId, userId, addedById: me.id },
   });
 
+  // Études (projets typés) : l'arrivant rejoint d'office les canaux du
+  // gabarit selon sa classe (mêmes règles d'ensemencement que createCanal),
+  // sinon « conception » resterait invisible pour l'équipe (les canaux ne
+  // sont montrés qu'à leurs membres). Limité aux ETUDES pour ne pas changer
+  // la logique d'invitation des chantiers.
+  const projet = await db.chantier.findUnique({
+    where: { id: chantierId },
+    select: { type: true },
+  });
+  if (projet?.type === "ETUDE") {
+    const canaux = await db.canal.findMany({
+      where: { chantierId, archivedAt: null },
+      select: { id: true, visibility: true },
+    });
+    const eligibles = canaux.filter((c) =>
+      user.role === "CLIENT"
+        ? c.visibility === "CLIENT"
+        : user.role === "SOUS_TRAITANT"
+          ? c.visibility === "SOUS_TRAITANT"
+          : c.visibility === "INTERNE" || c.visibility === "CLIENT"
+    );
+    if (eligibles.length) {
+      await db.canalMembre.createMany({
+        data: eligibles.map((c) => ({
+          canalId: c.id,
+          userId,
+          addedById: me.id,
+        })),
+        skipDuplicates: true,
+      });
+    }
+  }
+
   await audit(me, {
     action: "MEMBRE_AJOUTE",
     entity: "ChantierMembre",

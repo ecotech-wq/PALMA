@@ -50,7 +50,7 @@ export default async function EtudesPage() {
         title="Études"
         description="Les projets du bureau d'études : phases d'honoraires, temps passés, messagerie."
         action={
-          me.canPilot ? (
+          me.isAdmin ? (
             <Link href="/chantiers/nouveau?type=ETUDE">
               <Button>
                 <Plus size={16} />
@@ -68,7 +68,7 @@ export default async function EtudesPage() {
           title="Aucune étude"
           description="Créez la première étude du bureau : elle aura sa messagerie, ses membres, ses phases et sa saisie des temps."
           action={
-            me.canPilot ? (
+            me.isAdmin ? (
               <Link href="/chantiers/nouveau?type=ETUDE">
                 <Button>
                   <Plus size={16} />

@@ -170,6 +170,9 @@ export default async function EtudePage({
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {etude.phasesEtude.map((p) => {
+                        // Ne capturer que l'id dans l'action en ligne (la
+                        // ligne entière serait sérialisée dans le payload).
+                        const phaseId = p.id;
                         const reel = reelPhase.get(p.id) ?? 0;
                         const budget = Number(p.budgetHeures ?? 0);
                         const depasse = budget > 0 && reel > budget;
@@ -207,7 +210,7 @@ export default async function EtudePage({
                                 <form
                                   action={async () => {
                                     "use server";
-                                    await supprimerPhase(p.id);
+                                    await supprimerPhase(phaseId);
                                   }}
                                   className="inline"
                                 >

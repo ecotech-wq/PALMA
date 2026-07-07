@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireAdmin, requireAuth } from "@/lib/auth-helpers";
+import {
+  requireAdmin,
+  requireAdminOrConducteur,
+  requireAuth,
+  requireChantierManager,
+} from "@/lib/auth-helpers";
 
 const chantierSchema = z.object({
   nom: z.string().min(1, "Nom requis"),
@@ -64,6 +69,17 @@ export async function createChantier(formData: FormData) {
       ],
       skipDuplicates: true,
     });
+    // Sans CanalMembre, un canal n'est visible que des admins : le créateur
+    // rejoint d'office, les membres suivants sont ajoutés par
+    // addChantierMembre (auto-adhésion aux canaux du gabarit d'étude).
+    const canaux = await db.canal.findMany({
+      where: { chantierId: created.id },
+      select: { id: true },
+    });
+    await db.canalMembre.createMany({
+      data: canaux.map((c) => ({ canalId: c.id, userId: me.id, addedById: me.id })),
+      skipDuplicates: true,
+    });
     revalidatePath("/be");
     redirect(`/be/${created.id}`);
   }
@@ -73,6 +89,9 @@ export async function createChantier(formData: FormData) {
 
 export async function updateChantier(id: string, formData: FormData) {
   const me = await requireAuth();
+  // Contre-vérification 2026-07-07 : sans cette garde, tout authentifié
+  // (client compris) pouvait modifier n'importe quel chantier par POST forgé.
+  await requireChantierManager(me, id);
   const data = parseChantier(formData);
   // Sécurité : seul ADMIN ou CONDUCTEUR peut modifier le budget. Si
   // l'appelant ne voit pas les prix (CHEF, CLIENT), on force les valeurs
@@ -130,6 +149,8 @@ export async function reouvrirChantier(id: string) {
 }
 
 export async function affecterEquipeAuChantier(equipeId: string, chantierId: string | null) {
+  // Contre-vérification 2026-07-07 : action jusqu'ici sans AUCUNE garde.
+  await requireAdminOrConducteur();
   await db.equipe.update({
     where: { id: equipeId },
     data: { chantierId: chantierId || null },

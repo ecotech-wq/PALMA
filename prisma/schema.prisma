@@ -201,6 +201,8 @@ model Chantier {
   membres          ChantierMembre[]
   phasesEtude      PhaseEtude[]
   tempsPasses      TempsPasse[]
+
+  @@index([type])
 }
 
 model Equipe {
