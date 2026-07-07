@@ -214,12 +214,19 @@ model Equipe {
   nom         String
   chantierId  String?
   chantier    Chantier? @relation(fields: [chantierId], references: [id], onDelete: SetNull)
+  /// Socle espaces : l'annuaire appartient à une entreprise. Nullable en
+  /// base (SetNull), mais backfillé et posé à la création : les listes
+  /// bornées par espace ne montrent jamais les lignes NULL.
+  espaceId    String?
+  espace      Espace?  @relation(fields: [espaceId], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   ouvriers        Ouvrier[]
   sortiesMateriel SortieMateriel[]
   taches          Tache[]
+
+  @@index([espaceId])
 }
 
 enum TypeContrat {
@@ -252,6 +259,10 @@ model Ouvrier {
   /// sans smartphone reste un simple enregistrement pointé par le chef.
   userId       String?     @unique
   user         User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// Socle espaces : un ouvrier est salarié d'UNE entreprise (annuaire et
+  /// paie bornés par espace). Même régime que Equipe.espaceId.
+  espaceId     String?
+  espace       Espace?     @relation(fields: [espaceId], references: [id], onDelete: SetNull)
   notes        String?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
@@ -261,6 +272,8 @@ model Ouvrier {
   paiements        Paiement[]
   outilsPersonnels OutilPersonnel[]
   tachesAssignees  TacheOuvrier[]
+
+  @@index([espaceId])
 }
 
 /// Singleton (id="singleton") qui stocke les préférences de l'app —
@@ -1231,6 +1244,8 @@ model Espace {
 
   membres   EspaceMembre[]
   chantiers Chantier[]
+  ouvriers  Ouvrier[]
+  equipes   Equipe[]
 }
 
 /// Adhésion d un utilisateur à un espace, avec un rôle PROPRE à cet espace

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { requireAuth, espaceFilter } from "@/lib/auth-helpers";
 import { toCsv, csvResponse } from "@/lib/csv";
 
 /**
@@ -12,9 +12,17 @@ import { toCsv, csvResponse } from "@/lib/csv";
  * derniers jours par défaut (pour ne pas tout dump).
  */
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
+  // Contre-vérification 2026-07-07 (BLOQUANT) : la route ne testait que la
+  // session (le middleware exclut /api : aucune défense en amont). Les
+  // exports sont réservés au global admin, bornés par espace.
+  let me;
+  try {
+    me = await requireAuth();
+  } catch {
     return new Response("Unauthorized", { status: 401 });
+  }
+  if (!me.isGlobalAdmin) {
+    return new Response("Forbidden", { status: 403 });
   }
 
   const url = new URL(req.url);
@@ -38,6 +46,7 @@ export async function GET(req: NextRequest) {
   const pointages = await db.pointage.findMany({
     where: {
       date: { gte: start, lt: endExclusive },
+      ouvrier: { ...espaceFilter(me) },
       ...(ouvrierIdParam ? { ouvrierId: ouvrierIdParam } : {}),
       ...(chantierIdParam ? { chantierId: chantierIdParam } : {}),
     },

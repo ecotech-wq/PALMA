@@ -38,6 +38,7 @@ import {
 import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/theme";
 import { EspaceSwitcher } from "@/features/espaces/EspaceSwitcher";
+import { EspaceSwitcherMobile } from "@/features/espaces/EspaceSwitcherMobile";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SearchTrigger } from "@/components/SearchTrigger";
 
@@ -93,7 +94,8 @@ const groups: NavGroup[] = [
     module: "chantier",
     items: [
       { href: "/chantiers", label: "Chantiers", icon: Hammer },
-      { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true },
+      // Gestion des équipes = pilotage (création, affectation) : admin + conducteur
+      { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true, pilotOnly: true },
       // Fiche ouvrier expose tarifs : admin + conducteur seulement
       { href: "/ouvriers", label: "Ouvriers", icon: HardHat, clientHidden: true, pilotOnly: true },
     ],
@@ -196,7 +198,7 @@ const mobileMore: NavItem[] = [
   // Bureau d'études : saisie des temps au téléphone (stand-up du matin)
   { href: "/be", label: "Études", icon: DraftingCompass, clientHidden: true, module: "be" },
   { href: "/be/temps", label: "Mes temps", icon: Timer, clientHidden: true, module: "be" },
-  { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true },
+  { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true, pilotOnly: true },
   { href: "/materiel", label: "Matériel", icon: Wrench, clientHidden: true },
   { href: "/sorties", label: "Sorties / Retours", icon: ArrowLeftRight, clientHidden: true },
   // Prix sensibles : admin + conducteur uniquement
@@ -621,6 +623,8 @@ export function MobileBottomNav({
   navBadges,
   clientVisibility,
   modules,
+  espaces,
+  espaceCourantId,
 }: {
   isAdmin?: boolean;
   isConducteur?: boolean;
@@ -630,6 +634,9 @@ export function MobileBottomNav({
   clientVisibility?: ClientVisibility;
   /** Modules (apps) actifs dans l'espace courant. */
   modules?: string[];
+  /** Sélecteur d'entreprise dans le tiroir « Plus » (socle espaces). */
+  espaces?: { id: string; nom: string }[];
+  espaceCourantId?: string | null;
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -771,6 +778,13 @@ export function MobileBottomNav({
             </div>
 
             <nav className="p-2">
+              {/* Sélecteur d'entreprise (socle espaces) : en tête du tiroir,
+                  là où le pouce arrive, comme un changement de contexte. */}
+              <EspaceSwitcherMobile
+                espaces={espaces ?? []}
+                courantId={espaceCourantId ?? null}
+                onDone={() => setMoreOpen(false)}
+              />
               {filteredMobileMore
                 .filter((m) => !mobilePrimary.some((p) => p.href === m.href))
                 .map(({ href, label, icon: Icon }) => {

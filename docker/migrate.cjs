@@ -97,19 +97,19 @@ async function main() {
 
     console.log(`[migrate] ▶ ${dir} (applying...)`);
 
-    await client.query(
-      `INSERT INTO "_prisma_migrations" (id, checksum, migration_name, started_at)
-       VALUES ($1, $2, $3, NOW())`,
-      [id, checksum, dir]
-    );
-
+    // Contre-vérification 2026-07-07 : on EXÉCUTE d'abord, on trace ensuite.
+    // L'ancien ordre (INSERT de tracking avant le SQL) était fail-open : un
+    // kill entre les deux marquait la migration appliquée à jamais sans
+    // qu'elle ait tourné. Les SQL étant idempotents, un crash entre
+    // l'exécution et le tracking ne coûte qu'une ré-exécution sans effet.
     try {
       // Applique le SQL en une seule requête.
       // psql gère plusieurs statements séparés par des ; dans un seul query().
       await client.query(sql);
       await client.query(
-        `UPDATE "_prisma_migrations" SET finished_at = NOW(), applied_steps_count = 1 WHERE id = $1`,
-        [id]
+        `INSERT INTO "_prisma_migrations" (id, checksum, migration_name, started_at, finished_at, applied_steps_count)
+         VALUES ($1, $2, $3, NOW(), NOW(), 1)`,
+        [id, checksum, dir]
       );
       console.log(`[migrate] ✓ ${dir} applied`);
       pendingCount++;
@@ -117,8 +117,9 @@ async function main() {
       const msg = e && e.message ? String(e.message) : String(e);
       console.error(`[migrate] ✗ ${dir} FAILED: ${msg}`);
       await client.query(
-        `UPDATE "_prisma_migrations" SET rolled_back_at = NOW(), logs = $1 WHERE id = $2`,
-        [msg, id]
+        `INSERT INTO "_prisma_migrations" (id, checksum, migration_name, started_at, rolled_back_at, logs)
+         VALUES ($1, $2, $3, NOW(), NOW(), $4)`,
+        [id, checksum, dir, msg]
       );
       await client.end();
       throw e;

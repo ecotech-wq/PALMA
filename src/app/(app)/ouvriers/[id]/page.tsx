@@ -13,7 +13,7 @@ import { MonthlyRecap } from "../MonthlyRecap";
 import { PointageCalendar } from "../../pointage/PointageCalendar";
 import { OuvrierActiveToggle } from "../OuvrierActiveToggle";
 import { ResettingForm } from "@/components/ResettingForm";
-import { requireAuth } from "@/lib/auth-helpers";
+import { requireAuth, espaceFilter } from "@/lib/auth-helpers";
 import { updateOuvrier, deleteOuvrier } from "../actions";
 import {
   addAvance,
@@ -73,9 +73,16 @@ export default async function OuvrierDetailPage({
         equipe: { select: { chantierId: true } },
       },
     }),
-    db.equipe.findMany({ select: { id: true, nom: true }, orderBy: { nom: "asc" } }),
+    db.equipe.findMany({
+      where: espaceFilter(me),
+      select: { id: true, nom: true },
+      orderBy: { nom: "asc" },
+    }),
     db.chantier.findMany({
-      where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE", "TERMINE"] } },
+      where: {
+        statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE", "TERMINE"] },
+        ...espaceFilter(me),
+      },
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),
@@ -100,6 +107,15 @@ export default async function OuvrierDetailPage({
     }),
   ]);
   if (!ouvrier) notFound();
+  // Frontière d'espace : la fiche d'un ouvrier d'une autre entreprise
+  // n'existe pas pour cet utilisateur (même réponse que « introuvable »,
+  // pas de fuite d'existence).
+  if (
+    me.espaceIds &&
+    (!ouvrier.espaceId || !me.espaceIds.includes(ouvrier.espaceId))
+  ) {
+    notFound();
+  }
 
   const calendarInitial = pointagesCalendar.map((p) => ({
     date: p.date.toISOString().slice(0, 10),

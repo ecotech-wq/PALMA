@@ -8,7 +8,7 @@ import { CreateTacheForm } from "./TacheForm";
 import { TacheList } from "./TacheList";
 import { PlanningViews } from "./PlanningViews";
 import { QuickAddBar } from "./QuickAddBar";
-import { requireAuth, getAccessibleChantierIds } from "@/lib/auth-helpers";
+import { requireAuth, getAccessibleChantierIds, espaceFilter } from "@/lib/auth-helpers";
 import { createTache, deleteTache, setAvancement, updateTache } from "./actions";
 
 type Vue = "gantt" | "liste" | "pert" | "kanban" | "calendrier";
@@ -69,6 +69,7 @@ export default async function PlanningPage({
       orderBy: { nom: "asc" },
     }),
     db.equipe.findMany({
+      where: espaceFilter(me),
       select: { id: true, nom: true, chantierId: true },
       orderBy: { nom: "asc" },
     }),
@@ -105,7 +106,7 @@ export default async function PlanningPage({
     }),
     // Liste des ouvriers actifs (pour le multi-select dans la modale)
     db.ouvrier.findMany({
-      where: { actif: true },
+      where: { actif: true, ...espaceFilter(me) },
       select: { id: true, nom: true, prenom: true, equipeId: true },
       orderBy: [{ nom: "asc" }, { prenom: "asc" }],
     }),

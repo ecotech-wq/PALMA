@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/auth-helpers";
+import { requireAuth, espaceFilter } from "@/lib/auth-helpers";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -182,7 +182,8 @@ export default async function PaieListPage({
 
   const [ouvriersRaw, recentPaiements, chantiers] = await Promise.all([
     db.ouvrier.findMany({
-      where: ouvrierWhere,
+      // Socle espaces : la paie est bornée à l'entreprise courante.
+      where: { ...ouvrierWhere, ...espaceFilter(me) },
       include: {
         equipe: { select: { chantierId: true } },
         pointages: {
@@ -207,16 +208,17 @@ export default async function PaieListPage({
     db.paiement.findMany({
       where: {
         ...(modeWhere ? { mode: modeWhere } : {}),
-        ...(q && q.trim().length > 0
-          ? {
-              ouvrier: {
+        ouvrier: {
+          ...espaceFilter(me),
+          ...(q && q.trim().length > 0
+            ? {
                 OR: [
                   { nom: { contains: q, mode: "insensitive" } },
                   { prenom: { contains: q, mode: "insensitive" } },
                 ],
-              },
-            }
-          : {}),
+              }
+            : {}),
+        },
       },
       include: {
         ouvrier: {
@@ -227,6 +229,7 @@ export default async function PaieListPage({
       take: 20,
     }),
     db.chantier.findMany({
+      where: espaceFilter(me),
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),

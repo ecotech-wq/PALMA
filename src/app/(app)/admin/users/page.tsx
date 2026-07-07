@@ -14,6 +14,7 @@ import {
   adminGenerateResetLink,
   setClientChantiers,
   setClientVisibility,
+  setEspaceMembres,
 } from "./actions";
 
 const statusLabel: Record<string, string> = {
@@ -32,10 +33,11 @@ export default async function AdminUsersPage() {
   const session = await auth();
   const meId = session?.user?.id ?? "";
 
-  const [users, allChantiers] = await Promise.all([
+  const [users, allChantiers, allEspaces] = await Promise.all([
     db.user.findMany({
       include: {
         chantiersClient: { select: { id: true } },
+        espaces: { select: { espaceId: true, role: true } },
       },
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
     }),
@@ -44,7 +46,13 @@ export default async function AdminUsersPage() {
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),
+    db.espace.findMany({
+      select: { id: true, nom: true },
+      orderBy: { nom: "asc" },
+    }),
   ]);
+
+  const espaceNom = new Map(allEspaces.map((e) => [e.id, e.nom]));
 
   const pendingCount = users.filter((u) => u.status === "PENDING").length;
 
@@ -103,6 +111,20 @@ export default async function AdminUsersPage() {
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                       {u.email} · créé {formatDate(u.createdAt)}
                     </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                      {u.espaces.length === 0 ? (
+                        <span className="text-red-600 dark:text-red-400">
+                          Aucun espace : compte verrouillé
+                        </span>
+                      ) : (
+                        u.espaces
+                          .map(
+                            (m) =>
+                              `${espaceNom.get(m.espaceId) ?? "?"} (${m.role})`
+                          )
+                          .join(" · ")
+                      )}
+                    </div>
                   </div>
 
                   <UserActions
@@ -111,6 +133,11 @@ export default async function AdminUsersPage() {
                     role={u.role}
                     isMe={isMe}
                     allChantiers={allChantiers}
+                    allEspaces={allEspaces}
+                    espaceMembres={u.espaces.map((m) => ({
+                      espaceId: m.espaceId,
+                      role: m.role,
+                    }))}
                     assignedChantierIds={u.chantiersClient.map((c) => c.id)}
                     visibility={{
                       showJournal: u.showJournal,
@@ -125,6 +152,7 @@ export default async function AdminUsersPage() {
                     onResetPassword={adminGenerateResetLink}
                     onSetClientChantiers={setClientChantiers}
                     onSetClientVisibility={setClientVisibility}
+                    onSetEspaceMembres={setEspaceMembres}
                   />
                 </li>
               );

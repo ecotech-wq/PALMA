@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAuth, getAccessibleChantierIds } from "@/lib/auth-helpers";
+import { requireAuth, getAccessibleChantierIds, espaceFilter } from "@/lib/auth-helpers";
 
 /* -------------------------------------------------------------------------
  *  Recherche globale (command palette Ctrl+K).
@@ -65,10 +65,11 @@ export async function GET(req: Request) {
         select: { id: true, nom: true, adresse: true },
         take: LIMIT_PER_GROUP,
       }),
-      // Ouvriers : admin + conducteur uniquement
+      // Ouvriers : admin + conducteur uniquement, bornés à l'espace
       isPilot
         ? db.ouvrier.findMany({
             where: {
+              ...espaceFilter(me),
               OR: [
                 { nom: { contains: q, mode: "insensitive" } },
                 { telephone: { contains: q, mode: "insensitive" } },

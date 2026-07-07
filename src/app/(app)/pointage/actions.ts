@@ -3,6 +3,52 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { requireAuth, espaceFilter, type CurrentUser } from "@/lib/auth-helpers";
+
+// Gardes ajoutées (pré-existant : AUCUNE action de ce fichier n'était
+// protégée alors que la paie dérive des pointages). Le pointage est un
+// geste d'équipe interne : tout rôle non-client, borné à l'espace.
+
+async function requirePointageActor(): Promise<CurrentUser> {
+  const me = await requireAuth();
+  if (me.isClient) throw new Error("Action non autorisée");
+  return me;
+}
+
+/** Frontière d'espace d'un pointage, via son ouvrier. */
+async function verifierEspacePointage(me: CurrentUser, pointageId: string) {
+  if (!me.espaceIds) return; // régime hérité, pas de bornage
+  const p = await db.pointage.findUnique({
+    where: { id: pointageId },
+    select: { ouvrier: { select: { espaceId: true } } },
+  });
+  if (
+    !p ||
+    !p.ouvrier.espaceId ||
+    !me.espaceIds.includes(p.ouvrier.espaceId)
+  ) {
+    throw new Error("Ce pointage n'appartient pas à votre espace");
+  }
+}
+
+/** L'ouvrier visé doit exister dans un espace de l'utilisateur. */
+async function verifierEspaceOuvrierId(me: CurrentUser, ouvrierId: string) {
+  const o = await db.ouvrier.findFirst({
+    where: { id: ouvrierId, ...espaceFilter(me) },
+    select: { id: true },
+  });
+  if (!o) throw new Error("Ouvrier inconnu dans votre espace");
+}
+
+/** Le chantier cible d'un pointage doit lui aussi être dans l'espace
+ *  (sans quoi un id forgé pollue les finances d'une autre entreprise). */
+async function verifierEspaceChantierId(me: CurrentUser, chantierId: string) {
+  const c = await db.chantier.findFirst({
+    where: { id: chantierId, ...espaceFilter(me) },
+    select: { id: true },
+  });
+  if (!c) throw new Error("Chantier inconnu dans votre espace");
+}
 
 const entrySchema = z.object({
   ouvrierId: z.string().min(1),
@@ -10,6 +56,7 @@ const entrySchema = z.object({
 });
 
 export async function savePointage(date: string, formData: FormData) {
+  const me = await requirePointageActor();
   const dateObj = new Date(date);
   if (isNaN(dateObj.getTime())) throw new Error("Date invalide");
 
@@ -27,9 +74,10 @@ export async function savePointage(date: string, formData: FormData) {
 
   if (entries.size === 0) return;
 
-  // Récupère l'équipe (et donc le chantier) de chaque ouvrier
+  // Récupère l'équipe (et donc le chantier) de chaque ouvrier. Le filtre
+  // d'espace borne le lot : les ids d'un autre espace sont ignorés.
   const ouvriers = await db.ouvrier.findMany({
-    where: { id: { in: Array.from(entries.keys()) } },
+    where: { id: { in: Array.from(entries.keys()) }, ...espaceFilter(me) },
     include: { equipe: { select: { chantierId: true } } },
   });
 
@@ -73,11 +121,14 @@ const updateSchema = z.object({
 });
 
 export async function updatePointage(id: string, formData: FormData) {
+  const me = await requirePointageActor();
+  await verifierEspacePointage(me, id);
   const data = updateSchema.parse({
     joursTravailles: formData.get("joursTravailles"),
     chantierId: formData.get("chantierId"),
     note: formData.get("note"),
   });
+  if (data.chantierId) await verifierEspaceChantierId(me, data.chantierId);
 
   const existing = await db.pointage.findUnique({
     where: { id },
@@ -105,6 +156,8 @@ export async function updatePointage(id: string, formData: FormData) {
  * du disque.
  */
 export async function uploadPointagePhoto(id: string, formData: FormData) {
+  const me = await requirePointageActor();
+  await verifierEspacePointage(me, id);
   const file = formData.get("photo") as File | null;
   if (!file || file.size === 0) {
     throw new Error("Aucune photo reçue");
@@ -136,6 +189,8 @@ export async function uploadPointagePhoto(id: string, formData: FormData) {
  * Retire la photo d'un pointage (la supprime du disque + nettoie le champ).
  */
 export async function removePointagePhoto(id: string) {
+  const me = await requirePointageActor();
+  await verifierEspacePointage(me, id);
   const { deleteUploadedPhoto } = await import("@/lib/upload");
   const existing = await db.pointage.findUnique({
     where: { id },
@@ -164,6 +219,8 @@ export async function fetchPointagesForMonth(
   monthIdx: number
 ): Promise<{ date: string; jours: number }[]> {
   if (!ouvrierId) return [];
+  const me = await requirePointageActor();
+  await verifierEspaceOuvrierId(me, ouvrierId);
   const start = new Date(Date.UTC(year, monthIdx, 1));
   const end = new Date(Date.UTC(year, monthIdx + 1, 1));
   const points = await db.pointage.findMany({
@@ -194,6 +251,7 @@ const batchSchema = z.object({
 });
 
 export async function savePointageBatch(formData: FormData) {
+  const me = await requirePointageActor();
   const entriesRaw = formData.get("entries");
   let parsedEntries: unknown;
   try {
@@ -209,6 +267,8 @@ export async function savePointageBatch(formData: FormData) {
   });
 
   if (data.entries.length === 0) return;
+  await verifierEspaceOuvrierId(me, data.ouvrierId);
+  if (data.chantierId) await verifierEspaceChantierId(me, data.chantierId);
 
   // Déduit le chantier par défaut depuis l'équipe si non spécifié
   let chantierId: string | null = data.chantierId && data.chantierId.length > 0 ? data.chantierId : null;
@@ -271,6 +331,7 @@ const rangeSchema = z.object({
 });
 
 export async function addPointagesRange(formData: FormData) {
+  const me = await requirePointageActor();
   const data = rangeSchema.parse({
     ouvrierId: formData.get("ouvrierId"),
     dateDebut: formData.get("dateDebut"),
@@ -304,6 +365,8 @@ export async function addPointagesRange(formData: FormData) {
   if (dates.length === 0) {
     throw new Error("Aucun jour à enregistrer dans cette plage");
   }
+  await verifierEspaceOuvrierId(me, data.ouvrierId);
+  if (data.chantierId) await verifierEspaceChantierId(me, data.chantierId);
 
   // Récupère l'équipe/chantier pour pouvoir hériter du chantier si besoin
   const ouvrier = await db.ouvrier.findUnique({
@@ -350,6 +413,8 @@ export async function addPointagesRange(formData: FormData) {
 }
 
 export async function deletePointage(id: string) {
+  const me = await requirePointageActor();
+  await verifierEspacePointage(me, id);
   const existing = await db.pointage.findUnique({
     where: { id },
     select: { ouvrierId: true, photo: true },

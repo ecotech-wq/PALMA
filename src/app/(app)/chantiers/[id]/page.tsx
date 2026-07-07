@@ -34,7 +34,7 @@ import { CommandeStatutBadge } from "@/app/(app)/commandes/CommandeStatutBadge";
 import { formatEuro, formatDate } from "@/lib/utils";
 import { Montant } from "@/features/discret";
 import { getFinanceChantier } from "@/lib/finances-chantier";
-import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
+import { requireAuth, requireChantierAccess, espaceFilter } from "@/lib/auth-helpers";
 import { RapportsSection } from "@/app/(app)/rapports/RapportsSection";
 import {
   canManageMembers,
@@ -69,7 +69,10 @@ export default async function ChantierDetailPage({
       orderBy: { name: "asc" },
     }),
     db.equipe.findMany({
-      where: { OR: [{ chantierId: null }, { chantierId: id }] },
+      where: {
+        OR: [{ chantierId: null }, { chantierId: id }],
+        ...espaceFilter(me),
+      },
       orderBy: { nom: "asc" },
     }),
     db.commande.findMany({

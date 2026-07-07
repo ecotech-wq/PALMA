@@ -16,6 +16,7 @@ import {
   deletePaiement,
 } from "../actions";
 import { formatEuro, formatDate } from "@/lib/utils";
+import { requireAuth } from "@/lib/auth-helpers";
 import { Montant } from "@/features/discret";
 
 const contratLabel: Record<string, string> = {
@@ -32,6 +33,7 @@ export default async function PaiementDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const me = await requireAuth();
   const paiement = await db.paiement.findUnique({
     where: { id },
     include: {
@@ -41,6 +43,15 @@ export default async function PaiementDetailPage({
     },
   });
   if (!paiement) notFound();
+  // Frontière d'espace : la fiche paie d'un salarié d'une autre entreprise
+  // « n'existe pas » (même réponse qu'introuvable, pas de fuite d'existence).
+  if (
+    me.espaceIds &&
+    (!paiement.ouvrier.espaceId ||
+      !me.espaceIds.includes(paiement.ouvrier.espaceId))
+  ) {
+    notFound();
+  }
 
   const fullName = [paiement.ouvrier.prenom, paiement.ouvrier.nom].filter(Boolean).join(" ");
   const payerAction = marquerPaye.bind(null, id);

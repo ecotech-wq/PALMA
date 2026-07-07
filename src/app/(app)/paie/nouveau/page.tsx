@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { generatePaiement } from "../actions";
 import { calcPaie } from "@/lib/calc-paie";
 import { getAppSettings } from "@/lib/app-settings";
+import { requireAuth, espaceFilter } from "@/lib/auth-helpers";
 import { formatEuro, formatDate, cn } from "@/lib/utils";
 import { Montant } from "@/features/discret";
 
@@ -70,8 +71,9 @@ export default async function NouveauPaiementPage({
   searchParams: Promise<{ ouvrierId?: string; periodeDebut?: string; periodeFin?: string }>;
 }) {
   const sp = await searchParams;
+  const me = await requireAuth();
   const ouvriers = await db.ouvrier.findMany({
-    where: { actif: true },
+    where: { actif: true, ...espaceFilter(me) },
     select: { id: true, nom: true, prenom: true, typeContrat: true, tarifBase: true },
     orderBy: { nom: "asc" },
   });
@@ -97,8 +99,10 @@ export default async function NouveauPaiementPage({
   } | null = null;
 
   if (sp.ouvrierId) {
-    const o = await db.ouvrier.findUnique({
-      where: { id: sp.ouvrierId },
+    // findFirst + espaceFilter : le query param est forgeable, l'aperçu ne
+    // doit jamais calculer la paie d'un salarié d'une autre entreprise.
+    const o = await db.ouvrier.findFirst({
+      where: { id: sp.ouvrierId, ...espaceFilter(me) },
       include: {
         pointages: {
           where: { date: { gte: new Date(periodeDebut), lte: new Date(periodeFin) } },

@@ -228,6 +228,28 @@ async function seed() {
     );
   }
 
+  // ---- 0. Socle espaces : tout objet de démo naît rattaché à une
+  // entreprise. Mêmes identifiants que la migration socle_espaces
+  // (idempotent : ne recrée rien si la migration est déjà passée).
+  const espaceChantier = await db.espace.upsert({
+    where: { slug: "autonhome" },
+    update: {},
+    create: {
+      id: "esp_autonhome",
+      nom: "Autonhome",
+      slug: "autonhome",
+      modules: ["chantier"],
+    },
+  });
+  await db.espaceMembre.upsert({
+    where: {
+      espaceId_userId: { espaceId: espaceChantier.id, userId: admin.id },
+    },
+    update: {},
+    create: { espaceId: espaceChantier.id, userId: admin.id, role: "ADMIN" },
+  });
+  console.log(`  ✓ Espace ${espaceChantier.nom} (admin membre)`);
+
   // ---- 1. Crée les chantiers ----
   const chantiers = [];
   for (const cd of CHANTIERS_DEMO) {
@@ -242,6 +264,7 @@ async function seed() {
         dateDebut: daysAgo(-cd.daysOffsetStart),
         dateFin: daysAgo(-cd.daysOffsetEnd),
         chefId: admin.id,
+        espaceId: espaceChantier.id,
       },
     });
     chantiers.push(c);
@@ -258,6 +281,7 @@ async function seed() {
         data: {
           nom: `${nomBase} ${c.nom.replace("[DEMO] ", "").split(" ")[0]}`,
           chantierId: c.id,
+          espaceId: espaceChantier.id,
         },
       });
       equipes.push(e);
@@ -273,7 +297,7 @@ async function seed() {
       const targetEquipe = equipes[idx % equipes.length];
       await db.ouvrier.update({
         where: { id: ouv.id },
-        data: { equipeId: targetEquipe.id },
+        data: { equipeId: targetEquipe.id, espaceId: espaceChantier.id },
       });
       idx++;
     }

@@ -10,7 +10,7 @@ import { CompileRapportButton } from "../CompileRapportButton";
 import { RubriquesPanel, type Rubrique } from "../ChantierRubriques";
 import { ChantierInfoSheet } from "../ChantierInfoSheet";
 import { documentsChantier } from "../chantier-documents";
-import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
+import { requireAuth, requireChantierAccess, espaceFilter } from "@/lib/auth-helpers";
 import { markResourceRead } from "@/lib/read-state";
 import { getPhotoMetadata } from "@/lib/upload";
 import {
@@ -115,7 +115,10 @@ export default async function MessagerieChantierPage({
       orderBy: { nomCommun: "asc" },
     }),
     db.equipe.findMany({
-      where: { OR: [{ chantierId }, { chantierId: null }] },
+      where: {
+        OR: [{ chantierId }, { chantierId: null }],
+        ...espaceFilter(me),
+      },
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),

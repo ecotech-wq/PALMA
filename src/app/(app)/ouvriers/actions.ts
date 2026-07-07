@@ -5,7 +5,38 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { saveUploadedPhoto, deleteUploadedPhoto } from "@/lib/upload";
-import { requireAdmin, requireAuth, requireAdminOrConducteur } from "@/lib/auth-helpers";
+import {
+  requireAdmin,
+  requireAdminOrConducteur,
+  requireEspaceCourant,
+  espaceFilter,
+  type CurrentUser,
+} from "@/lib/auth-helpers";
+
+/**
+ * Frontière d'espace pour UN ouvrier (même régime que les chantiers) :
+ * lève si l'ouvrier n'appartient pas à un espace de l'utilisateur.
+ * Un espaceId NULL (ligne orpheline) est refusé : deny par défaut.
+ */
+async function verifierEspaceOuvrier(me: CurrentUser, id: string) {
+  if (!me.espaceIds) return; // régime hérité, pas de bornage
+  const o = await db.ouvrier.findUnique({
+    where: { id },
+    select: { espaceId: true },
+  });
+  if (!o || !o.espaceId || !me.espaceIds.includes(o.espaceId)) {
+    throw new Error("Cet ouvrier n'appartient pas à votre espace");
+  }
+}
+
+/** L'équipe choisie doit exister dans un espace de l'utilisateur. */
+async function verifierEquipeDansEspace(me: CurrentUser, equipeId: string) {
+  const eq = await db.equipe.findFirst({
+    where: { id: equipeId, ...espaceFilter(me) },
+    select: { id: true },
+  });
+  if (!eq) throw new Error("Équipe inconnue dans votre espace");
+}
 
 const ouvrierSchema = z.object({
   nom: z.string().min(1, "Nom requis"),
@@ -46,21 +77,28 @@ function parseOuvrier(formData: FormData) {
 }
 
 export async function createOuvrier(formData: FormData) {
-  await requireAdminOrConducteur();
+  const me = await requireAdminOrConducteur();
+  // Socle espaces : un ouvrier naît rattaché à l'entreprise courante.
+  const espace = requireEspaceCourant(me);
   const data = parseOuvrier(formData);
+  if (data.equipeId) await verifierEquipeDansEspace(me, data.equipeId);
   const photoFile = formData.get("photo") as File | null;
   let photo: string | null = null;
   if (photoFile && photoFile.size > 0) {
     photo = await saveUploadedPhoto(photoFile, "ouvriers");
   }
-  const created = await db.ouvrier.create({ data: { ...data, photo } });
+  const created = await db.ouvrier.create({
+    data: { ...data, photo, espaceId: espace.id },
+  });
   revalidatePath("/ouvriers");
   redirect(`/ouvriers/${created.id}`);
 }
 
 export async function updateOuvrier(id: string, formData: FormData) {
   const me = await requireAdminOrConducteur();
+  await verifierEspaceOuvrier(me, id);
   const data = parseOuvrier(formData);
+  if (data.equipeId) await verifierEquipeDansEspace(me, data.equipeId);
   const photoFile = formData.get("photo") as File | null;
   const removePhoto = formData.get("removePhoto") === "1";
 
@@ -89,7 +127,8 @@ export async function updateOuvrier(id: string, formData: FormData) {
 }
 
 export async function deleteOuvrier(id: string) {
-  await requireAdmin();
+  const me = await requireAdmin();
+  await verifierEspaceOuvrier(me, id);
   const existing = await db.ouvrier.findUnique({ where: { id } });
   if (existing?.photo) await deleteUploadedPhoto(existing.photo);
   await db.ouvrier.delete({ where: { id } });
@@ -105,6 +144,10 @@ export async function deleteOuvrier(id: string) {
  * désactive pour qu'ils n'apparaissent plus dans le pointage du jour.
  */
 export async function toggleOuvrierActif(id: string): Promise<boolean> {
+  // Garde ajoutée (pré-existant : action sans aucune garde). Même niveau
+  // que la création/édition : admin ou conducteur, borné à l'espace.
+  const me = await requireAdminOrConducteur();
+  await verifierEspaceOuvrier(me, id);
   const o = await db.ouvrier.findUnique({
     where: { id },
     select: { actif: true },
@@ -131,9 +174,12 @@ export async function bulkToggleOuvriers(
   ids: string[],
   actif: boolean
 ): Promise<number> {
+  // Garde ajoutée (pré-existant : action sans aucune garde). Le filtre
+  // d'espace borne le lot : les ids d'un autre espace sont ignorés.
+  const me = await requireAdminOrConducteur();
   if (!Array.isArray(ids) || ids.length === 0) return 0;
   const result = await db.ouvrier.updateMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, ...espaceFilter(me) },
     data: { actif },
   });
   revalidatePath("/ouvriers");

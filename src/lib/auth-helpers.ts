@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import {
@@ -69,8 +70,12 @@ export type CurrentUser = {
 /**
  * Récupère l'utilisateur connecté avec des flags pratiques pour
  * conditionner les vues. Lève si non authentifié.
+ *
+ * Enveloppée dans React cache() (motif DAL du guide Next.js) : layout,
+ * page et composants serveur partagent UNE exécution par rendu ; rien
+ * n'est partagé entre deux requêtes HTTP.
  */
-export async function requireAuth(): Promise<CurrentUser> {
+export const requireAuth = cache(async (): Promise<CurrentUser> => {
   const session = await auth();
   if (!session?.user) throw new Error("Non authentifié");
   const raw = session.user.role;
@@ -144,13 +149,21 @@ export async function requireAuth(): Promise<CurrentUser> {
     espaceIds: ctx.espaceIds,
     modules: ctx.modules,
   };
+});
+
+/** Fragment Prisma générique { espaceId: { in ... } } pour tout modèle
+ *  rattaché à un espace (Chantier, Ouvrier, Equipe). Les lignes sans
+ *  espace (NULL) sont exclues : deny par défaut. */
+export function espaceFilter(user: CurrentUser) {
+  return user.espaceIds ? { espaceId: { in: user.espaceIds } } : {};
 }
 
 /** Fragment Prisma pour borner les requêtes Chantier à l'espace courant
  *  (ou aux espaces de l'utilisateur en mode « tous »). */
 export function chantierEspaceFilter(user: CurrentUser) {
-  return user.espaceIds ? { espaceId: { in: user.espaceIds } } : {};
+  return espaceFilter(user);
 }
+
 
 /** Exige un espace courant UNIQUE (créations) : en mode « tous », on ne
  *  sait pas dans quelle entreprise ranger le nouvel objet. */

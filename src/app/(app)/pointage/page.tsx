@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Calendar, CalendarRange, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireAuth, getAccessibleChantierIds } from "@/lib/auth-helpers";
+import { requireAuth, getAccessibleChantierIds, espaceFilter } from "@/lib/auth-helpers";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -64,7 +64,8 @@ export default async function PointagePage({
 
   const [ouvriers, chantiers] = await Promise.all([
     db.ouvrier.findMany({
-      where: { actif: true },
+      // Socle espaces : on ne pointe que les ouvriers de son entreprise.
+      where: { actif: true, ...espaceFilter(me) },
       include: {
         equipe: { include: { chantier: { select: { id: true, nom: true } } } },
         pointages: { where: { date: dayDate }, take: 1 },

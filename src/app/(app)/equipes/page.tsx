@@ -8,10 +8,19 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { Input, Field, Select } from "@/components/ui/Input";
 import { ResettingForm } from "@/components/ResettingForm";
 import { createEquipe } from "./actions";
+import { requireAuth, espaceFilter, getAccessibleChantierIds } from "@/lib/auth-helpers";
 
 export default async function EquipesListPage() {
+  const me = await requireAuth();
+  // Le Select de chantier ne propose que les chantiers PILOTABLES (un
+  // conducteur n'attache une équipe qu'à un chantier dont il est membre :
+  // requireChantierManager refuserait sinon). Un admin voit tout l'espace.
+  const accessibleIds = await getAccessibleChantierIds(me);
+  const borneChantier =
+    accessibleIds === null ? {} : { id: { in: accessibleIds } };
   const [equipes, chantiers] = await Promise.all([
     db.equipe.findMany({
+      where: espaceFilter(me),
       include: {
         chantier: { select: { id: true, nom: true } },
         _count: { select: { ouvriers: true } },
@@ -19,16 +28,33 @@ export default async function EquipesListPage() {
       orderBy: { nom: "asc" },
     }),
     db.chantier.findMany({
-      where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] } },
+      where: {
+        statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] },
+        ...borneChantier,
+      },
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),
   ]);
 
+  // Mode « tous les espaces » : on ne sait pas dans quelle entreprise ranger
+  // une nouvelle équipe (createEquipe exige un espace unique). On remplace
+  // le formulaire par une invitation à choisir, au lieu d'un échec masqué.
+  const espaceChoisi = me.espaceCourant !== null;
+
   return (
     <div>
       <PageHeader title="Équipes" description="Composition et affectation des équipes" />
 
+      {!espaceChoisi ? (
+        <Card className="mb-5">
+          <CardBody className="text-sm text-slate-600 dark:text-slate-400">
+            Choisis d&apos;abord une entreprise dans le sélecteur pour créer
+            une équipe (le mode « tous les espaces » ne permet pas de savoir
+            à quelle entreprise la rattacher).
+          </CardBody>
+        </Card>
+      ) : (
       <Card className="mb-5">
         <CardBody>
           <ResettingForm
@@ -61,6 +87,7 @@ export default async function EquipesListPage() {
           </ResettingForm>
         </CardBody>
       </Card>
+      )}
 
       {equipes.length === 0 ? (
         <EmptyState

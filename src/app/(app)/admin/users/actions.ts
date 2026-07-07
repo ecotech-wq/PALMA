@@ -34,7 +34,16 @@ async function ensureAdmin() {
  * projet. Idempotent.
  */
 async function rattacherEspaceParDefaut(userId: string, role: string) {
-  const principal = await db.espace.findFirst({ orderBy: { createdAt: "asc" } });
+  // L'espace « principal » est celui du module chantier (l'entreprise de
+  // terrain), pas le premier createdAt : les deux espaces de reprise ont
+  // été insérés dans la même transaction (createdAt identiques, ordre
+  // non déterministe). À défaut, le plus ancien.
+  const principal =
+    (await db.espace.findFirst({
+      where: { modules: { has: "chantier" } },
+      orderBy: { createdAt: "asc" },
+    })) ??
+    (await db.espace.findFirst({ orderBy: { createdAt: "asc" } }));
   if (!principal) return;
   await db.espaceMembre.upsert({
     where: { espaceId_userId: { espaceId: principal.id, userId } },
@@ -248,6 +257,97 @@ export async function setClientVisibility(
         showRapportsHebdo: flags.showRapportsHebdo,
       }),
     },
+  });
+  revalidatePath("/admin/users");
+}
+
+// =====================================================
+// Adhésions d'espace (socle plateforme, rôle PAR espace)
+// =====================================================
+
+const espaceMembresSchema = z.array(
+  z.object({
+    espaceId: z.string().min(1),
+    role: z.enum([
+      "ADMIN",
+      "CONDUCTEUR",
+      "CHEF",
+      "OUVRIER",
+      "SOUS_TRAITANT",
+      "CLIENT",
+    ]),
+  })
+);
+
+/**
+ * Remplace les adhésions d'espace d'un compte (état complet, transactionnel) :
+ * chaque entrée = un espace + le rôle PROPRE à cet espace. Une liste vide
+ * retire toutes les adhésions (le compte est alors verrouillé : deny par
+ * défaut, il ne voit plus aucun projet). Réservé au global admin.
+ */
+export async function setEspaceMembres(
+  userId: string,
+  adhesions: { espaceId: string; role: string }[]
+) {
+  const me = await ensureAdmin();
+  const target = await db.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true },
+  });
+  if (!target) throw new Error("Utilisateur introuvable");
+
+  const parsed = espaceMembresSchema.parse(adhesions ?? []);
+  // Dernière occurrence gagnante si un espace apparaît deux fois.
+  const parEspace = new Map(parsed.map((a) => [a.espaceId, a.role]));
+
+  // Anti-auto-verrouillage (même esprit que changeUserRole) : l'admin ne
+  // peut pas se rétrograder lui-même partout, sinon la navigation admin
+  // disparaît de son interface (rôle effectif d'espace).
+  if (userId === me.id) {
+    const gardeUnAdmin = [...parEspace.values()].some((r) => r === "ADMIN");
+    if (!gardeUnAdmin) {
+      throw new Error(
+        "Tu dois rester ADMIN dans au moins un espace (anti-verrouillage)"
+      );
+    }
+  }
+
+  // On ne rattache qu'à des espaces EXISTANTS (pas d'ids forgés côté client).
+  const espaces = await db.espace.findMany({
+    where: { id: { in: [...parEspace.keys()] } },
+    select: { id: true, nom: true },
+  });
+  const validIds = espaces.map((e) => e.id);
+
+  await db.$transaction([
+    // Retire les adhésions absentes de la nouvelle liste (liste vide = tout).
+    db.espaceMembre.deleteMany({
+      where: { userId, espaceId: { notIn: validIds } },
+    }),
+    ...validIds.map((espaceId) =>
+      db.espaceMembre.upsert({
+        where: { espaceId_userId: { espaceId, userId } },
+        update: { role: parEspace.get(espaceId) as never },
+        create: {
+          espaceId,
+          userId,
+          role: parEspace.get(espaceId) as never,
+        },
+      })
+    ),
+  ]);
+
+  const resume =
+    espaces.length === 0
+      ? "aucun espace (compte verrouillé)"
+      : espaces
+          .map((e) => `${e.nom}:${parEspace.get(e.id)}`)
+          .join(", ");
+  await audit(actor(me), {
+    action: "USER_ESPACES_CHANGED",
+    entity: "User",
+    entityId: userId,
+    summary: `Espaces de ${target.name} : ${resume}`,
   });
   revalidatePath("/admin/users");
 }

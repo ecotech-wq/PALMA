@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { requireAuth, espaceFilter } from "@/lib/auth-helpers";
 import { toCsv, csvResponse } from "@/lib/csv";
 
 const statutLabel: Record<string, string> = {
@@ -18,9 +18,18 @@ const statutLabel: Record<string, string> = {
  * `statut` accepte CALCULE / PAYE / ANNULE.
  */
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
+  // Contre-vérification 2026-07-07 (BLOQUANT) : cette route ne testait que
+  // la session. Le matcher du middleware exclut /api, donc la règle
+  // "adminOnly" d'auth.config.ts ne s'applique JAMAIS ici : la garde doit
+  // vivre dans le handler. Paie = global admin, bornée par espace.
+  let me;
+  try {
+    me = await requireAuth();
+  } catch {
     return new Response("Unauthorized", { status: 401 });
+  }
+  if (!me.isGlobalAdmin) {
+    return new Response("Forbidden", { status: 403 });
   }
 
   const url = new URL(req.url);
@@ -49,7 +58,7 @@ export async function GET(req: NextRequest) {
   }
 
   const paiements = await db.paiement.findMany({
-    where,
+    where: { ...where, ouvrier: { ...espaceFilter(me) } },
     include: {
       ouvrier: {
         select: {

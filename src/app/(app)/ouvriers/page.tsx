@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { OuvriersBulkList } from "./OuvriersBulkList";
-import { requireAuth } from "@/lib/auth-helpers";
+import { requireAuth, espaceFilter } from "@/lib/auth-helpers";
 
 export default async function OuvriersListPage({
   searchParams,
@@ -19,6 +19,8 @@ export default async function OuvriersListPage({
   const ouvriers = await db.ouvrier.findMany({
     where: {
       AND: [
+        // Socle espaces : l'annuaire est borné à l'entreprise courante.
+        espaceFilter(me),
         actif === "actifs" ? { actif: true } : actif === "inactifs" ? { actif: false } : {},
         contrat ? { typeContrat: contrat as never } : {},
         q

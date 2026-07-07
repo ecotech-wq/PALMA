@@ -18,7 +18,7 @@ import { ClientDashboard } from "./ClientDashboard";
 import { QuickActionsBar } from "./QuickActionsBar";
 import { MurDuTerrain, type PhotoTerrain } from "./MurDuTerrain";
 import { AnneauAvancement } from "./AnneauAvancement";
-import { requireAuth, getAccessibleChantierIds } from "@/lib/auth-helpers";
+import { requireAuth, getAccessibleChantierIds, espaceFilter } from "@/lib/auth-helpers";
 import { unreadMessagerieFor } from "@/lib/read-state";
 
 /**
@@ -97,7 +97,9 @@ export default async function DashboardPage() {
       : 0,
     me.isAdmin
       ? db.paiement.aggregate({
-          where: { statut: "CALCULE" },
+          // Socle espaces : les paiements à verser sont bornés à l'entreprise
+          // courante (sinon un admin d'espace voit le cumul de toutes).
+          where: { statut: "CALCULE", ouvrier: { ...espaceFilter(me) } },
           _sum: { montantNet: true },
           _count: true,
         })

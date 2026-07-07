@@ -10,6 +10,7 @@ import {
   requireAuth,
   requireChantierManager,
   requireEspaceCourant,
+  espaceFilter,
 } from "@/lib/auth-helpers";
 
 const chantierSchema = z.object({
@@ -162,7 +163,21 @@ export async function reouvrirChantier(id: string) {
 
 export async function affecterEquipeAuChantier(equipeId: string, chantierId: string | null) {
   // Contre-vérification 2026-07-07 : action jusqu'ici sans AUCUNE garde.
-  await requireAdminOrConducteur();
+  // Frontière d'espace : l'équipe ET le chantier cible doivent appartenir
+  // à un espace de l'utilisateur (ids forgeables sinon).
+  const me = await requireAdminOrConducteur();
+  const equipe = await db.equipe.findFirst({
+    where: { id: equipeId, ...espaceFilter(me) },
+    select: { id: true },
+  });
+  if (!equipe) throw new Error("Équipe inconnue dans votre espace");
+  if (chantierId) {
+    const chantier = await db.chantier.findFirst({
+      where: { id: chantierId, ...espaceFilter(me) },
+      select: { id: true },
+    });
+    if (!chantier) throw new Error("Chantier inconnu dans votre espace");
+  }
   await db.equipe.update({
     where: { id: equipeId },
     data: { chantierId: chantierId || null },

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { auth, signOut } from "@/auth";
-import { requireAuth } from "@/lib/auth-helpers";
+import { requireAuth, espaceFilter } from "@/lib/auth-helpers";
 import { DiscretProvider, DiscretToggle } from "@/features/discret";
 import { db } from "@/lib/db";
 import { DesktopSidebar, MobileBottomNav, MobileTopBar } from "@/components/NavSidebar";
@@ -77,8 +77,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     messagerieUnread,
   ] = await Promise.all([
     isAdmin ? db.user.count({ where: { status: "PENDING" } }) : 0,
-    // Paiements en attente : badge réservé aux admins
-    isAdmin ? db.paiement.count({ where: { statut: "CALCULE" } }) : 0,
+    // Paiements en attente : badge réservé aux admins, borné à l'entreprise
+    // courante (socle espaces : pas de cumul inter-entreprises).
+    isAdmin
+      ? db.paiement.count({
+          where: { statut: "CALCULE", ouvrier: { ...espaceFilter(me) } },
+        })
+      : 0,
     // Locations dont le retour prévu est dépassé et qui ne sont pas clôturées
     db.locationPret.count({
       where: { cloture: false, dateFinPrevue: { lt: today } },
@@ -191,6 +196,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             isConducteur={me.isConducteur}
             isClient={me.isClient}
             modules={me.modules}
+            espaces={me.espaces.map((e) => ({ id: e.id, nom: e.nom }))}
+            espaceCourantId={me.espaceCourant?.id ?? null}
             pendingUsersCount={pendingUsersCount}
             navBadges={navBadges}
             clientVisibility={clientVisibility}

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CalendarCheck, Users, AlertCircle, ArrowRight } from "lucide-react";
 import { db } from "@/lib/db";
+import { requireAuth, espaceFilter } from "@/lib/auth-helpers";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 
 /**
@@ -12,6 +13,9 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
  * - Qui n'a pas pointé alors qu'il a une équipe affectée
  */
 export async function TodayWidget() {
+  // Socle espaces : le widget ne montre que le personnel de l'entreprise
+  // courante (requireAuth est dédupliqué par React cache()).
+  const me = await requireAuth();
   const today = new Date();
   const dayStart = new Date(
     Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
@@ -21,7 +25,10 @@ export async function TodayWidget() {
 
   const [pointages, ouvriersActifs] = await Promise.all([
     db.pointage.findMany({
-      where: { date: { gte: dayStart, lt: dayEnd } },
+      where: {
+        date: { gte: dayStart, lt: dayEnd },
+        ouvrier: { ...espaceFilter(me) },
+      },
       include: {
         ouvrier: {
           select: {
@@ -41,7 +48,7 @@ export async function TodayWidget() {
       },
     }),
     db.ouvrier.findMany({
-      where: { actif: true },
+      where: { actif: true, ...espaceFilter(me) },
       select: {
         id: true,
         nom: true,

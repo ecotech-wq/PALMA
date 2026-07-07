@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Input, Field, Select } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { updateEquipe, deleteEquipe, affecterOuvrierAEquipe } from "../actions";
+import { requireAuth, espaceFilter, getAccessibleChantierIds } from "@/lib/auth-helpers";
 
 const contratLabel: Record<string, string> = {
   FIXE: "Fixe",
@@ -23,6 +24,11 @@ export default async function EquipeDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const me = await requireAuth();
+  // Select de chantier borné aux chantiers pilotables (voir /equipes).
+  const accessibleIds = await getAccessibleChantierIds(me);
+  const borneChantier =
+    accessibleIds === null ? {} : { id: { in: accessibleIds } };
   const [equipe, chantiers, ouvriersLibres, sortiesActives] = await Promise.all([
     db.equipe.findUnique({
       where: { id },
@@ -32,12 +38,19 @@ export default async function EquipeDetailPage({
       },
     }),
     db.chantier.findMany({
-      where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] } },
+      where: {
+        statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] },
+        ...borneChantier,
+      },
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),
     db.ouvrier.findMany({
-      where: { OR: [{ equipeId: null }, { equipeId: id }], actif: true },
+      where: {
+        OR: [{ equipeId: null }, { equipeId: id }],
+        actif: true,
+        ...espaceFilter(me),
+      },
       orderBy: { nom: "asc" },
     }),
     db.sortieMateriel.findMany({
@@ -47,6 +60,14 @@ export default async function EquipeDetailPage({
     }),
   ]);
   if (!equipe) notFound();
+  // Frontière d'espace : une équipe d'une autre entreprise « n'existe pas »
+  // pour cet utilisateur (pas de fuite d'existence).
+  if (
+    me.espaceIds &&
+    (!equipe.espaceId || !me.espaceIds.includes(equipe.espaceId))
+  ) {
+    notFound();
+  }
 
   const updateAction = updateEquipe.bind(null, id);
   const deleteAction = deleteEquipe.bind(null, id);

@@ -4,8 +4,10 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Input, Field, Select, Textarea } from "@/components/ui/Input";
 import { createSortie } from "../actions";
+import { requireAuth, espaceFilter } from "@/lib/auth-helpers";
 
 export default async function NouvelleSortiePage() {
+  const me = await requireAuth();
   const [materielsDispo, equipes, chantiers] = await Promise.all([
     db.materiel.findMany({
       where: { statut: "DISPO", possesseur: { in: ["ENTREPRISE", "LOCATION"] } },
@@ -13,11 +15,15 @@ export default async function NouvelleSortiePage() {
       orderBy: { nomCommun: "asc" },
     }),
     db.equipe.findMany({
+      where: espaceFilter(me),
       include: { chantier: { select: { id: true, nom: true } } },
       orderBy: { nom: "asc" },
     }),
     db.chantier.findMany({
-      where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] } },
+      where: {
+        statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] },
+        ...espaceFilter(me),
+      },
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),
