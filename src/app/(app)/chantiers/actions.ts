@@ -8,6 +8,9 @@ import { requireAdmin, requireAuth } from "@/lib/auth-helpers";
 
 const chantierSchema = z.object({
   nom: z.string().min(1, "Nom requis"),
+  // Projets typés (VISION-LYNX-V4) : une étude BE est un Chantier de type
+  // ETUDE. Le champ n'est proposé qu'à la création (figé ensuite).
+  type: z.enum(["CHANTIER", "ETUDE"]).default("CHANTIER"),
   adresse: z.string().optional().or(z.literal("")),
   description: z.string().optional().or(z.literal("")),
   dateDebut: z.string().optional().or(z.literal("")),
@@ -21,6 +24,7 @@ const chantierSchema = z.object({
 function parseChantier(formData: FormData) {
   const data = chantierSchema.parse({
     nom: formData.get("nom"),
+    type: formData.get("type") || "CHANTIER",
     adresse: formData.get("adresse"),
     description: formData.get("description"),
     dateDebut: formData.get("dateDebut"),
@@ -33,6 +37,7 @@ function parseChantier(formData: FormData) {
 
   return {
     nom: data.nom,
+    type: data.type,
     adresse: data.adresse || null,
     description: data.description || null,
     dateDebut: data.dateDebut ? new Date(data.dateDebut) : null,
@@ -45,9 +50,23 @@ function parseChantier(formData: FormData) {
 }
 
 export async function createChantier(formData: FormData) {
-  await requireAdmin();
+  const me = await requireAdmin();
   const data = parseChantier(formData);
   const created = await db.chantier.create({ data });
+  // Gabarit d'étude : canaux par défaut « conception » (interne) et
+  // « client » (visible client), en plus du « Général » créé à la volée
+  // par la messagerie. Un chantier garde son gabarit historique.
+  if (data.type === "ETUDE") {
+    await db.canal.createMany({
+      data: [
+        { chantierId: created.id, nom: "conception", visibility: "INTERNE", ordre: 1, createdById: me.id },
+        { chantierId: created.id, nom: "client", visibility: "CLIENT", ordre: 2, createdById: me.id },
+      ],
+      skipDuplicates: true,
+    });
+    revalidatePath("/be");
+    redirect(`/be/${created.id}`);
+  }
   revalidatePath("/chantiers");
   redirect(`/chantiers/${created.id}`);
 }
@@ -68,7 +87,12 @@ export async function updateChantier(id: string, formData: FormData) {
       data.budgetVirement = Number(existing.budgetVirement);
     }
   }
-  await db.chantier.update({ where: { id }, data });
+  // Le type de projet est figé après création : on l'écarte de la mise à
+  // jour (le formulaire d'édition ne l'envoie pas, et zod remettrait le
+  // défaut CHANTIER, ce qui requalifierait silencieusement une étude).
+  const { type: _type, ...sansType } = data;
+  void _type;
+  await db.chantier.update({ where: { id }, data: sansType });
   revalidatePath("/chantiers");
   revalidatePath(`/chantiers/${id}`);
 }

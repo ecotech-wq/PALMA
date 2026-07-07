@@ -5,7 +5,12 @@ import { ChantierForm } from "../ChantierForm";
 import { createChantier } from "../actions";
 import { requireAuth } from "@/lib/auth-helpers";
 
-export default async function NouveauChantierPage() {
+export default async function NouveauChantierPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ type?: string }>;
+}) {
+  const { type } = await searchParams;
   const me = await requireAuth();
   const chefs = await db.user.findMany({
     where: { role: "CHEF" },
@@ -15,7 +20,10 @@ export default async function NouveauChantierPage() {
 
   return (
     <div>
-      <PageHeader title="Nouveau chantier" backHref="/chantiers" />
+      <PageHeader
+        title={type === "ETUDE" ? "Nouvelle étude" : "Nouveau chantier"}
+        backHref={type === "ETUDE" ? "/be" : "/chantiers"}
+      />
       <Card>
         <CardBody>
           <ChantierForm
@@ -23,6 +31,7 @@ export default async function NouveauChantierPage() {
             action={createChantier}
             submitLabel="Créer"
             isAdmin={me.isAdmin}
+            defaultType={type === "ETUDE" ? "ETUDE" : "CHANTIER"}
           />
         </CardBody>
       </Card>

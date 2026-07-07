@@ -66,6 +66,7 @@ model User {
 
   chantiersGeres     Chantier[]           @relation("ChefChantier")
   chantiersClient    Chantier[]           @relation("ChantierClients")
+  tempsPasses      TempsPasse[]
   passwordResets     PasswordResetToken[]
   rapportsCrees      RapportChantier[]
   incidentsRapportes Incident[]           @relation("IncidentReporter")
@@ -153,6 +154,14 @@ enum StatutChantier {
   ANNULE
 }
 
+/// Projets typés (VISION-LYNX-V4) : une étude de bureau d'études EST un
+/// Chantier de type ETUDE. Elle hérite messagerie, canaux, membres, tâches
+/// et plans ; le type sert de GABARIT (canaux par défaut, modules visibles).
+enum TypeProjet {
+  CHANTIER
+  ETUDE
+}
+
 model Chantier {
   id              String         @id @default(cuid())
   nom             String
@@ -161,6 +170,7 @@ model Chantier {
   dateDebut       DateTime?
   dateFin         DateTime?
   statut          StatutChantier @default(PLANIFIE)
+  type            TypeProjet     @default(CHANTIER)
   budgetEspeces   Decimal        @default(0) @db.Decimal(12, 2)
   budgetVirement  Decimal        @default(0) @db.Decimal(12, 2)
   chefId          String?
@@ -189,6 +199,8 @@ model Chantier {
   pins             UserChantierPin[]
   canaux           Canal[]
   membres          ChantierMembre[]
+  phasesEtude      PhaseEtude[]
+  tempsPasses      TempsPasse[]
 }
 
 model Equipe {
@@ -1149,4 +1161,49 @@ model PushSubscription {
   lastUsed  DateTime @default(now())
 
   @@index([userId])
+}
+
+// ─── Bureau d'études (phase 1 du module BE, 2026-07-07) ─────────────────────
+// Ce qui est PROPRE au BE : phases d'honoraires et temps passés. Le reste
+// (messagerie, membres, tâches, plans) vient du Chantier typé ETUDE.
+
+/// Phase d'honoraires d'une étude (ESQ, APS, APD, PRO, DCE, EXE, VISA, DET...,
+/// code libre) : montant vendu et budget d'heures pour le prévu/réel.
+model PhaseEtude {
+  id           String    @id @default(cuid())
+  chantierId   String
+  chantier     Chantier  @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  code         String
+  libelle      String
+  montantVendu Decimal   @default(0) @db.Decimal(12, 2)
+  budgetHeures Decimal?  @db.Decimal(7, 2)
+  dateDebut    DateTime?
+  dateFin      DateTime?
+  ordre        Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tempsPasses  TempsPasse[]
+
+  @@index([chantierId, ordre])
+}
+
+/// Temps passé par une personne sur une étude (la matière première vendue
+/// d'un BE) : saisie de la veille en deux clics, phase facultative.
+model TempsPasse {
+  id         String      @id @default(cuid())
+  chantierId String
+  chantier   Chantier    @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  phaseId    String?
+  phase      PhaseEtude? @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date       DateTime    @db.Date
+  heures     Decimal     @db.Decimal(4, 2)
+  note       String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([userId, date])
+  @@index([chantierId, date])
 }

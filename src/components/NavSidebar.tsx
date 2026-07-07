@@ -30,6 +30,8 @@ import {
   CalendarRange,
   ClipboardCheck,
   ClipboardList,
+  DraftingCompass,
+  Timer,
   Download,
   Trash2,
 } from "lucide-react";
@@ -114,6 +116,18 @@ const groups: NavGroup[] = [
       { href: "/incidents", label: "Incidents", icon: AlertTriangle },
     ],
   },
+  // Bureau d'études : les études sont des projets typés (VISION-LYNX-V4,
+  // phase 1 du module BE). Réservé à l'équipe interne.
+  {
+    key: "be",
+    label: "Bureau d'études",
+    icon: DraftingCompass,
+    clientHidden: true,
+    items: [
+      { href: "/be", label: "Études", icon: DraftingCompass },
+      { href: "/be/temps", label: "Mes temps", icon: Timer },
+    ],
+  },
   {
     key: "materiel",
     label: "Matériel & achats",
@@ -168,6 +182,9 @@ const mobilePrimaryClient: NavItem[] = [
 // Tout le reste, accessible via le bouton "Plus"
 const mobileMore: NavItem[] = [
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
+  // Bureau d'études : saisie des temps au téléphone (stand-up du matin)
+  { href: "/be", label: "Études", icon: DraftingCompass, clientHidden: true },
+  { href: "/be/temps", label: "Mes temps", icon: Timer, clientHidden: true },
   { href: "/equipes", label: "Équipes", icon: Users, clientHidden: true },
   { href: "/materiel", label: "Matériel", icon: Wrench, clientHidden: true },
   { href: "/sorties", label: "Sorties / Retours", icon: ArrowLeftRight, clientHidden: true },

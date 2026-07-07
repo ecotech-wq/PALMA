@@ -24,12 +24,15 @@ export function ChantierForm({
   action,
   submitLabel,
   isAdmin = true,
+  defaultType = "CHANTIER",
 }: {
   chantier?: Chantier;
   chefs: Chef[];
   action: (formData: FormData) => Promise<void>;
   submitLabel: string;
   isAdmin?: boolean;
+  /** Type de projet présélectionné à la création (figé à l'édition). */
+  defaultType?: "CHANTIER" | "ETUDE";
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -55,6 +58,17 @@ export function ChantierForm({
         </div>
       )}
 
+      {/* Projets typés : le choix n'existe qu'à la création. Une étude
+          hérite de toute la pile (messagerie, membres, plans) et ouvre les
+          modules BE (phases d'honoraires, temps passés). */}
+      {!chantier && (
+        <Field label="Type de projet" required>
+          <Select name="type" defaultValue={defaultType} required>
+            <option value="CHANTIER">Chantier (exécution)</option>
+            <option value="ETUDE">Étude (bureau d'études)</option>
+          </Select>
+        </Field>
+      )}
       <Field label="Nom du chantier" required>
         <Input name="nom" defaultValue={chantier?.nom ?? ""} required />
       </Field>
