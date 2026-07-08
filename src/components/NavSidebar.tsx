@@ -34,6 +34,7 @@ import {
   Timer,
   Download,
   Trash2,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/theme";
@@ -159,9 +160,15 @@ const groups: NavGroup[] = [
     key: "finance",
     label: "Finances",
     icon: Banknote,
-    adminOnly: true,
-    module: "chantier",
-    items: [{ href: "/paie", label: "Paie", icon: Banknote }],
+    // Pilotage (admin + conducteur). Le suivi commercial vaut pour le chantier
+    // ET le bureau d'études : pas de garde de module au niveau du groupe.
+    pilotOnly: true,
+    items: [
+      // Suivi commercial et financier : devis, situations, factures, encaissements.
+      { href: "/finance", label: "Suivi financier", icon: Wallet },
+      // Paie : ADMIN seul, et seulement dans un espace « chantier ».
+      { href: "/paie", label: "Paie", icon: Banknote, adminOnly: true, module: "chantier" },
+    ],
   },
 ];
 
@@ -204,6 +211,8 @@ const mobileMore: NavItem[] = [
   // Prix sensibles : admin + conducteur uniquement
   { href: "/locations", label: "Locations / Prêts", icon: Truck, clientHidden: true, pilotOnly: true },
   { href: "/commandes", label: "Commandes", icon: ShoppingCart, clientHidden: true, pilotOnly: true },
+  // Suivi financier : admin + conducteur (devis, situations, factures)
+  { href: "/finance", label: "Suivi financier", icon: Wallet, clientHidden: true, pilotOnly: true },
   // OPC : admin + conducteur
   { href: "/planning", label: "Planning", icon: Calendar, clientHidden: true, pilotOnly: true },
   { href: "/rapports-hebdo", label: "Rapports hebdo", icon: CalendarRange, pilotOnly: true },
@@ -472,6 +481,9 @@ export function DesktopSidebar({
             (!it.adminOnly || isAdmin) &&
             (!it.pilotOnly || canPilot) &&
             (!it.clientHidden || !isClient) &&
+            // Garde de module AU NIVEAU DE L'ITEM (ex : /paie n'apparaît que
+            // dans un espace « chantier »), comme le filtre mobile.
+            (!it.module || !modules || modules.includes(it.module)) &&
             (!isClient || applyClientVisibility(it, clientVisibility))
         ),
       }))

@@ -291,7 +291,9 @@ export default async function PaieListPage({
         ouvrierId: o.id,
         ouvrierNom: fullName,
         montantNet: Number(paye.montantNet),
-        mode: paye.mode,
+        // La paie ne règle qu'en espèces ou virement (son zod le restreint) ;
+        // l'enum ModePaiement s'est élargi pour le suivi financier (chèque, CB...).
+        mode: paye.mode as "ESPECES" | "VIREMENT",
         date: paye.date,
         paiementId: paye.id,
       });
@@ -304,7 +306,7 @@ export default async function PaieListPage({
         periodeFin: calc.periodeFin,
         joursTravailles: Number(calc.joursTravailles),
         montantNet: Number(calc.montantNet),
-        mode: calc.mode,
+        mode: calc.mode as "ESPECES" | "VIREMENT",
       });
     } else if (joursMonth > 0) {
       aCalculer.push({

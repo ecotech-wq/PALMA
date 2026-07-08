@@ -89,6 +89,10 @@ model User {
   canauxMembre        CanalMembre[]       @relation("CanalMembreUser")
   canalMembresAjoutes CanalMembre[]       @relation("CanalMembreAjoutePar")
   ouvrierLie          Ouvrier?
+  // Suivi financier (2026-07-08) : maître d'ouvrage / client rattaché à un doc.
+  marchesClient       Marche[]            @relation("MarcheClient")
+  devisClient         Devis[]             @relation("DevisClient")
+  facturesClient      Facture[]           @relation("FactureClient")
 }
 
 /// v4.3 : une ligne = une personne sur un chantier, quel que soit son
@@ -204,6 +208,12 @@ model Chantier {
   membres          ChantierMembre[]
   phasesEtude      PhaseEtude[]
   tempsPasses      TempsPasse[]
+  // Suivi financier (2026-07-08)
+  marches          Marche[]
+  devis            Devis[]
+  situations       SituationTravaux[]
+  factures         Facture[]
+  retenues         RetenueGarantie[]
 
   @@index([type])
   @@index([espaceId])
@@ -307,6 +317,10 @@ model Pointage {
 enum ModePaiement {
   ESPECES
   VIREMENT
+  // Suivi financier (2026-07-08) : moyens d'encaissement client courants.
+  CHEQUE
+  CB
+  EFFET
 }
 
 model Avance {
@@ -1203,6 +1217,7 @@ model PhaseEtude {
   updatedAt    DateTime  @updatedAt
 
   tempsPasses  TempsPasse[]
+  situations   SituationTravaux[]
 
   @@index([chantierId, ordre])
 }
@@ -1246,6 +1261,13 @@ model Espace {
   chantiers Chantier[]
   ouvriers  Ouvrier[]
   equipes   Equipe[]
+  // Suivi financier (2026-07-08)
+  marches      Marche[]
+  devis        Devis[]
+  situations   SituationTravaux[]
+  factures     Facture[]
+  encaissements Encaissement[]
+  retenues     RetenueGarantie[]
 }
 
 /// Adhésion d un utilisateur à un espace, avec un rôle PROPRE à cet espace
@@ -1261,4 +1283,384 @@ model EspaceMembre {
 
   @@unique([espaceId, userId])
   @@index([userId])
+}
+
+// ─── Suivi financier (2026-07-08) ────────────────────────────────────────────
+// LYNX SUIT le cycle commercial et financier des projets (devis, marché,
+// situations de travaux, factures, acomptes, encaissements, retenue de
+// garantie) sans GÉNÉRER les pièces : elles naissent dans Odoo (EcoTech) ou
+// Constructor (Autonhome). Chaque enregistrement porte un statut, des montants,
+// des dates et une référence externe (numéro + lien/PDF). Un seul moteur de
+// calcul (src/lib/suivi-commercial.ts) dérive les KPI (reste à encaisser, DSO,
+// avancement facturé vs travaux) ; rien de dérivé n'est saisi.
+// Tout objet naît rattaché à un Espace (espaceId, borné par espaceFilter) et
+// dérive d'un Chantier (chantierId), la frontière d'espace étant posée par les
+// gardes requireChantierAccess/Manager avant le court-circuit admin.
+
+enum SourceDoc {
+  ODOO
+  CONSTRUCTOR
+  MANUEL
+  AUTRE
+}
+
+enum NatureMarche {
+  PRIVE
+  PUBLIC
+}
+
+enum TypePrix {
+  FERME
+  FERME_ACTUALISABLE
+  REVISABLE
+}
+
+enum ModeEcheance {
+  DATE_FACTURE
+  FIN_DE_MOIS
+}
+
+/// Un marché de travaux se facture par SITUATION_TRAVAUX (avancement) ; un
+/// marché d'honoraires (BE) se facture par JALON_PHASE (ESQ/APS/.../DET/AOR).
+enum ModeFacturation {
+  SITUATION_TRAVAUX
+  JALON_PHASE
+}
+
+enum StatutMarche {
+  BROUILLON
+  ACTIF
+  RECEPTIONNE
+  SOLDE
+  CLOTURE
+}
+
+enum StatutDevis {
+  BROUILLON
+  ENVOYE
+  RELANCE
+  ACCEPTE
+  REFUSE
+  EXPIRE
+}
+
+/// Base de calcul du % d'avancement d'une situation : le montant du marché
+/// (travaux) ou le forfait d'une phase d'honoraires (BE).
+enum BaseAvancement {
+  BASE_TRAVAUX
+  BASE_FORFAIT_PHASE
+}
+
+/// Cycle de visa propre au BTP (distinct du cycle de règlement d'une facture) :
+/// une situation est transmise, visée par la maîtrise d'œuvre, acceptée, puis
+/// facturée et payée.
+enum StatutSituation {
+  BROUILLON
+  TRANSMISE
+  VISEE_MOE
+  ACCEPTEE
+  FACTUREE
+  PAYEE
+  PARTIELLEMENT_PAYEE
+  CONTESTEE
+}
+
+enum TypeFacture {
+  ACOMPTE
+  SITUATION
+  SOLDE
+  HONORAIRES
+  AVOIR
+}
+
+/// Deux axes ORTHOGONAUX sur une facture (modèle account.move d'Odoo) : l'état
+/// documentaire (émission) et l'état de règlement. EN_RETARD n'est JAMAIS
+/// stocké : il se dérive (non payé ET échéance dépassée), les bornes de jour
+/// étant en UTC comme partout dans le dépôt (dates @db.Date à minuit UTC).
+enum StatutEmission {
+  BROUILLON
+  EMISE
+  ENVOYEE
+  ANNULEE
+}
+
+enum StatutReglement {
+  NON_PAYEE
+  PARTIELLEMENT_PAYEE
+  PAYEE
+  ANNULEE
+}
+
+enum FormeGarantie {
+  RETENUE_FONDS
+  CAUTION_PERSO_SOLIDAIRE
+  GARANTIE_PREMIERE_DEMANDE
+}
+
+enum StatutRetenue {
+  RETENUE
+  CONSIGNEE
+  CAUTIONNEE
+  LIBEREE
+  OPPOSITION
+}
+
+/// Marché (contrat) : PIVOT du suivi. Son montant courant (initial + avenants
+/// signés) est le « vendu » officiel, base de calcul de l'avancement. Remplace,
+/// à terme, les champs budget saisis à la main sur Chantier.
+model Marche {
+  id         String   @id @default(cuid())
+  espaceId   String
+  espace     Espace   @relation(fields: [espaceId], references: [id], onDelete: Restrict)
+  chantierId String
+  chantier   Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+
+  reference       String
+  natureMarche    NatureMarche    @default(PRIVE)
+  modeFacturation ModeFacturation @default(SITUATION_TRAVAUX)
+  // Maître d'ouvrage / client : un User CLIENT LYNX quand il existe, sinon libre.
+  clientUserId     String?
+  clientUser       User?   @relation("MarcheClient", fields: [clientUserId], references: [id], onDelete: SetNull)
+  maitreOuvrageNom String?
+
+  montantInitialHT Decimal  @default(0) @db.Decimal(12, 2)
+  montantCourantHT Decimal  @default(0) @db.Decimal(12, 2)
+  typePrix         TypePrix @default(FERME)
+
+  tauxRetenueGarantie       Decimal      @default(0) @db.Decimal(5, 2)
+  delaiPaiementJours        Int          @default(30)
+  modeCalculEcheance        ModeEcheance @default(DATE_FACTURE)
+  periodiciteSituationsMois Int          @default(1)
+
+  dateSignature DateTime?
+  statut        StatutMarche @default(BROUILLON)
+  note          String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  creePar       String?
+
+  devis      Devis[]
+  avenants   Avenant[]
+  situations SituationTravaux[]
+  factures   Facture[]
+  retenue    RetenueGarantie?
+
+  @@index([espaceId])
+  @@index([chantierId])
+  @@index([statut])
+}
+
+/// Avenant : modifie le montant courant du marché (signé, +/-).
+model Avenant {
+  id            String    @id @default(cuid())
+  marcheId      String
+  marche        Marche    @relation(fields: [marcheId], references: [id], onDelete: Cascade)
+  numero        Int
+  objet         String
+  montantHT     Decimal   @db.Decimal(12, 2)
+  dateSignature DateTime?
+  signe         Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  @@index([marcheId])
+}
+
+/// Devis SUIVI (miroir d'un devis créé ailleurs). À l'acceptation, il initialise
+/// ou se rattache à un Marché.
+model Devis {
+  id           String    @id @default(cuid())
+  espaceId     String
+  espace       Espace    @relation(fields: [espaceId], references: [id], onDelete: Restrict)
+  chantierId   String?
+  chantier     Chantier? @relation(fields: [chantierId], references: [id], onDelete: SetNull)
+  marcheId     String?
+  marche       Marche?   @relation(fields: [marcheId], references: [id], onDelete: SetNull)
+  clientUserId String?
+  clientUser   User?     @relation("DevisClient", fields: [clientUserId], references: [id], onDelete: SetNull)
+
+  source           SourceDoc @default(MANUEL)
+  referenceExterne String?
+  lienExterne      String?
+  fichierPdf       String?
+  objet            String
+
+  montantHT  Decimal @default(0) @db.Decimal(12, 2)
+  montantTVA Decimal @default(0) @db.Decimal(12, 2)
+  montantTTC Decimal @default(0) @db.Decimal(12, 2)
+
+  statut          StatutDevis @default(BROUILLON)
+  dateEmission    DateTime?
+  dateEnvoi       DateTime?
+  dateValidite    DateTime?
+  dateAcceptation DateTime?
+  dateRefus       DateTime?
+  motifRefus      String?
+
+  nbRelances          Int       @default(0)
+  dateDerniereRelance DateTime?
+  prochaineRelance    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  creePar   String?
+
+  factures Facture[]
+
+  @@index([espaceId])
+  @@index([chantierId])
+  @@index([statut])
+}
+
+/// Situation de travaux (facturation à l'avancement) OU jalon d'honoraires (BE) :
+/// même objet, discriminé par `base`. Le moteur calcule montantPeriodeHT =
+/// (référence x avancementCumulePct / 100) - montantCumuleAnterieurHT.
+model SituationTravaux {
+  id           String         @id @default(cuid())
+  espaceId     String
+  espace       Espace         @relation(fields: [espaceId], references: [id], onDelete: Restrict)
+  chantierId   String
+  chantier     Chantier       @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  marcheId     String
+  marche       Marche         @relation(fields: [marcheId], references: [id], onDelete: Cascade)
+  base         BaseAvancement @default(BASE_TRAVAUX)
+  phaseEtudeId String?
+  phaseEtude   PhaseEtude?    @relation(fields: [phaseEtudeId], references: [id], onDelete: SetNull)
+
+  numeroOrdre       Int
+  periodeDebut      DateTime @db.Date
+  periodeFin        DateTime @db.Date
+  dateEtablissement DateTime @db.Date
+
+  avancementCumulePct      Decimal @db.Decimal(5, 2)
+  montantReferenceHT       Decimal @db.Decimal(12, 2)
+  montantCumuleHT          Decimal @db.Decimal(12, 2)
+  montantCumuleAnterieurHT Decimal @default(0) @db.Decimal(12, 2)
+  montantPeriodeHT         Decimal @db.Decimal(12, 2)
+  retenueGarantiePeriode   Decimal @default(0) @db.Decimal(12, 2)
+  imputationAcompte        Decimal @default(0) @db.Decimal(12, 2)
+  tauxTVA                  Decimal @default(20) @db.Decimal(5, 2)
+  autoliquidation          Boolean @default(false)
+  netAPayerPeriode         Decimal @db.Decimal(12, 2)
+
+  statut       StatutSituation @default(BROUILLON)
+  dateVisaMOE  DateTime?
+  valideurMoeId String?
+
+  factureId String?  @unique
+  facture   Facture? @relation("FactureSituation", fields: [factureId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  creePar   String?
+
+  @@unique([marcheId, numeroOrdre])
+  @@index([espaceId])
+  @@index([chantierId])
+  @@index([statut])
+}
+
+/// Facture SUIVIE. Double statut (émission + règlement). Une facture de type
+/// SITUATION peut être rattachée à une SituationTravaux ; un AVOIR pointe la
+/// facture qu'il corrige.
+model Facture {
+  id           String    @id @default(cuid())
+  espaceId     String
+  espace       Espace    @relation(fields: [espaceId], references: [id], onDelete: Restrict)
+  chantierId   String?
+  chantier     Chantier? @relation(fields: [chantierId], references: [id], onDelete: SetNull)
+  marcheId     String?
+  marche       Marche?   @relation(fields: [marcheId], references: [id], onDelete: SetNull)
+  devisId      String?
+  devis        Devis?    @relation(fields: [devisId], references: [id], onDelete: SetNull)
+  clientUserId String?
+  clientUser   User?     @relation("FactureClient", fields: [clientUserId], references: [id], onDelete: SetNull)
+
+  type             TypeFacture @default(SITUATION)
+  avoirDeFactureId String?
+  avoirDe          Facture?    @relation("Avoir", fields: [avoirDeFactureId], references: [id], onDelete: SetNull)
+  avoirs           Facture[]   @relation("Avoir")
+
+  source           SourceDoc @default(MANUEL)
+  referenceExterne String?
+  lienExterne      String?
+  fichierPdf       String?
+  objet            String?
+
+  montantHT              Decimal @default(0) @db.Decimal(12, 2)
+  montantTVA             Decimal @default(0) @db.Decimal(12, 2)
+  montantTTC             Decimal @default(0) @db.Decimal(12, 2)
+  autoliquidation        Boolean @default(false)
+  retenueGarantieMontant Decimal @default(0) @db.Decimal(12, 2)
+  montantPaye            Decimal @default(0) @db.Decimal(12, 2)
+
+  statutEmission  StatutEmission  @default(BROUILLON)
+  statutReglement StatutReglement @default(NON_PAYEE)
+
+  dateEmission        DateTime?
+  dateEcheance        DateTime? @db.Date
+  dateEnvoi           DateTime?
+  datePaiementComplet DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  creePar   String?
+
+  situationLiee SituationTravaux? @relation("FactureSituation")
+  encaissements Encaissement[]
+
+  @@index([espaceId])
+  @@index([chantierId])
+  @@index([statutReglement])
+  @@index([dateEcheance])
+}
+
+/// Encaissement (règlement reçu) rattaché à UNE facture (partiel supporté par
+/// montant < TTC). Le lettrage multi-factures est reporté à un lot ultérieur.
+model Encaissement {
+  id         String  @id @default(cuid())
+  espaceId   String
+  espace     Espace  @relation(fields: [espaceId], references: [id], onDelete: Restrict)
+  chantierId String?
+  factureId  String
+  facture    Facture @relation(fields: [factureId], references: [id], onDelete: Cascade)
+
+  montant          Decimal      @db.Decimal(12, 2)
+  dateEncaissement DateTime     @db.Date
+  mode             ModePaiement @default(VIREMENT)
+  reference        String?
+  createdAt        DateTime     @default(now())
+  creePar          String?
+
+  @@index([espaceId])
+  @@index([factureId])
+}
+
+/// Retenue de garantie : encours « gelé » suivi par marché. Plafond légal privé
+/// 5 % (loi 71-584), libérée un an après réception, remplaçable par une caution.
+model RetenueGarantie {
+  id         String   @id @default(cuid())
+  espaceId   String
+  espace     Espace   @relation(fields: [espaceId], references: [id], onDelete: Restrict)
+  chantierId String
+  chantier   Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  marcheId   String   @unique
+  marche     Marche   @relation(fields: [marcheId], references: [id], onDelete: Cascade)
+
+  tauxPct                Decimal       @default(5) @db.Decimal(5, 2)
+  montantRetenuCumul     Decimal       @default(0) @db.Decimal(12, 2)
+  forme                  FormeGarantie @default(RETENUE_FONDS)
+  dateDebut              DateTime?
+  dateEcheanceLiberation DateTime?
+  statut                 StatutRetenue @default(RETENUE)
+  dateLiberation         DateTime?
+  motifOpposition        String?
+  organismeCaution       String?
+  referenceCaution       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([espaceId])
+  @@index([chantierId])
+  @@index([statut])
 }

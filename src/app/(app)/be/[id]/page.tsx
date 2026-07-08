@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { MessageSquare, Timer, Trash2, Users } from "lucide-react";
+import { MessageSquare, Timer, Trash2, Users, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
@@ -88,6 +88,14 @@ export default async function EtudePage({
                 Saisir
               </Button>
             </Link>
+            {me.canSeePrices && (
+              <Link href={`/finance/${etude.id}`}>
+                <Button variant="outline" size="sm">
+                  <Wallet size={14} />
+                  <span className="hidden sm:inline">Suivi financier</span>
+                </Button>
+              </Link>
+            )}
           </div>
         }
       />

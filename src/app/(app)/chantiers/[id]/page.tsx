@@ -13,6 +13,8 @@ import {
   Archive,
   ArchiveRestore,
   ClipboardCheck,
+  Wallet,
+  ChevronRight,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -504,9 +506,19 @@ export default async function ChantierDetailPage({
 
         {me.canSeePrices && onglet === "finances" && (
         <div className="space-y-5">
+          <Link
+            href={`/finance/${id}`}
+            className="flex max-w-2xl items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm dark:border-brand-900 dark:bg-brand-950/40"
+          >
+            <span className="flex items-center gap-2 font-medium text-brand-800 dark:text-brand-300">
+              <Wallet size={16} />
+              Suivi financier : devis, situations, factures, encaissements
+            </span>
+            <ChevronRight size={16} className="text-brand-500" />
+          </Link>
           <Card className="max-w-2xl">
             <CardHeader>
-              <CardTitle>Finances</CardTitle>
+              <CardTitle>Coûts et marge estimée</CardTitle>
             </CardHeader>
             <CardBody className="space-y-3">
               <div>
