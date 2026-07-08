@@ -55,6 +55,11 @@ model User {
   showIncidents     Boolean @default(true)
   showPlans         Boolean @default(true)
   showRapportsHebdo Boolean @default(true)
+  // Volet contractuel et financier du client (suivi financier). Par DÉFAUT
+  // FERMÉ : « le client ne voit que ce qu'on lui ouvre » (vision LYNX v4).
+  showDevis         Boolean @default(false)
+  showSituations    Boolean @default(false)
+  showFactures      Boolean @default(false)
 
   // 2FA TOTP (RFC 6238). `totpSecret` est en clair (encryption au repos
   // via la BDD/disk). `totpEnabled` reste false tant que le user n'a pas
@@ -1500,6 +1505,14 @@ model Devis {
   dateDerniereRelance DateTime?
   prochaineRelance    DateTime?
 
+  // Signature électronique du client (acceptation du devis). PNG data URL,
+  // horodaté et attribué, comme les rapports hebdo / PV (valeur probante :
+  // signature simple recevable, art. 1367 Code civil).
+  signatureClientUrl String?
+  signatureClientLe  DateTime?
+  signatureClientId  String?
+  signatureClientNom String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   creePar   String?
@@ -1545,6 +1558,13 @@ model SituationTravaux {
   statut       StatutSituation @default(BROUILLON)
   dateVisaMOE  DateTime?
   valideurMoeId String?
+
+  // Signature du client (acceptation de l'avancement / bon à payer de la
+  // demande d'acompte). Même dispositif que le devis et les rapports.
+  signatureClientUrl String?
+  signatureClientLe  DateTime?
+  signatureClientId  String?
+  signatureClientNom String?
 
   factureId String?  @unique
   facture   Facture? @relation("FactureSituation", fields: [factureId], references: [id], onDelete: SetNull)

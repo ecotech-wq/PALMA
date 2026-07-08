@@ -240,6 +240,9 @@ export async function setClientVisibility(
     showIncidents?: boolean;
     showPlans?: boolean;
     showRapportsHebdo?: boolean;
+    showDevis?: boolean;
+    showSituations?: boolean;
+    showFactures?: boolean;
   }
 ) {
   await ensureAdmin();
@@ -255,6 +258,13 @@ export async function setClientVisibility(
       ...(flags.showPlans !== undefined && { showPlans: flags.showPlans }),
       ...(flags.showRapportsHebdo !== undefined && {
         showRapportsHebdo: flags.showRapportsHebdo,
+      }),
+      ...(flags.showDevis !== undefined && { showDevis: flags.showDevis }),
+      ...(flags.showSituations !== undefined && {
+        showSituations: flags.showSituations,
+      }),
+      ...(flags.showFactures !== undefined && {
+        showFactures: flags.showFactures,
       }),
     },
   });

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   CalendarRange,
   ChevronRight,
+  FileSignature,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -30,10 +31,13 @@ export async function ClientDashboard({
   userId: string;
   userName: string;
 }) {
-  // Récupère les chantiers assignés au client
+  // Récupère les chantiers assignés au client + les drapeaux du volet financier
   const user = await db.user.findUnique({
     where: { id: userId },
     select: {
+      showDevis: true,
+      showSituations: true,
+      showFactures: true,
       chantiersClient: {
         select: {
           id: true,
@@ -50,6 +54,36 @@ export async function ClientDashboard({
 
   const chantiers = user?.chantiersClient ?? [];
   const chantierIds = chantiers.map((c) => c.id);
+  const voletFinancierOuvert =
+    !!user?.showDevis || !!user?.showSituations || !!user?.showFactures;
+
+  // Nombre de documents en attente de signature (devis + situations), si le
+  // volet est ouvert : incite le client à traiter ce qui bloque la facturation.
+  let aSigner = 0;
+  if (voletFinancierOuvert && chantierIds.length > 0) {
+    const [dv, st] = await Promise.all([
+      user?.showDevis
+        ? db.devis.count({
+            where: {
+              chantierId: { in: chantierIds },
+              statut: { in: ["ENVOYE", "RELANCE"] },
+              signatureClientUrl: null,
+              OR: [{ clientUserId: null }, { clientUserId: userId }],
+            },
+          })
+        : 0,
+      user?.showSituations
+        ? db.situationTravaux.count({
+            where: {
+              chantierId: { in: chantierIds },
+              statut: { in: ["TRANSMISE", "VISEE_MOE"] },
+              signatureClientUrl: null,
+            },
+          })
+        : 0,
+    ]);
+    aSigner = dv + st;
+  }
 
   // Charge en parallèle les derniers rapports hebdo envoyés, les
   // incidents non résolus, les rapports journaliers récents
@@ -102,6 +136,34 @@ export async function ClientDashboard({
             : `Vous avez accès à ${chantiers.length} chantier${chantiers.length > 1 ? "s" : ""}.`}
         </p>
       </div>
+
+      {/* Volet contractuel et financier : devis, situations, factures */}
+      {voletFinancierOuvert && (
+        <Link
+          href="/mes-documents"
+          className="flex items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 dark:border-brand-900 dark:bg-brand-950/40"
+        >
+          <span className="flex items-center gap-3">
+            <FileSignature size={20} className="text-brand-600 shrink-0" />
+            <span>
+              <span className="block text-sm font-medium text-brand-800 dark:text-brand-300">
+                Mes documents
+              </span>
+              <span className="block text-xs text-brand-700/80 dark:text-brand-400/80">
+                Devis, situations d&apos;avancement et factures
+              </span>
+            </span>
+          </span>
+          <span className="flex items-center gap-2">
+            {aSigner > 0 && (
+              <span className="rounded-full bg-brand-600 px-2 py-0.5 text-xs font-semibold text-white">
+                {aSigner} à signer
+              </span>
+            )}
+            <ChevronRight size={16} className="text-brand-500" />
+          </span>
+        </Link>
+      )}
 
       {chantiers.length === 0 ? (
         <Card>

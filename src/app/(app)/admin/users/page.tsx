@@ -144,6 +144,9 @@ export default async function AdminUsersPage() {
                       showIncidents: u.showIncidents,
                       showPlans: u.showPlans,
                       showRapportsHebdo: u.showRapportsHebdo,
+                      showDevis: u.showDevis,
+                      showSituations: u.showSituations,
+                      showFactures: u.showFactures,
                     }}
                     onApprove={approveUser}
                     onRevoke={revokeUser}

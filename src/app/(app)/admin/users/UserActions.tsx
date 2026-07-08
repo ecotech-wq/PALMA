@@ -45,6 +45,9 @@ type Visibility = {
   showIncidents: boolean;
   showPlans: boolean;
   showRapportsHebdo: boolean;
+  showDevis: boolean;
+  showSituations: boolean;
+  showFactures: boolean;
 };
 
 export function UserActions({
@@ -560,6 +563,9 @@ export function UserActions({
                 { key: "showJournal", label: "Journal de chantier (chat)" },
                 { key: "showIncidents", label: "Incidents" },
                 { key: "showPlans", label: "Plans" },
+                { key: "showDevis", label: "Devis (avec signature)" },
+                { key: "showSituations", label: "Situations d'avancement (signature)" },
+                { key: "showFactures", label: "Factures" },
               ] as const
             ).map(({ key, label }) => (
               <label

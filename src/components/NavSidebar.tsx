@@ -35,6 +35,7 @@ import {
   Download,
   Trash2,
   Wallet,
+  FileSignature,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/theme";
@@ -53,6 +54,8 @@ type NavItem = {
   pilotOnly?: boolean;
   /** Caché pour le rôle CLIENT */
   clientHidden?: boolean;
+  /** Réservé au rôle CLIENT (ex : /mes-documents). */
+  clientOnly?: boolean;
   /** Module (app) requis : "chantier", "be"... (socle espaces 2026-07-07). */
   module?: string;
 };
@@ -202,6 +205,8 @@ const mobilePrimaryClient: NavItem[] = [
 // Tout le reste, accessible via le bouton "Plus"
 const mobileMore: NavItem[] = [
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
+  // Volet contractuel du client (devis/situations/factures à signer).
+  { href: "/mes-documents", label: "Mes documents", icon: FileSignature, clientOnly: true },
   // Bureau d'études : saisie des temps au téléphone (stand-up du matin)
   { href: "/be", label: "Études", icon: DraftingCompass, clientHidden: true, module: "be" },
   { href: "/be/temps", label: "Mes temps", icon: Timer, clientHidden: true, module: "be" },
@@ -559,6 +564,16 @@ export function DesktopSidebar({
           />
         )}
 
+        {/* Mes documents — volet contractuel, réservé au client */}
+        {isClient && (
+          <NavLeaf
+            href="/mes-documents"
+            label="Mes documents"
+            icon={FileSignature}
+            active={pathname?.startsWith("/mes-documents") ?? false}
+          />
+        )}
+
         {/* Groupes */}
         {visibleGroups.map((g) => {
           // Le groupe est ouvert par défaut si on est dedans
@@ -689,6 +704,7 @@ export function MobileBottomNav({
       (!m.adminOnly || isAdmin) &&
       (!m.pilotOnly || canPilot) &&
       (!m.clientHidden || !isClient) &&
+      (!m.clientOnly || isClient) &&
       (!m.module || !modules || modules.includes(m.module)) &&
       (!isClient || applyClientVisibility(m, clientVisibility))
   );
