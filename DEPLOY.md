@@ -73,6 +73,20 @@ POSTGRES_PASSWORD=<32+ char aléatoire>
 AUTH_SECRET=<32+ char aléatoire>
 ```
 
+> **CRITIQUE sur une prod existante (ne PAS perdre les données).** Le nom des
+> volumes Docker et le port local exposé au reverse proxy hôte sont pilotés par
+> l'environnement. Sur `autonhome-vps`, `.env.production` DOIT épingler les
+> volumes RÉELS et le port attendu par nginx, sinon Docker monte des volumes
+> NEUFS et VIDES à la place des données (incident du 2026-07-02) :
+> ```dotenv
+> APP_LOCAL_PORT=3010                       # nginx hôte proxifie vers 127.0.0.1:3010
+> POSTGRES_VOLUME_NAME=app_autonhome_postgres
+> UPLOADS_VOLUME_NAME=app_autonhome_uploads
+> ```
+> Vérifier avant tout `up` : `docker volume ls | grep app_autonhome`. Les deux
+> volumes doivent exister et être ceux montés par le conteneur (`docker inspect
+> ogc-app` / `ogc-postgres`). Ne jamais renommer ces clés sur la prod.
+
 ## 5. Premier démarrage
 
 ```bash
@@ -118,13 +132,31 @@ l'admin qui vient d'être créé.
 
 ## 9. Mettre à jour l'app (déploiements suivants)
 
+**D'abord, pousser le code** depuis ta machine de dev (le VPS fait `git pull`
+depuis `origin`, donc le commit doit y être) :
+
+```bash
+# sur la machine de dev (C:\Projects\outil-gestion-chantier)
+git push origin main
+```
+
+**Prod actuelle (reverse proxy nginx sur l'hôte)** — c'est le cas du serveur
+`autonhome-vps` (`/opt/autonhome/app`). Caddy est en profil désactivé (nginx
+possède déjà 80/443), donc on OMET `--profile caddy` :
+
 ```bash
 cd /opt/autonhome/app
 git pull
-docker compose -f docker-compose.prod.yml --env-file .env.production --profile caddy up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
 ```
 
-Les migrations Prisma sont appliquées automatiquement au démarrage.
+> Installation neuve AVEC le Caddy intégré (pas de reverse proxy hôte) : ajouter
+> `--profile caddy` à la commande. Sur la prod actuelle, ce serait une erreur
+> (Caddy ne peut pas se lier à 80/443 déjà pris par nginx).
+
+Les migrations Prisma sont appliquées automatiquement au démarrage
+(`docker/entrypoint.sh` → `docker/migrate.cjs`, SQL additif idempotent, avec
+retry le temps que Postgres soit prêt). Aucune commande de migration manuelle.
 
 ## 10. Sauvegardes
 
