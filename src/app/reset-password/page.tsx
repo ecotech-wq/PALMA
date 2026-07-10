@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { hashToken } from "@/lib/password-reset";
 import { BrandLockup } from "@/components/BrandLockup";
+import { PasswordInput } from "@/components/PasswordInput";
 import { performPasswordReset } from "./actions";
 
 export default async function ResetPasswordPage({
@@ -60,14 +61,12 @@ export default async function ResetPasswordPage({
               <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Nouveau mot de passe
               </span>
-              <input
-                type="password"
+              <PasswordInput
                 name="password"
                 required
                 minLength={8}
                 autoFocus
                 autoComplete="new-password"
-                className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-brand-400"
               />
               <span className="block text-xs text-slate-500 dark:text-slate-400 mt-1">
                 8 caractères minimum
@@ -78,13 +77,11 @@ export default async function ResetPasswordPage({
               <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Confirmer le mot de passe
               </span>
-              <input
-                type="password"
+              <PasswordInput
                 name="passwordConfirm"
                 required
                 minLength={8}
                 autoComplete="new-password"
-                className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-brand-400"
               />
             </label>
 

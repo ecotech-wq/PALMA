@@ -19,9 +19,6 @@ export function BrandLockup({ tagline = BRAND.tagline }: { tagline?: string }) {
       <div className="mt-3 text-2xl font-bold text-brand-700 dark:text-brand-700 tracking-tight">
         {BRAND.appName}
       </div>
-      <div className="text-xs text-accent-600 dark:text-accent-400 italic mt-0.5">
-        Concept solution, Inspired by Nature
-      </div>
       <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">{tagline}</div>
     </div>
   );
