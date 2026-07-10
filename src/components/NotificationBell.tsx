@@ -73,9 +73,16 @@ export function NotificationBell({
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
-  const unread = initial.filter((n) => !n.read).length;
-  // Préfère le compte serveur s'il diverge (cas où la liste est tronquée)
-  const badgeCount = Math.max(unread, initialUnread);
+  // État optimiste : dès qu'on ouvre une notif, elle passe lue à l'écran
+  // sans attendre l'aller-retour serveur (sinon le badge et la pastille ne
+  // « disparaissent » qu'au prochain rafraîchissement complet).
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const isRead = (n: Notification) => n.read || readIds.has(n.id);
+  const unread = initial.filter((n) => !isRead(n)).length;
+  // Compte du badge : max(local, serveur) pour couvrir une liste tronquée,
+  // moins les notifs qu'on vient d'ouvrir (le serveur se resynchronise après
+  // router.refresh()).
+  const badgeCount = Math.max(0, Math.max(unread, initialUnread) - readIds.size);
 
   // Ferme le panel quand on clique à l'extérieur
   useEffect(() => {
@@ -91,9 +98,13 @@ export function NotificationBell({
   }, [open]);
 
   function onItemClick(n: Notification) {
-    if (!n.read) {
+    if (!isRead(n)) {
+      // 1) marque lue à l'écran immédiatement, 2) persiste côté serveur,
+      // 3) resynchronise la vue (badge, liste) une fois écrit.
+      setReadIds((prev) => new Set(prev).add(n.id));
       startTransition(async () => {
         await markNotificationRead(n.id);
+        router.refresh();
       });
     }
     setOpen(false);
@@ -190,12 +201,13 @@ export function NotificationBell({
               <ul className="divide-y divide-slate-100 dark:divide-slate-800">
                 {initial.map((n) => {
                   const Icon = iconMap[n.type] ?? Bell;
+                  const read = isRead(n);
                   const content = (
                     <>
                       <div
                         className={cn(
                           "shrink-0 p-2 rounded-full",
-                          n.read
+                          read
                             ? "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
                             : "bg-brand-100 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400"
                         )}
@@ -207,7 +219,7 @@ export function NotificationBell({
                           <span
                             className={cn(
                               "text-sm truncate",
-                              n.read
+                              read
                                 ? "text-slate-600 dark:text-slate-400"
                                 : "font-medium text-slate-900 dark:text-slate-100"
                             )}
@@ -232,7 +244,7 @@ export function NotificationBell({
                           {dateRel(n.createdAt)}
                         </span>
                       </div>
-                      {!n.read && (
+                      {!read && (
                         <span
                           className="w-2 h-2 rounded-full bg-brand-500 shrink-0 mt-2"
                           aria-label="non lue"
@@ -248,7 +260,7 @@ export function NotificationBell({
                           onClick={() => onItemClick(n)}
                           className={cn(
                             "flex items-start gap-2.5 p-3 transition",
-                            n.read
+                            read
                               ? "hover:bg-slate-50 dark:hover:bg-slate-800/50"
                               : "bg-brand-50/40 dark:bg-brand-900/10 hover:bg-brand-50/80 dark:hover:bg-brand-900/30"
                           )}
@@ -261,7 +273,7 @@ export function NotificationBell({
                           onClick={() => onItemClick(n)}
                           className={cn(
                             "w-full text-left flex items-start gap-2.5 p-3 transition",
-                            n.read
+                            read
                               ? "hover:bg-slate-50 dark:hover:bg-slate-800/50"
                               : "bg-brand-50/40 dark:bg-brand-900/10"
                           )}

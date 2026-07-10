@@ -450,6 +450,7 @@ export function DesktopSidebar({
   modules,
   espaces,
   espaceCourantId,
+  canSwitchEspace,
 }: {
   userName: string;
   userRole: string;
@@ -462,6 +463,8 @@ export function DesktopSidebar({
   modules?: string[];
   espaces?: { id: string; nom: string }[];
   espaceCourantId?: string | null;
+  /** Seul l'admin (propriétaire de plateforme) bascule entre entreprises. */
+  canSwitchEspace?: boolean;
 }) {
   const pathname = usePathname();
   const isAdmin = userRole === "ADMIN";
@@ -528,8 +531,9 @@ export function DesktopSidebar({
         {bell}
       </div>
 
-      {/* Sélecteur d'entreprise (socle espaces) : rendu si plusieurs espaces */}
-      {espaces && espaces.length > 1 && (
+      {/* Sélecteur d'entreprise (socle espaces) : rendu si plusieurs espaces,
+          ET seulement pour l'admin (seul habilité à basculer). */}
+      {canSwitchEspace && espaces && espaces.length > 1 && (
         <div className="border-b border-slate-200 dark:border-slate-800">
           <EspaceSwitcher espaces={espaces} courantId={espaceCourantId ?? null} />
         </div>
@@ -652,6 +656,7 @@ export function MobileBottomNav({
   modules,
   espaces,
   espaceCourantId,
+  canSwitchEspace,
 }: {
   isAdmin?: boolean;
   isConducteur?: boolean;
@@ -664,6 +669,8 @@ export function MobileBottomNav({
   /** Sélecteur d'entreprise dans le tiroir « Plus » (socle espaces). */
   espaces?: { id: string; nom: string }[];
   espaceCourantId?: string | null;
+  /** Seul l'admin bascule entre entreprises. */
+  canSwitchEspace?: boolean;
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -807,12 +814,14 @@ export function MobileBottomNav({
 
             <nav className="p-2">
               {/* Sélecteur d'entreprise (socle espaces) : en tête du tiroir,
-                  là où le pouce arrive, comme un changement de contexte. */}
-              <EspaceSwitcherMobile
-                espaces={espaces ?? []}
-                courantId={espaceCourantId ?? null}
-                onDone={() => setMoreOpen(false)}
-              />
+                  là où le pouce arrive. Réservé à l'admin. */}
+              {canSwitchEspace && (
+                <EspaceSwitcherMobile
+                  espaces={espaces ?? []}
+                  courantId={espaceCourantId ?? null}
+                  onDone={() => setMoreOpen(false)}
+                />
+              )}
               {filteredMobileMore
                 .filter((m) => !mobilePrimary.some((p) => p.href === m.href))
                 .map(({ href, label, icon: Icon }) => {

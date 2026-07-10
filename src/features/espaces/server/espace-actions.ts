@@ -9,6 +9,12 @@ import { COOKIE_ESPACE, TOUS_ESPACES } from "@/lib/espaces";
 
 export async function changerEspace(espaceId: string) {
   const me = await requireAuth();
+  // Seul l'admin (propriétaire de plateforme) bascule entre entreprises.
+  // Garde côté serveur : le masquage du sélecteur dans la nav ne suffit pas
+  // face à un POST forgé.
+  if (!me.isGlobalAdmin) {
+    throw new Error("Seul un administrateur peut changer d'entreprise");
+  }
   // On ne bascule que vers un espace dont on est membre (ou « tous »
   // quand on appartient à plusieurs espaces).
   const autorise =

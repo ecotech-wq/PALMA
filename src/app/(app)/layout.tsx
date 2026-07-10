@@ -174,6 +174,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           modules={me.modules}
           espaces={me.espaces.map((e) => ({ id: e.id, nom: e.nom }))}
           espaceCourantId={me.espaceCourant?.id ?? null}
+          canSwitchEspace={me.isGlobalAdmin}
           pendingUsersCount={pendingUsersCount}
           navBadges={navBadges}
           clientVisibility={clientVisibility}
@@ -198,6 +199,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             modules={me.modules}
             espaces={me.espaces.map((e) => ({ id: e.id, nom: e.nom }))}
             espaceCourantId={me.espaceCourant?.id ?? null}
+            canSwitchEspace={me.isGlobalAdmin}
             pendingUsersCount={pendingUsersCount}
             navBadges={navBadges}
             clientVisibility={clientVisibility}
