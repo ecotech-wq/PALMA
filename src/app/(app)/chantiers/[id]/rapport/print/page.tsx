@@ -79,6 +79,8 @@ export default async function RapportPrintPage({
     include: {
       chef: { select: { name: true, email: true } },
       clients: { select: { name: true, email: true } },
+      // Entête du document : l'entreprise émettrice (nom + couleur d'accent).
+      espace: { select: { nom: true, couleur: true } },
     },
   });
   if (!chantier) notFound();
@@ -151,6 +153,7 @@ export default async function RapportPrintPage({
   return (
     <RapportPrintView
       audience={audience}
+      espace={{ nom: chantier.espace.nom, couleur: chantier.espace.couleur }}
       chantier={{
         nom: chantier.nom,
         adresse: chantier.adresse,

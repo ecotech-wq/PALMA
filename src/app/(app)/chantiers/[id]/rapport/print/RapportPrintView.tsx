@@ -14,6 +14,7 @@ import {
   Flag,
   Image as ImageIcon,
 } from "lucide-react";
+import { EnteteEspace } from "@/features/espaces/EnteteEspace";
 
 type Row = {
   id: string;
@@ -53,12 +54,14 @@ const TYPE_LABEL: Record<string, { label: string; Icon: typeof AlertTriangle }> 
  */
 export function RapportPrintView({
   audience,
+  espace,
   chantier,
   period,
   stats,
   days,
 }: {
   audience: "equipe" | "client";
+  espace: { nom: string; couleur: string | null };
   chantier: {
     nom: string;
     adresse: string | null;
@@ -108,7 +111,8 @@ export function RapportPrintView({
 
       {/* === Page de garde === */}
       <header className="mb-8 avoid-break">
-        <div className="border-b-4 border-slate-900 pb-3 mb-5">
+        <EnteteEspace nom={espace.nom} couleur={espace.couleur} />
+        <div className="border-b border-slate-300 pb-3 mb-5">
           <p className="text-xs uppercase tracking-widest text-slate-500">
             {titleLabel}
           </p>
