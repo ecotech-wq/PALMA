@@ -1,3 +1,4 @@
+import { Lightbulb } from "lucide-react";
 import { computePert, type PertTaskInput, type PertTaskResult } from "@/lib/pert";
 import { cn } from "@/lib/utils";
 
@@ -81,14 +82,15 @@ export function PertChart({ taches }: { taches: Tache[] }) {
   return (
     <div className="space-y-3">
       {noDepsHint && (
-        <div className="rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 text-sm text-accent-800 flex items-start gap-3">
-          <span className="text-lg leading-none">💡</span>
+        <div className="rounded-xl border border-accent-200 dark:border-accent-800 bg-accent-50 dark:bg-accent-900/30 px-4 py-3 text-sm text-accent-800 dark:text-accent-200 flex items-start gap-3">
+          <Lightbulb size={16} className="shrink-0 mt-0.5" />
           <div>
             <p className="font-medium">Aucune dépendance définie entre tes tâches.</p>
-            <p className="text-accent-700 mt-0.5">
-              Le diagramme PERT révèle ses chemins critiques quand les tâches sont enchaînées.
-              Passe en vue <strong>Liste</strong>, clique l&apos;icône ✏️ sur une tâche, puis indique
-              dans <em>« Dépend de »</em> les tâches qui doivent être terminées avant.
+            <p className="text-accent-700 dark:text-accent-300 mt-0.5">
+              Le diagramme PERT révèle ses chemins critiques quand les tâches sont
+              enchaînées. Ouvre une tâche (un clic depuis le Gantt, le Kanban ou la
+              liste), puis indique dans <em>« Dépendances »</em> les tâches qui doivent
+              être terminées avant celle-ci.
             </p>
           </div>
         </div>

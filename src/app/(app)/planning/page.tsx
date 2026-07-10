@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { Calendar } from "lucide-react";
+import {
+  Calendar,
+  GanttChartSquare,
+  Columns3,
+  CalendarDays,
+  Network,
+  List as ListIcon,
+} from "lucide-react";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
@@ -190,71 +197,41 @@ export default async function PlanningPage({
               </select>
 
               <div className="inline-flex border border-slate-300 dark:border-slate-700 rounded-md overflow-hidden text-sm shrink-0">
-                <button
-                  type="submit"
-                  name="vue"
-                  value="gantt"
-                  className={`px-3 py-2 ${
-                    view === "gantt"
-                      ? "bg-brand-500 text-white"
-                      : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900"
-                  }`}
-                >
-                  Gantt
-                </button>
-                <button
-                  type="submit"
-                  name="vue"
-                  value="kanban"
-                  className={`px-3 py-2 border-l border-slate-300 dark:border-slate-700 ${
-                    view === "kanban"
-                      ? "bg-brand-500 text-white"
-                      : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900"
-                  }`}
-                >
-                  Kanban
-                </button>
-                <button
-                  type="submit"
-                  name="vue"
-                  value="calendrier"
-                  className={`px-3 py-2 border-l border-slate-300 dark:border-slate-700 ${
-                    view === "calendrier"
-                      ? "bg-brand-500 text-white"
-                      : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900"
-                  }`}
-                >
-                  Calendrier
-                </button>
-                <button
-                  type="submit"
-                  name="vue"
-                  value="pert"
-                  className={`px-3 py-2 border-l border-slate-300 dark:border-slate-700 ${
-                    view === "pert"
-                      ? "bg-brand-500 text-white"
-                      : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900"
-                  }`}
-                >
-                  PERT
-                </button>
-                <button
-                  type="submit"
-                  name="vue"
-                  value="liste"
-                  className={`px-3 py-2 border-l border-slate-300 dark:border-slate-700 ${
-                    view === "liste"
-                      ? "bg-brand-500 text-white"
-                      : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900"
-                  }`}
-                >
-                  Liste
-                </button>
+                {(
+                  [
+                    { value: "gantt", label: "Gantt", Icon: GanttChartSquare },
+                    { value: "kanban", label: "Kanban", Icon: Columns3 },
+                    { value: "calendrier", label: "Calendrier", Icon: CalendarDays },
+                    { value: "pert", label: "PERT", Icon: Network },
+                    { value: "liste", label: "Liste", Icon: ListIcon },
+                  ] as const
+                ).map((v, i) => {
+                  const active = view === v.value;
+                  return (
+                    <button
+                      key={v.value}
+                      type="submit"
+                      name="vue"
+                      value={v.value}
+                      aria-pressed={active}
+                      className={`inline-flex items-center gap-1.5 px-3 py-2 transition-colors ${
+                        i > 0 ? "border-l border-slate-300 dark:border-slate-700" : ""
+                      } ${
+                        active
+                          ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-medium"
+                          : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                      }`}
+                    >
+                      <v.Icon size={15} className="shrink-0" />
+                      <span className="hidden sm:inline">{v.label}</span>
+                    </button>
+                  );
+                })}
               </div>
 
               <Link
                 href="/planning"
-                className="text-xs text-slate-500 dark:text-slate-500 hover:text-slate-700 dark:text-slate-300"
+                className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
               >
                 Réinitialiser
               </Link>

@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { X, Flag, Loader2, Save } from "lucide-react";
+import { X, Flag, Loader2, Save, Trash2 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Textarea } from "@/components/ui/Input";
-import { updateTache, setTacheOuvriers } from "./actions";
+import { updateTache, setTacheOuvriers, deleteTache } from "./actions";
 
 type LabelRef = { id: string; nom: string; couleur: string };
 
@@ -105,6 +105,7 @@ export function TacheEditModal({
   const toast = useToast();
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
+  const [deleting, startDelete] = useTransition();
   const [chantierId, setChantierId] = useState(tache.chantierId);
   const [priorite, setPriorite] = useState<1 | 2 | 3 | 4>(
     (tache.priorite as 1 | 2 | 3 | 4) || 4
@@ -177,6 +178,26 @@ export function TacheEditModal({
   const ouvriersHorsEquipe = equipeId
     ? allOuvriers.filter((o) => o.equipeId !== equipeId)
     : [];
+
+  function handleDelete() {
+    if (
+      !confirm(
+        `Supprimer la tâche « ${tache.nom} » ? Elle part à la corbeille (récupérable 30 jours).`
+      )
+    ) {
+      return;
+    }
+    startDelete(async () => {
+      try {
+        await deleteTache(tache.id);
+        toast.success("Tâche supprimée");
+        router.refresh();
+        onClose();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Erreur");
+      }
+    });
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -577,26 +598,42 @@ export function TacheEditModal({
           </div>
 
           {/* Footer */}
-          <div className="sticky bottom-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-end gap-2">
-            <Button
+          <div className="sticky bottom-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between gap-2">
+            <button
               type="button"
-              variant="ghost"
-              onClick={onClose}
-              disabled={pending}
+              onClick={handleDelete}
+              disabled={pending || deleting}
+              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50"
+              title="Supprimer la tâche"
             >
-              Annuler
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" /> Enregistrement…
-                </>
+              {deleting ? (
+                <Loader2 size={14} className="animate-spin" />
               ) : (
-                <>
-                  <Save size={14} /> Enregistrer
-                </>
+                <Trash2 size={14} />
               )}
-            </Button>
+              Supprimer
+            </button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={onClose}
+                disabled={pending || deleting}
+              >
+                Annuler
+              </Button>
+              <Button type="submit" disabled={pending || deleting}>
+                {pending ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> Enregistrement…
+                  </>
+                ) : (
+                  <>
+                    <Save size={14} /> Enregistrer
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </form>
       </div>

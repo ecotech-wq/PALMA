@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Flag } from "lucide-react";
+import { Flag, Package, Truck, Info } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
 import { deplacerTache, deplacerEvenement } from "./actions";
@@ -276,6 +276,24 @@ export function GanttChartV2({
         nextDuration = initDuration + deltaDays;
         if (nextDuration < 1) nextDuration = 1;
       }
+      // Bornage à la grille visible : une barre ne doit jamais sortir de
+      // l'écran (bug « les barres partent hors cadre »). On garde toujours
+      // au moins un jour visible.
+      if (mode === "move") {
+        nextOffset = Math.max(0, Math.min(nextOffset, totalDays - nextDuration));
+      } else if (mode === "left") {
+        if (nextOffset < 0) {
+          // Garde le bord droit fixe : réduit la durée du débordement.
+          nextDuration += nextOffset;
+          nextOffset = 0;
+          if (nextDuration < 1) nextDuration = 1;
+        }
+      } else if (mode === "right") {
+        if (nextOffset + nextDuration > totalDays) {
+          nextDuration = totalDays - nextOffset;
+        }
+        if (nextDuration < 1) nextDuration = 1;
+      }
       lastOffset = nextOffset;
       lastDuration = nextDuration;
       setOverrides((prev) => ({
@@ -365,7 +383,8 @@ export function GanttChartV2({
         else if (mv.clientX < rect.left + EDGE) scroller.scrollLeft -= 8;
       }
       const deltaDays = Math.round(dx / dayWidth);
-      lastOffset = initOffset + deltaDays;
+      // Bornage à la grille visible (comme les barres de tâches).
+      lastOffset = Math.max(0, Math.min(initOffset + deltaDays, totalDays - 1));
       setEventOverrides((prev) => ({ ...prev, [ev.id]: lastOffset }));
     }
 
@@ -482,7 +501,7 @@ export function GanttChartV2({
                 i > 0 ? "border-l border-slate-300 dark:border-slate-700" : ""
               } ${
                 scale === s
-                  ? "bg-brand-500 text-white"
+                  ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-medium"
                   : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
               }`}
             >
@@ -504,11 +523,13 @@ export function GanttChartV2({
 
       {/* Empty state explicite quand 0 tâches mais des events visibles */}
       {taches.length === 0 && visibleEvents.length > 0 && (
-        <div className="px-3 py-3 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-900 text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-          💡 Aucune <strong>tâche</strong> planifiée — seules les
-          livraisons / fins de location sont affichées. Décoche la case
-          ci-dessus pour les masquer, ou crée une tâche via la barre{" "}
-          <em>Quick Add</em>.
+        <div className="px-3 py-3 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-900 text-xs text-amber-800 dark:text-amber-300 leading-relaxed flex items-start gap-2">
+          <Info size={14} className="shrink-0 mt-0.5" />
+          <span>
+            Aucune <strong>tâche</strong> planifiée : seules les livraisons et
+            fins de location sont affichées. Décoche la case ci-dessus pour les
+            masquer, ou crée une tâche via la barre de saisie rapide.
+          </span>
         </div>
       )}
 
@@ -824,10 +845,13 @@ export function GanttChartV2({
                     className="shrink-0 px-3 py-2 border-r border-slate-200 dark:border-slate-800"
                     style={{ width: labelWidth }}
                   >
-                    <div className="text-[10px] text-slate-500">
-                      {ev.type === "COMMANDE"
-                        ? "📦 Livraison"
-                        : "🚚 Restitution"}
+                    <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                      {ev.type === "COMMANDE" ? (
+                        <Package size={10} />
+                      ) : (
+                        <Truck size={10} />
+                      )}
+                      {ev.type === "COMMANDE" ? "Livraison" : "Restitution"}
                     </div>
                     <div className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">
                       {ev.label}
@@ -868,8 +892,8 @@ export function GanttChartV2({
           Tâches : cliquer = modifier · glisser barre = déplacer ·
           glisser <strong>poignées sombres</strong> aux extrémités = ajuster la
           durée d&apos;un seul côté · clic sur case vide = créer à cette
-          date. Événements 📦🚚 : glisser pour replanifier. Ligne rouge
-          = aujourd&apos;hui. Scroll horizontal :{" "}
+          date. Événements (livraisons, restitutions) : glisser pour
+          replanifier. Ligne rouge = aujourd&apos;hui. Scroll horizontal :{" "}
           <kbd className="px-1 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800">
             Shift
           </kbd>{" "}

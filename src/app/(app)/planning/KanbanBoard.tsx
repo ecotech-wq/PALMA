@@ -11,6 +11,7 @@ import {
   Clock,
   AlertCircle,
   Ban,
+  Trash2,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { setStatut, deleteTache } from "./actions";
@@ -261,7 +262,8 @@ function KanbanCard({
   const toast = useToast();
   const late = isLate(t);
 
-  function handleDelete() {
+  function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation();
     if (!confirm("Supprimer cette tâche ?")) return;
     deleteTache(t.id)
       .then(() => {
@@ -343,19 +345,18 @@ function KanbanCard({
           </div>
         </div>
         {pending && <Loader2 size={12} className="animate-spin text-slate-400" />}
-      </div>
-      {canEdit && (
-        <div className="opacity-0 group-hover:opacity-100 transition flex justify-end mt-1">
+        {canEdit && (
           <button
             type="button"
             onClick={handleDelete}
-            className="text-[10px] text-slate-500 hover:text-red-600"
-            title="Supprimer"
+            className="shrink-0 -mr-1 -mt-0.5 p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 sm:opacity-0 sm:group-hover:opacity-100 transition"
+            title="Supprimer la tâche"
+            aria-label="Supprimer la tâche"
           >
-            Supprimer
+            <Trash2 size={13} />
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
