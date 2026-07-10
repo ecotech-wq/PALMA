@@ -6,7 +6,7 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Field } from "@/components/ui/Input";
 import { ResettingForm } from "@/components/ResettingForm";
-import { majEspace } from "./actions";
+import { majEspace, creerEspace } from "./actions";
 
 // ─── Entreprises (espaces) : nom, couleur d'accent, modules ──────────────────
 // Réservé au propriétaire de plateforme. La couleur d'accent habille l'avatar
@@ -40,6 +40,47 @@ export default async function AdminEspacesPage() {
         title="Entreprises"
         description="Nom, couleur d'accent et modules de chaque entreprise. La couleur habille l'avatar et le sélecteur, jamais les boutons ni la navigation."
       />
+
+      {/* Création d'une entreprise */}
+      <Card className="mb-5">
+        <CardBody>
+          <p className="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300">
+            Nouvelle entreprise
+          </p>
+          <ResettingForm
+            action={creerEspace}
+            successMessage="Entreprise créée"
+            className="grid grid-cols-1 gap-3 sm:grid-cols-4"
+          >
+            <div className="sm:col-span-2">
+              <Field label="Nom" required>
+                <Input name="nom" placeholder="Optimus Lab..." required />
+              </Field>
+            </div>
+            <Field label="Couleur d'accent">
+              <input
+                type="color"
+                name="couleur"
+                defaultValue="#6e6a63"
+                className="h-10 w-full cursor-pointer rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-1"
+              />
+            </Field>
+            <div className="flex items-end gap-4 pb-1">
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                <input type="checkbox" name="modules" value="chantier" className="rounded border-slate-400 text-brand-600" />
+                Chantier
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                <input type="checkbox" name="modules" value="be" className="rounded border-slate-400 text-brand-600" />
+                Bureau d&apos;études
+              </label>
+            </div>
+            <div className="sm:col-span-4">
+              <Button type="submit" size="sm">Créer l&apos;entreprise</Button>
+            </div>
+          </ResettingForm>
+        </CardBody>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2">
         {espaces.map((e) => {

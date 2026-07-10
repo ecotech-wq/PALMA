@@ -29,6 +29,61 @@ const espaceSchema = z.object({
   siret: z.string().max(40).optional().or(z.literal("")),
 });
 
+/**
+ * Crée une entreprise (espace). Le créateur (admin global) en devient membre
+ * ADMIN pour la voir immédiatement dans son sélecteur. Slug dérivé du nom,
+ * unicité garantie par suffixe.
+ */
+export async function creerEspace(formData: FormData) {
+  const me = await requireAdmin();
+  const d = espaceSchema.parse({
+    nom: formData.get("nom") ?? "",
+    couleur: formData.get("couleur") ?? "",
+    modules: (formData.getAll("modules") as string[]).filter((m) =>
+      Object.values(MODULES).includes(m as never)
+    ),
+    adresse: formData.get("adresse") ?? "",
+    telephone: formData.get("telephone") ?? "",
+    email: formData.get("email") ?? "",
+    siret: formData.get("siret") ?? "",
+  });
+  const base = d.nom
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "entreprise";
+  let slug = base;
+  for (let i = 2; await db.espace.findUnique({ where: { slug }, select: { id: true } }); i++) {
+    slug = `${base}-${i}`;
+  }
+  const espace = await db.espace.create({
+    data: {
+      nom: d.nom,
+      slug,
+      couleur: d.couleur ? d.couleur.toLowerCase() : null,
+      modules: d.modules,
+      adresse: d.adresse || null,
+      telephone: d.telephone || null,
+      email: d.email || null,
+      siret: d.siret || null,
+      membres: { create: { userId: me.id, role: "ADMIN" } },
+    },
+  });
+  await audit(
+    { id: me.id, name: me.name, role: "ADMIN" },
+    {
+      action: "ESPACE_CREATED",
+      entity: "Espace",
+      entityId: espace.id,
+      summary: `Entreprise créée : ${d.nom} (modules ${d.modules.join(", ") || "aucun"})`,
+    }
+  );
+  revalidatePath("/admin/espaces");
+  revalidatePath("/", "layout");
+}
+
 export async function majEspace(espaceId: string, formData: FormData) {
   const me = await requireAdmin();
   const d = espaceSchema.parse({
