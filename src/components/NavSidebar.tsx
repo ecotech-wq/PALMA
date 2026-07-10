@@ -73,10 +73,10 @@ type NavGroup = {
   module?: string;
 };
 
-// Item solo (Tableau de bord = toujours en haut, jamais dans un groupe)
+// Item solo (Accueil = le lanceur d'applications, toujours en haut)
 const dashboardItem: NavItem = {
-  href: "/dashboard",
-  label: "Tableau de bord",
+  href: "/accueil",
+  label: "Accueil",
   icon: LayoutDashboard,
 };
 
@@ -178,25 +178,25 @@ const groups: NavGroup[] = [
 // Barre de tab mobile, variante par rôle. Messagerie est promue en
 // onglet primaire pour tous les rôles non-client (entrée chat-first).
 const mobilePrimaryAdmin: NavItem[] = [
-  { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
+  { href: "/accueil", label: "Accueil", icon: LayoutDashboard },
   { href: "/messagerie", label: "Messagerie", icon: MessageSquare },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
   { href: "/paie", label: "Paie", icon: Banknote, adminOnly: true },
 ];
 const mobilePrimaryConducteur: NavItem[] = [
-  { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
+  { href: "/accueil", label: "Accueil", icon: LayoutDashboard },
   { href: "/messagerie", label: "Messagerie", icon: MessageSquare },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
   { href: "/planning", label: "Planning", icon: Calendar },
 ];
 const mobilePrimaryChef: NavItem[] = [
-  { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
+  { href: "/accueil", label: "Accueil", icon: LayoutDashboard },
   { href: "/messagerie", label: "Messagerie", icon: MessageSquare },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
   { href: "/rapports", label: "Rapports", icon: FileText },
 ];
 const mobilePrimaryClient: NavItem[] = [
-  { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
+  { href: "/accueil", label: "Accueil", icon: LayoutDashboard },
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
   { href: "/rapports", label: "Rapports", icon: FileText },
   { href: "/incidents", label: "Incidents", icon: AlertTriangle },
@@ -498,7 +498,7 @@ export function DesktopSidebar({
       .filter((g) => g.items.length > 0);
   }, [isAdmin, isConducteur, canPilot, isClient, clientVisibility, modules]);
 
-  const isOnDashboard = pathname === "/dashboard";
+  const isOnDashboard = pathname === "/accueil";
   const isOnProfile = pathname?.startsWith("/profil");
   const isOnAdmin =
     pathname?.startsWith("/admin") || pathname?.startsWith("/parametres");

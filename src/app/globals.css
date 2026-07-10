@@ -2,80 +2,86 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * Charte LYNX (2026-07-10). Cœur de marque : neutres chauds + ambre signal.
+ * Doctrine : « LYNX colore le noyau, l'espace colore son coin. » Encre, papier,
+ * ambre et sémantiques ne varient jamais. Voir docs/CHARTE-LYNX.md.
+ * ───────────────────────────────────────────────────────────────────────── */
+
 :root {
-  /* Light mode (default) */
-  --color-app-bg: #fafaf9;
-  --color-app-fg: #1c1917;
-  --color-card-bg: #ffffff;
-  --color-card-fg: #0f172a;
-  --color-muted-bg: #f1f5f9;
-  --color-muted-fg: #64748b;
-  --color-subtle-bg: #f8fafc;
-  --color-border: #e2e8f0;
-  --color-border-soft: #f1f5f9;
+  /* Neutres LYNX, mode clair */
+  --color-app-bg: #f5f4f1;        /* papier */
+  --color-app-fg: #141414;        /* encre */
+  --color-card-bg: #ffffff;       /* surface */
+  --color-card-fg: #141414;
+  --color-muted-bg: #eeece7;      /* surface 2 */
+  --color-muted-fg: #6e6a63;      /* muet */
+  --color-subtle-bg: #fbfaf8;     /* champ */
+  --color-border: #dddad3;        /* trait */
+  --color-border-soft: #eeece7;
 
-  /* Charte Autonhome - teal */
-  --brand-primary: #135858;
-  --brand-primary-50: #effaf8;
-  --brand-primary-100: #d3f0eb;
-  --brand-primary-200: #a8e0d8;
-  --brand-primary-300: #6cc8bc;
-  --brand-primary-400: #2a9c8e;
-  --brand-primary-500: #135858;
-  --brand-primary-600: #114e4e;
-  --brand-primary-700: #0e3f3f;
-  --brand-primary-800: #0a2f2f;
-  --brand-primary-900: #062020;
+  /* brand-* = AMBRE (accent = signal). Fond clair : #d98e1f. */
+  --brand-primary: #d98e1f;
+  --brand-primary-50: #fbf3e4;
+  --brand-primary-100: #f7e7c6;
+  --brand-primary-200: #efcf93;
+  --brand-primary-300: #e8b65f;
+  --brand-primary-400: #e0a23c;
+  --brand-primary-500: #d98e1f;
+  --brand-primary-600: #c57f15;   /* survol bouton clair */
+  --brand-primary-700: #b9781f;   /* ambre profond : liens, n° section */
+  --brand-primary-800: #8f5c15;   /* ambre foncé */
+  --brand-primary-900: #6e4610;
 
-  /* Accent cuivre */
-  --brand-accent: #b5733b;
-  --brand-accent-50: #fcf6ee;
-  --brand-accent-100: #f7e6d0;
-  --brand-accent-200: #efcca0;
-  --brand-accent-300: #e2a76a;
-  --brand-accent-400: #d28c47;
-  --brand-accent-500: #b5733b;
-  --brand-accent-600: #985d2f;
-  --brand-accent-700: #794627;
-  --brand-accent-800: #5a3520;
-  --brand-accent-900: #3e2418;
+  /* accent-* = ENCRE (surface sombre de marque, bouton primaire) */
+  --brand-accent: #141414;
+  --brand-accent-50: #f5f4f1;
+  --brand-accent-100: #eeece7;
+  --brand-accent-200: #dddad3;
+  --brand-accent-300: #a19c93;
+  --brand-accent-400: #6e6a63;
+  --brand-accent-500: #3d3a35;
+  --brand-accent-600: #2e2b27;
+  --brand-accent-700: #1c1a18;
+  --brand-accent-800: #141414;
+  --brand-accent-900: #0f0e0d;
 }
 
 .dark {
-  /* Dark mode */
-  --color-app-bg: #0b1212;
-  --color-app-fg: #e6e8e8;
-  --color-card-bg: #111a1a;
-  --color-card-fg: #e6e8e8;
-  --color-muted-bg: #1a2424;
-  --color-muted-fg: #94a3b8;
-  --color-subtle-bg: #0f1818;
-  --color-border: #1f2c2c;
-  --color-border-soft: #182222;
+  /* Neutres LYNX, mode sombre */
+  --color-app-bg: #141414;        /* encre = fond de page */
+  --color-app-fg: #edeae4;
+  --color-card-bg: #1c1a18;       /* surface sombre */
+  --color-card-fg: #edeae4;
+  --color-muted-bg: #2e2b27;
+  --color-muted-fg: #a19c93;
+  --color-subtle-bg: #1c1a18;
+  --color-border: #2e2b27;        /* trait sombre */
+  --color-border-soft: #211f1c;
 
-  /* Brand teals : on remonte la luminosité pour le contraste sur fond sombre */
-  --brand-primary-50: #062020;
-  --brand-primary-100: #0a2f2f;
-  --brand-primary-200: #0e3f3f;
-  --brand-primary-300: #114e4e;
-  --brand-primary-400: #1a7676;
-  --brand-primary-500: #2a9c8e;
-  --brand-primary-600: #4cb5a5;
-  --brand-primary-700: #76cdbe;
-  --brand-primary-800: #a8e0d8;
-  --brand-primary-900: #d3f0eb;
+  /* Ambre : version fond sombre (#e8a33d) + survol #f2b14c, contraste rehaussé */
+  --brand-primary-50: #3a2a0c;
+  --brand-primary-100: #573f12;
+  --brand-primary-200: #8f5c15;
+  --brand-primary-300: #b9781f;
+  --brand-primary-400: #d08322;
+  --brand-primary-500: #e8a33d;
+  --brand-primary-600: #f2b14c;   /* survol bouton sombre */
+  --brand-primary-700: #f2b14c;
+  --brand-primary-800: #f7cd8a;
+  --brand-primary-900: #fbe6c6;
 
-  /* Accent cuivre : un peu plus chaud sur fond sombre */
-  --brand-accent-50: #3e2418;
-  --brand-accent-100: #5a3520;
-  --brand-accent-200: #794627;
-  --brand-accent-300: #985d2f;
-  --brand-accent-400: #b5733b;
-  --brand-accent-500: #d28c47;
-  --brand-accent-600: #e2a76a;
-  --brand-accent-700: #efcca0;
-  --brand-accent-800: #f7e6d0;
-  --brand-accent-900: #fcf6ee;
+  /* Encre inversée sur fond sombre : la marque « claire » devient #edeae4 */
+  --brand-accent-50: #0f0e0d;
+  --brand-accent-100: #141414;
+  --brand-accent-200: #1c1a18;
+  --brand-accent-300: #2e2b27;
+  --brand-accent-400: #4a463f;
+  --brand-accent-500: #6e6a63;
+  --brand-accent-600: #a19c93;
+  --brand-accent-700: #dddad3;
+  --brand-accent-800: #eeece7;
+  --brand-accent-900: #edeae4;
 }
 
 @theme inline {
@@ -89,8 +95,9 @@
   --color-border-default: var(--color-border);
   --color-border-soft: var(--color-border-soft);
 
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Polices LYNX : Sans pour ce qui se lit, Mono pour ce qui se compte. */
+  --font-sans: var(--font-plex-sans);
+  --font-mono: var(--font-plex-mono);
 
   --color-brand-50: var(--brand-primary-50);
   --color-brand-100: var(--brand-primary-100);
@@ -113,6 +120,62 @@
   --color-accent-700: var(--brand-accent-700);
   --color-accent-800: var(--brand-accent-800);
   --color-accent-900: var(--brand-accent-900);
+
+  /* Neutres chauds : on RÉCHAUFFE l'échelle slate de Tailwind (l'UI l'utilise
+     partout en direct) pour aligner tout le chrome sur la charte LYNX. */
+  --color-slate-50: #fbfaf8;
+  --color-slate-100: #eeece7;
+  --color-slate-200: #dddad3;
+  --color-slate-300: #cbc7be;
+  --color-slate-400: #a19c93;
+  --color-slate-500: #6e6a63;
+  --color-slate-600: #565249;
+  --color-slate-700: #3d3a35;
+  --color-slate-800: #2e2b27;
+  --color-slate-900: #1c1a18;
+  --color-slate-950: #141414;
+
+  /* Sémantiques LYNX (états seulement). Vert = validé/signé/payé. */
+  --color-green-50: #eaf3ee;
+  --color-green-100: #cfe8da;
+  --color-green-200: #a6d4be;
+  --color-green-300: #77be9e;
+  --color-green-400: #56a87c;
+  --color-green-500: #3d8b62;
+  --color-green-600: #337553;
+  --color-green-700: #2e5b43;
+  --color-green-800: #244a37;
+  --color-green-900: #1b3728;
+
+  /* Terracotta = retard / incident / rejet (remplace le rouge Tailwind). */
+  --color-red-50: #f9edea;
+  --color-red-100: #f2d4cc;
+  --color-red-200: #e6afa1;
+  --color-red-300: #d98977;
+  --color-red-400: #cf6b53;
+  --color-red-500: #c4553f;
+  --color-red-600: #a5442f;
+  --color-red-700: #7a3a2c;
+  --color-red-800: #5f2e23;
+  --color-red-900: #45211a;
+
+  /* Bleu = information neutre. */
+  --color-blue-50: #edf1f8;
+  --color-blue-100: #d3def0;
+  --color-blue-200: #a9c0e1;
+  --color-blue-300: #7c9fd0;
+  --color-blue-400: #5d86c4;
+  --color-blue-500: #4a72b8;
+  --color-blue-600: #3d5e9b;
+  --color-blue-700: #33507f;
+  --color-blue-800: #2a4066;
+  --color-blue-900: #1f304c;
+
+  /* Rayons : LYNX reste anguleux (contrôles 9px, cartes 12px, plafond 12px). */
+  --radius-md: 0.5625rem;   /* 9px : boutons, champs */
+  --radius-lg: 0.625rem;    /* 10px */
+  --radius-xl: 0.75rem;     /* 12px : cartes */
+  --radius-2xl: 0.75rem;    /* plafond dur 12px */
 }
 
 html {
@@ -127,7 +190,13 @@ body {
     Arial, sans-serif;
 }
 
-/* Scrollbar discrète */
+/* L'ambre marque la sélection de texte (charte). */
+::selection {
+  background: #e8a33d;
+  color: #141414;
+}
+
+/* Scrollbar discrète, réchauffée */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -136,17 +205,17 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d4d4d8;
+  background: #dddad3;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #a1a1aa;
+  background: #a19c93;
 }
 .dark ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #3d3a35;
 }
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #4a463f;
 }
 
 /* Inputs date conservent leur calendrier natif lisible en dark */

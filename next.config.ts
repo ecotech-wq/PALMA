@@ -29,6 +29,10 @@ const nextConfig: NextConfig = {
 
   images: {
     formats: ["image/webp"],
+    // Logo LYNX servi en SVG (asset interne de confiance, public/brand/).
+    dangerouslyAllowSVG: true,
+    contentDispositionType: "attachment",
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
 };
 

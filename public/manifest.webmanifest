@@ -1,16 +1,22 @@
 {
-  "name": "Autonhome — Gestion de chantier",
-  "short_name": "Autonhome",
-  "description": "Outil de gestion de chantier Autonhome : matériel, équipes, paie, planning",
-  "start_url": "/dashboard",
+  "name": "LYNX : gestion, suivi et coordination",
+  "short_name": "LYNX",
+  "description": "LYNX, plateforme de gestion, de suivi et de coordination de chantier et de bureau d'etudes.",
+  "start_url": "/accueil",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#fafaf9",
-  "theme_color": "#135858",
+  "background_color": "#141414",
+  "theme_color": "#141414",
   "lang": "fr",
   "categories": ["business", "productivity"],
   "icons": [
+    {
+      "src": "/brand/lynx-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",

@@ -7,7 +7,11 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: "bg-brand-500 hover:bg-brand-600 text-white focus:ring-brand-400",
+        // Charte LYNX : le bouton primaire est en ENCRE (pas en ambre).
+        primary: "bg-slate-950 hover:bg-slate-800 text-slate-50 focus:ring-slate-500 dark:bg-slate-100 dark:hover:bg-white dark:text-slate-950",
+        // Bouton d'ENGAGEMENT (signature/validation) : le SEUL bouton ambre
+        // par écran. L'ambre est un signal, pas une décoration.
+        signal: "bg-brand-500 hover:bg-brand-600 text-slate-950 focus:ring-brand-400",
         secondary: "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-slate-400",
         danger: "bg-red-600 hover:bg-red-700 text-white focus:ring-red-500",
         ghost: "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300",

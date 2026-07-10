@@ -11,15 +11,16 @@
  * applicatif. Tout consommateur importe BRAND via `@/lib/theme`.
  */
 export const BRAND = {
-  appName: "Autonhome",
-  shortName: "Autonhome",
-  tagline: "Gestion de chantier",
-  colors: { primary: "#135858", accent: "#b5733b" },
-  logo: "/brand/logo.webp",
-  logoIcon: "/brand/logo-icon.webp",
-  emailFromName: "Autonhome",
-  totpIssuer: "Autonhome",
-  pushSubjectFallback: "mailto:admin@autonhome.local",
+  appName: "LYNX",
+  shortName: "LYNX",
+  tagline: "Gestion, suivi et coordination",
+  // Cœur de marque : ambre (signal) + encre. Voir docs/CHARTE-LYNX.md.
+  colors: { primary: "#d98e1f", accent: "#141414" },
+  logo: "/brand/lynx-mark.svg",
+  logoIcon: "/brand/lynx-mark.svg",
+  emailFromName: "LYNX",
+  totpIssuer: "LYNX",
+  pushSubjectFallback: "mailto:admin@autonhome.alphatek.fr",
   domain: "autonhome.alphatek.fr",
 } as const;
 

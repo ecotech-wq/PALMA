@@ -1,0 +1,8 @@
+<svg viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LYNX">
+  <!-- Charte LYNX : icône d'app. Tuile toujours encre #141414 ; le L (brique)
+       inversé #edeae4 ; le losange (l'œil) ambre #e8a33d, seul élément coloré.
+       Géométrie normative (docs/CHARTE-LYNX.md). -->
+  <rect width="96" height="96" rx="20" fill="#141414"/>
+  <polygon points="20,12 44,12 44,60 84,60 84,84 20,84" fill="#edeae4"/>
+  <polygon points="62,24 74,12 86,24 74,36" fill="#e8a33d"/>
+</svg>
