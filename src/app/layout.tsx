@@ -41,10 +41,10 @@ export const viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  // Charte LYNX : chrome sombre (encre). Tuile d'app et splash toujours #141414.
+  // Chrome sombre frais (encre rafraîchie #0e1116, préférence 2026-07-10).
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#141414" },
-    { media: "(prefers-color-scheme: dark)", color: "#141414" },
+    { media: "(prefers-color-scheme: light)", color: "#0e1116" },
+    { media: "(prefers-color-scheme: dark)", color: "#0e1116" },
   ],
 };
 
@@ -65,7 +65,9 @@ export default async function RootLayout({
    */
   const cookieStore = await cookies();
   const themeEffective = cookieStore.get("ogc-theme")?.value;
-  const isDark = themeEffective === "dark";
+  // Sombre PAR DÉFAUT (préférence Youssoufou 2026-07-10) : sans cookie, on
+  // sert le thème sombre ; la bascule clair/auto reste disponible.
+  const isDark = themeEffective ? themeEffective === "dark" : true;
 
   return (
     <html

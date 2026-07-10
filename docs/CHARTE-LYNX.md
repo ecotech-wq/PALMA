@@ -1,5 +1,12 @@
 # Charte graphique LYNX (spec d'implémentation)
 
+> ÉCARTS ASSUMÉS (décisions Youssoufou, 2026-07-10, priment sur la charte) :
+> 1. Les NEUTRES chauds sont remplacés par des neutres FRAIS (gris-bleu :
+>    encre #0e1116, surfaces #151a21/#1d242e, clair #f6f7f9), mode SOMBRE par
+>    défaut. L'ambre signal, les sémantiques, le logo et la typo sont inchangés.
+> 2. La couleur d'espace teinte AUSSI les états actifs de la navigation
+>    (token --space-accent) comme repère anti-erreur d'entreprise.
+
 Source : `C:\Projects\Lynx\LYNX plateforme de gestion` (decks Claude Design,
 lus intégralement le 2026-07-10). Piste logo retenue : `1d` « L modulaire ».
 Baseline : « L'œil sur le terrain : gestion, suivi et coordination. »

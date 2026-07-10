@@ -9,16 +9,17 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Neutres LYNX, mode clair */
-  --color-app-bg: #f5f4f1;        /* papier */
-  --color-app-fg: #141414;        /* encre */
-  --color-card-bg: #ffffff;       /* surface */
-  --color-card-fg: #141414;
-  --color-muted-bg: #eeece7;      /* surface 2 */
-  --color-muted-fg: #6e6a63;      /* muet */
-  --color-subtle-bg: #fbfaf8;     /* champ */
-  --color-border: #dddad3;        /* trait */
-  --color-border-soft: #eeece7;
+  /* Neutres LYNX RAFRAÎCHIS (préférence Youssoufou 2026-07-10 : ton sombre et
+     frais plutôt que chaud ; écart assumé à la charte, l'ambre reste le signal) */
+  --color-app-bg: #f6f7f9;
+  --color-app-fg: #12161c;
+  --color-card-bg: #ffffff;
+  --color-card-fg: #12161c;
+  --color-muted-bg: #eceff3;
+  --color-muted-fg: #66717f;
+  --color-subtle-bg: #fafbfc;
+  --color-border: #dfe4ea;
+  --color-border-soft: #eceff3;
 
   /* brand-* = AMBRE (accent = signal). Fond clair : #d98e1f. */
   --brand-primary: #d98e1f;
@@ -33,31 +34,31 @@
   --brand-primary-800: #8f5c15;   /* ambre foncé */
   --brand-primary-900: #6e4610;
 
-  /* accent-* = ENCRE (surface sombre de marque, bouton primaire) */
-  --brand-accent: #141414;
-  --brand-accent-50: #f5f4f1;
-  --brand-accent-100: #eeece7;
-  --brand-accent-200: #dddad3;
-  --brand-accent-300: #a19c93;
-  --brand-accent-400: #6e6a63;
-  --brand-accent-500: #3d3a35;
-  --brand-accent-600: #2e2b27;
-  --brand-accent-700: #1c1a18;
-  --brand-accent-800: #141414;
-  --brand-accent-900: #0f0e0d;
+  /* accent-* = ENCRE fraîche (surface sombre de marque, bouton primaire) */
+  --brand-accent: #0e1116;
+  --brand-accent-50: #f6f7f9;
+  --brand-accent-100: #eceff3;
+  --brand-accent-200: #dfe4ea;
+  --brand-accent-300: #a9b3c0;
+  --brand-accent-400: #77828f;
+  --brand-accent-500: #4a5462;
+  --brand-accent-600: #343d49;
+  --brand-accent-700: #232a34;
+  --brand-accent-800: #171d25;
+  --brand-accent-900: #0e1116;
 }
 
 .dark {
-  /* Neutres LYNX, mode sombre */
-  --color-app-bg: #141414;        /* encre = fond de page */
-  --color-app-fg: #edeae4;
-  --color-card-bg: #1c1a18;       /* surface sombre */
-  --color-card-fg: #edeae4;
-  --color-muted-bg: #2e2b27;
-  --color-muted-fg: #a19c93;
-  --color-subtle-bg: #1c1a18;
-  --color-border: #2e2b27;        /* trait sombre */
-  --color-border-soft: #211f1c;
+  /* Mode sombre (par défaut) : gris-bleu profonds, frais et lisibles */
+  --color-app-bg: #0e1116;
+  --color-app-fg: #e7ebf1;
+  --color-card-bg: #151a21;
+  --color-card-fg: #e7ebf1;
+  --color-muted-bg: #1d242e;
+  --color-muted-fg: #a6b0bf;
+  --color-subtle-bg: #151a21;
+  --color-border: #262e3a;
+  --color-border-soft: #1b212b;
 
   /* Ambre : version fond sombre (#e8a33d) + survol #f2b14c, contraste rehaussé */
   --brand-primary-50: #3a2a0c;
@@ -71,17 +72,17 @@
   --brand-primary-800: #f7cd8a;
   --brand-primary-900: #fbe6c6;
 
-  /* Encre inversée sur fond sombre : la marque « claire » devient #edeae4 */
-  --brand-accent-50: #0f0e0d;
-  --brand-accent-100: #141414;
-  --brand-accent-200: #1c1a18;
-  --brand-accent-300: #2e2b27;
-  --brand-accent-400: #4a463f;
-  --brand-accent-500: #6e6a63;
-  --brand-accent-600: #a19c93;
-  --brand-accent-700: #dddad3;
-  --brand-accent-800: #eeece7;
-  --brand-accent-900: #edeae4;
+  /* Encre inversée sur fond sombre : la marque « claire » devient #e7ebf1 */
+  --brand-accent-50: #0e1116;
+  --brand-accent-100: #151a21;
+  --brand-accent-200: #1d242e;
+  --brand-accent-300: #262e3a;
+  --brand-accent-400: #4a5462;
+  --brand-accent-500: #77828f;
+  --brand-accent-600: #a6b0bf;
+  --brand-accent-700: #dfe4ea;
+  --brand-accent-800: #eceff3;
+  --brand-accent-900: #e7ebf1;
 }
 
 @theme inline {
@@ -121,19 +122,19 @@
   --color-accent-800: var(--brand-accent-800);
   --color-accent-900: var(--brand-accent-900);
 
-  /* Neutres chauds : on RÉCHAUFFE l'échelle slate de Tailwind (l'UI l'utilise
-     partout en direct) pour aligner tout le chrome sur la charte LYNX. */
-  --color-slate-50: #fbfaf8;
-  --color-slate-100: #eeece7;
-  --color-slate-200: #dddad3;
-  --color-slate-300: #cbc7be;
-  --color-slate-400: #a19c93;
-  --color-slate-500: #6e6a63;
-  --color-slate-600: #565249;
-  --color-slate-700: #3d3a35;
-  --color-slate-800: #2e2b27;
-  --color-slate-900: #1c1a18;
-  --color-slate-950: #141414;
+  /* Neutres FRAIS : échelle slate gris-bleu (l'UI l'utilise partout en direct),
+     ton sombre agréable demandé par Youssoufou (2026-07-10). */
+  --color-slate-50: #fafbfc;
+  --color-slate-100: #eceff3;
+  --color-slate-200: #dfe4ea;
+  --color-slate-300: #c6cdd7;
+  --color-slate-400: #99a3b0;
+  --color-slate-500: #66717f;
+  --color-slate-600: #4e5866;
+  --color-slate-700: #38414d;
+  --color-slate-800: #232a34;
+  --color-slate-900: #171d25;
+  --color-slate-950: #0e1116;
 
   /* Sémantiques LYNX (états seulement). Vert = validé/signé/payé. */
   --color-green-50: #eaf3ee;
@@ -205,17 +206,17 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #dddad3;
+  background: #dfe4ea;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #a19c93;
+  background: #99a3b0;
 }
 .dark ::-webkit-scrollbar-thumb {
-  background: #3d3a35;
+  background: #38414d;
 }
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #4a463f;
+  background: #4e5866;
 }
 
 /* Inputs date conservent leur calendrier natif lisible en dark */
