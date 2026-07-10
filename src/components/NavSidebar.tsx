@@ -36,6 +36,7 @@ import {
   Trash2,
   Wallet,
   FileSignature,
+  Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/theme";
@@ -231,7 +232,7 @@ const mobileMore: NavItem[] = [
 
 function BrandHeader({
   subtitle,
-  href = "/dashboard",
+  href = "/accueil",
 }: {
   subtitle?: string;
   href?: string;
@@ -243,10 +244,10 @@ function BrandHeader({
         alt={BRAND.appName}
         width={36}
         height={36}
-        className="rounded-md object-contain shrink-0 bg-white"
+        className="rounded-md object-contain shrink-0"
       />
       <div className="min-w-0">
-        <div className="font-bold text-brand-700 dark:text-brand-700 leading-tight">
+        <div className="font-mono font-semibold tracking-[0.14em] text-slate-900 dark:text-slate-100 leading-tight">
           {BRAND.appName}
         </div>
         {subtitle && (
@@ -461,7 +462,7 @@ export function DesktopSidebar({
   bell?: React.ReactNode;
   /** Modules (apps) actifs dans l'espace courant (socle espaces). */
   modules?: string[];
-  espaces?: { id: string; nom: string }[];
+  espaces?: { id: string; nom: string; couleur?: string | null }[];
   espaceCourantId?: string | null;
   /** Seul l'admin (propriétaire de plateforme) bascule entre entreprises. */
   canSwitchEspace?: boolean;
@@ -507,19 +508,19 @@ export function DesktopSidebar({
     <aside className="hidden md:flex w-60 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 h-screen self-start">
       <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 shrink-0">
         <Link
-          href="/profil"
+          href="/accueil"
           className="flex items-center gap-3 min-w-0 hover:bg-slate-50 dark:hover:bg-slate-800 -mx-2 px-2 py-1 rounded-md transition flex-1"
-          title="Mon profil"
+          title="Accueil"
         >
           <Image
             src={BRAND.logoIcon}
             alt={BRAND.appName}
             width={32}
             height={32}
-            className="rounded-md object-contain shrink-0 bg-white"
+            className="rounded-md object-contain shrink-0"
           />
           <div className="min-w-0">
-            <div className="font-bold text-brand-700 dark:text-brand-700 leading-tight text-sm">
+            <div className="font-mono font-semibold tracking-[0.14em] text-slate-900 dark:text-slate-100 leading-tight text-sm">
               {BRAND.appName}
             </div>
             <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
@@ -606,6 +607,7 @@ export function DesktopSidebar({
               icon: ShieldCheck,
               items: [
                 { href: "/admin/users", label: "Utilisateurs", icon: ShieldCheck },
+                { href: "/admin/espaces", label: "Entreprises", icon: Building2 },
                 { href: "/admin/audit", label: "Journal d'audit", icon: FileText },
                 { href: "/admin/corbeille", label: "Corbeille", icon: Trash2 },
                 { href: "/exports", label: "Exports & FEC", icon: Download },
@@ -667,7 +669,7 @@ export function MobileBottomNav({
   /** Modules (apps) actifs dans l'espace courant. */
   modules?: string[];
   /** Sélecteur d'entreprise dans le tiroir « Plus » (socle espaces). */
-  espaces?: { id: string; nom: string }[];
+  espaces?: { id: string; nom: string; couleur?: string | null }[];
   espaceCourantId?: string | null;
   /** Seul l'admin bascule entre entreprises. */
   canSwitchEspace?: boolean;
@@ -873,6 +875,19 @@ export function MobileBottomNav({
                     )}
                   </Link>
                   <Link
+                    href="/admin/espaces"
+                    onClick={() => setMoreOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition",
+                      pathname?.startsWith("/admin/espaces")
+                        ? "bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 font-medium"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    )}
+                  >
+                    <Building2 size={20} />
+                    Entreprises
+                  </Link>
+                  <Link
                     href="/parametres"
                     onClick={() => setMoreOpen(false)}
                     className={cn(
@@ -906,7 +921,7 @@ export function MobileTopBar({
 }) {
   return (
     <header className="md:hidden sticky top-0 z-20 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-between gap-2">
-      <BrandHeader subtitle={userName} href="/profil" />
+      <BrandHeader subtitle={userName} href="/accueil" />
       <div className="flex items-center gap-1">
         <SearchTrigger variant="topbar" />
         {bell}

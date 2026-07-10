@@ -172,7 +172,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           userName={session.user.name}
           userRole={me.role}
           modules={me.modules}
-          espaces={me.espaces.map((e) => ({ id: e.id, nom: e.nom }))}
+          espaces={me.espaces.map((e) => ({ id: e.id, nom: e.nom, couleur: e.couleur }))}
           espaceCourantId={me.espaceCourant?.id ?? null}
           canSwitchEspace={me.isGlobalAdmin}
           pendingUsersCount={pendingUsersCount}
@@ -197,7 +197,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             isConducteur={me.isConducteur}
             isClient={me.isClient}
             modules={me.modules}
-            espaces={me.espaces.map((e) => ({ id: e.id, nom: e.nom }))}
+            espaces={me.espaces.map((e) => ({ id: e.id, nom: e.nom, couleur: e.couleur }))}
             espaceCourantId={me.espaceCourant?.id ?? null}
             canSwitchEspace={me.isGlobalAdmin}
             pendingUsersCount={pendingUsersCount}

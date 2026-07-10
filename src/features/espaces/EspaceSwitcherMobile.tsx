@@ -1,12 +1,12 @@
 "use client";
 
 import { useTransition } from "react";
-import { Building2, Check } from "lucide-react";
+import { Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { changerEspace } from "./server/espace-actions";
 import { TOUS_ESPACES } from "@/lib/espaces-client";
 
-type EspaceOption = { id: string; nom: string };
+type EspaceOption = { id: string; nom: string; couleur?: string | null };
 
 // ─── Sélecteur d'entreprise, variante feuille bas d'écran ──────────────────
 // LYNX vit sur téléphone : le changement d'espace se fait dans le tiroir
@@ -39,6 +39,8 @@ export function EspaceSwitcherMobile({
       </div>
       {options.map((e) => {
         const actif = actifId === e.id;
+        const tous = e.id === TOUS_ESPACES;
+        const initiale = e.nom.trim().charAt(0).toUpperCase() || "?";
         return (
           <button
             key={e.id}
@@ -56,14 +58,33 @@ export function EspaceSwitcherMobile({
             }}
             className={cn(
               "w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition disabled:opacity-60",
+              // Ligne active : fond neutre + le losange ambre en marqueur
+              // (charte : l'ambre est le signal « espace actif », pas un aplat).
               actif
-                ? "bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 font-medium"
+                ? "bg-slate-100 dark:bg-slate-800 font-medium text-slate-900 dark:text-slate-100"
                 : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
             )}
           >
-            <Building2 size={20} />
+            {tous ? (
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                <Building2 size={16} />
+              </span>
+            ) : (
+              // Avatar coloré à la couleur d'accent de l'entreprise.
+              <span
+                className="flex h-7 w-7 items-center justify-center rounded-md text-xs font-semibold text-white"
+                style={{ backgroundColor: e.couleur ?? "#6e6a63" }}
+              >
+                {initiale}
+              </span>
+            )}
             <span className="flex-1 text-left truncate">{e.nom}</span>
-            {actif && <Check size={16} />}
+            {actif && (
+              <span
+                className="h-2.5 w-2.5 rotate-45 bg-brand-500"
+                aria-label="active"
+              />
+            )}
           </button>
         );
       })}
