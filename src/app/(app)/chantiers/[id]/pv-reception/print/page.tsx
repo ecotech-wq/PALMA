@@ -46,7 +46,7 @@ export default async function PvPrintPage({
         chef: { select: { name: true, email: true } },
         clients: { select: { name: true, email: true } },
         // Entête du document : l'entreprise émettrice (nom + couleur d'accent).
-        espace: { select: { nom: true, couleur: true } },
+        espace: { select: { nom: true, couleur: true, logoUrl: true, adresse: true, telephone: true, email: true, siret: true } },
       },
     }),
     db.pvReception.findUnique({
@@ -107,7 +107,7 @@ export default async function PvPrintPage({
 
   return (
     <PvPrintView
-      espace={{ nom: chantier.espace.nom, couleur: chantier.espace.couleur }}
+      espace={chantier.espace}
       chantier={{
         nom: chantier.nom,
         adresse: chantier.adresse,

@@ -362,9 +362,17 @@ function NavLeaf({
         "flex items-center gap-3 transition-colors",
         size === "sm" ? "pl-9 pr-4 py-2 text-sm" : "px-5 py-2.5 text-sm",
         active
-          ? "bg-brand-50 text-brand-700 dark:bg-brand-200/30 dark:text-brand-700 font-medium border-r-2 border-brand-500"
+          ? "bg-slate-100 dark:bg-slate-800/70 font-medium border-r-2"
           : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
       )}
+      style={
+        active
+          ? {
+              color: "var(--space-accent, var(--brand-primary-700))",
+              borderColor: "var(--space-accent, var(--brand-primary-500))",
+            }
+          : undefined
+      }
     >
       <Icon size={size === "sm" ? 15 : 18} />
       <span className="flex-1 truncate">{label}</span>
@@ -505,7 +513,10 @@ export function DesktopSidebar({
     pathname?.startsWith("/admin") || pathname?.startsWith("/parametres");
 
   return (
-    <aside className="hidden md:flex w-60 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 h-screen self-start">
+    <aside
+      className="hidden md:flex w-60 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 h-screen self-start"
+      style={{ borderTop: "3px solid var(--space-accent, transparent)" }}
+    >
       <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 shrink-0">
         <Link
           href="/accueil"
@@ -744,10 +755,13 @@ export function MobileBottomNav({
               href={href}
               className={cn(
                 "flex flex-col items-center justify-center py-2 gap-0.5 text-[10px] relative",
-                active
-                  ? "text-brand-700 dark:text-brand-400"
-                  : "text-slate-600 dark:text-slate-400"
+                !active && "text-slate-600 dark:text-slate-400"
               )}
+              style={
+                active
+                  ? { color: "var(--space-accent, var(--brand-primary-500))" }
+                  : undefined
+              }
             >
               <Icon size={20} />
               <span className="truncate max-w-full px-1">{label}</span>
@@ -920,7 +934,10 @@ export function MobileTopBar({
   bell?: React.ReactNode;
 }) {
   return (
-    <header className="md:hidden sticky top-0 z-20 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-between gap-2">
+    <header
+      className="md:hidden sticky top-0 z-20 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-between gap-2"
+      style={{ borderTop: "3px solid var(--space-accent, transparent)" }}
+    >
       <BrandHeader subtitle={userName} href="/accueil" />
       <div className="flex items-center gap-1">
         <SearchTrigger variant="topbar" />

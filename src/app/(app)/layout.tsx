@@ -167,7 +167,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <DiscretProvider initial={discretInitial}>
       <CommandPalette />
       <OfflineBanner />
-      <div className="min-h-screen flex bg-slate-50 dark:bg-slate-950">
+      <div
+        className="min-h-screen flex bg-slate-50 dark:bg-slate-950"
+        // Repère visuel d'entreprise (demande Youssoufou 2026-07-10) : la
+        // couleur de l'espace courant teinte les états ACTIFS de la nav via
+        // --space-accent. L'ambre reste le signal d'engagement ; les boutons
+        // et badges ne prennent jamais cette couleur.
+        style={{ "--space-accent": me.espaceCourant?.couleur ?? undefined } as React.CSSProperties}
+      >
         <DesktopSidebar
           userName={session.user.name}
           userRole={me.role}

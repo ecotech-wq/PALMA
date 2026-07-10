@@ -24,6 +24,11 @@ export default async function AdminEspacesPage() {
       nom: true,
       couleur: true,
       modules: true,
+      logoUrl: true,
+      adresse: true,
+      telephone: true,
+      email: true,
+      siret: true,
       _count: { select: { membres: true, chantiers: true } },
     },
   });
@@ -104,6 +109,28 @@ export default async function AdminEspacesPage() {
                       </label>
                     </div>
                   </div>
+                  {/* Identité pour l'entête des documents */}
+                  <Field label="Adresse">
+                    <Input name="adresse" defaultValue={e.adresse ?? ""} placeholder="12 rue..., 97400 Saint-Denis" />
+                  </Field>
+                  <Field label="Téléphone">
+                    <Input name="telephone" defaultValue={e.telephone ?? ""} placeholder="+262 ..." />
+                  </Field>
+                  <Field label="Email">
+                    <Input name="email" type="email" defaultValue={e.email ?? ""} placeholder="contact@..." />
+                  </Field>
+                  <Field label="SIRET">
+                    <Input name="siret" defaultValue={e.siret ?? ""} placeholder="995 208 758 00000" />
+                  </Field>
+                  <Field label="Logo (entête des documents)" hint={e.logoUrl ? "Un logo est déjà posé ; en choisir un le remplace" : "PNG/JPG, fond clair de préférence"}>
+                    <Input name="logo" type="file" accept="image/*" />
+                  </Field>
+                  {e.logoUrl && (
+                    <label className="flex items-end gap-2 pb-1 text-sm text-slate-700 dark:text-slate-300">
+                      <input type="checkbox" name="removeLogo" value="1" className="rounded border-slate-400" />
+                      Retirer le logo actuel
+                    </label>
+                  )}
                   <div className="sm:col-span-2">
                     <Button type="submit" size="sm">
                       Enregistrer

@@ -1257,6 +1257,13 @@ model Espace {
   nom       String
   slug      String   @unique
   couleur   String?
+  /// Identité pour l'entête des documents (charte : « l'entête de ses
+  /// documents ») : logo uploadé + coordonnées de l'entreprise.
+  logoUrl   String?
+  adresse   String?
+  telephone String?
+  email     String?
+  siret     String?
   /// Modules (apps) actifs : "chantier", "be" (extensible : "permis"...).
   modules   String[] @default([])
   createdAt DateTime @default(now())

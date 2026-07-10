@@ -30,6 +30,7 @@ export async function saveUploadedPhoto(
     | "journal"
     | "plans"
     | "pv"
+    | "logos"
 ): Promise<string> {
   if (!file || file.size === 0) {
     throw new Error("Aucun fichier reçu");

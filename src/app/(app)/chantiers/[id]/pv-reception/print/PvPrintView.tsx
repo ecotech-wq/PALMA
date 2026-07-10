@@ -1,7 +1,7 @@
 "use client";
 
 import { Printer } from "lucide-react";
-import { EnteteEspace } from "@/features/espaces/EnteteEspace";
+import { EnteteEspace, type EspaceEntete } from "@/features/espaces/EnteteEspace";
 
 type ReserveRow = {
   numero: number;
@@ -45,7 +45,7 @@ export function PvPrintView({
   sansPlan,
   photosAnnex,
 }: {
-  espace: { nom: string; couleur: string | null };
+  espace: EspaceEntete;
   chantier: {
     nom: string;
     adresse: string | null;
@@ -84,6 +84,11 @@ export function PvPrintView({
           .no-print { display: none !important; }
           .page-break { break-before: page; }
           .avoid-break { break-inside: avoid; }
+          /* Couleurs d'entete conservees a l'impression + cadrage stable */
+          .entete-espace, .entete-espace * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          html, body { height: auto !important; overflow: visible !important; }
+          img { max-width: 100% !important; }
+          table { width: 100% !important; }
         }
       `}</style>
 
@@ -99,7 +104,7 @@ export function PvPrintView({
 
       {/* === Page de garde === */}
       <header className="mb-8 avoid-break">
-        <EnteteEspace nom={espace.nom} couleur={espace.couleur} />
+        <EnteteEspace espace={espace} />
         <div className="border-b border-slate-300 pb-3 mb-5">
           <p className="text-xs uppercase tracking-widest text-slate-500">
             Procès-verbal de réception
