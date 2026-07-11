@@ -1,4 +1,4 @@
-/* Service Worker Autonhome — PWA installable + offline read-only.
+/* Service Worker LYNX : PWA installable + lecture hors ligne.
  *
  *   Stratégies :
  *     /icons/*, /brand/*, /manifest        → cache-first (assets de coquille)
@@ -12,7 +12,7 @@
  *   Bump CACHE_VERSION quand tu changes la stratégie pour forcer un purge.
  */
 
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const SHELL_CACHE  = `autonhome-shell-${CACHE_VERSION}`;
 const PAGES_CACHE  = `autonhome-pages-${CACHE_VERSION}`;
 const UPLOADS_CACHE = `autonhome-uploads-${CACHE_VERSION}`;
@@ -127,19 +127,27 @@ function offlineHtmlResponse() {
 <html lang="fr"><head><meta charset="utf-8"><title>Hors ligne</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-  body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0;
+  /* Charte LYNX : encre fraiche, carte sombre, bouton encre inversee.
+     L'ambre reste un signal, pas une decoration. Rayons plafonnes a 12 px. */
+  body { font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif; background: #0e1116; color: #e7ebf1;
          display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 1rem; }
-  .card { max-width: 24rem; text-align: center; background: #1e293b; padding: 2rem; border-radius: 0.75rem;
-          border: 1px solid #334155; }
-  h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
-  p { color: #94a3b8; font-size: 0.875rem; margin: 0.5rem 0; }
-  button { margin-top: 1rem; padding: 0.5rem 1rem; background: #2dd4bf; color: #0f172a;
-           border: 0; border-radius: 0.375rem; font-weight: 600; cursor: pointer; }
-  button:hover { background: #14b8a6; }
+  .card { max-width: 24rem; text-align: center; background: #151a21; padding: 2rem; border-radius: 12px;
+          border: 1px solid #262e3a; }
+  .mark { width: 44px; height: 44px; border-radius: 9px; margin: 0 auto 0.75rem; display: block; }
+  h1 { font-size: 1.25rem; margin: 0 0 0.5rem; letter-spacing: 0.01em; }
+  p { color: #a6b0bf; font-size: 0.875rem; margin: 0.5rem 0; line-height: 1.55; }
+  button { margin-top: 1rem; padding: 0.65rem 1.25rem; background: #e7ebf1; color: #141414; min-height: 44px;
+           border: 0; border-radius: 9px; font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+  button:hover { background: #ffffff; }
 </style></head>
 <body><div class="card">
-  <h1>📡 Hors ligne</h1>
-  <p>Cette page n'a pas encore été consultée — pas de version en cache.</p>
+  <svg class="mark" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <rect width="96" height="96" rx="20" fill="#141414"/>
+    <polygon points="20,12 44,12 44,60 84,60 84,84 20,84" fill="#edeae4"/>
+    <polygon points="62,24 74,12 86,24 74,36" fill="#e8a33d"/>
+  </svg>
+  <h1>Hors ligne</h1>
+  <p>Cette page n'a pas encore été consultée : aucune version en cache.</p>
   <p>Reconnecte-toi à internet pour la charger.</p>
   <button onclick="location.reload()">Réessayer</button>
 </div></body></html>`;
