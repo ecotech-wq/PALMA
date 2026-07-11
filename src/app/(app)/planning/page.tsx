@@ -67,8 +67,16 @@ export default async function PlanningPage({
           },
         },
       },
-      // Ordre manuel d'abord (drag-to-reorder), puis priorité, puis date début
-      orderBy: [{ ordre: "asc" }, { priorite: "asc" }, { dateDebut: "asc" }],
+      // Ordre manuel d'abord (drag-to-reorder), puis priorité, puis date de
+      // CRÉATION (stable). Trier par date de début faisait changer une tâche
+      // de ligne dès qu'on la redimensionnait dans le Gantt : les lignes
+      // semblaient s'échanger (constat Youssoufou 2026-07-11).
+      orderBy: [
+        { ordre: "asc" },
+        { priorite: "asc" },
+        { createdAt: "asc" },
+        { id: "asc" },
+      ],
     }),
     db.chantier.findMany({
       where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] }, ...borneId },
