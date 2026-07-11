@@ -18,7 +18,19 @@ export const authConfig = {
         path.startsWith("/reset-password") ||
         path.startsWith("/api/auth");
 
-      if (isPublic) return true;
+      // Coquille PWA : le service worker, le manifest, les icônes et la
+      // page hors-ligne doivent rester servis sans session, sinon un
+      // utilisateur déconnecté ne reçoit plus les mises à jour du SW
+      // (GET /sw.js redirigé 307 vers /login). Correspondances exactes
+      // pour les fichiers afin de ne pas ouvrir d'autres routes.
+      const isPwaShell =
+        path === "/sw.js" ||
+        path === "/manifest.webmanifest" ||
+        path === "/offline" ||
+        path.startsWith("/icons/") ||
+        path.startsWith("/brand/");
+
+      if (isPublic || isPwaShell) return true;
 
       if (!isLoggedIn) return false;
 

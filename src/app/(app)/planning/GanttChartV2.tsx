@@ -20,11 +20,12 @@ import {
   deplacerTache,
   retirerDependance,
 } from "./actions";
-import { addDays, daysBetween, startOfDay } from "./gantt/dates";
+import { addDays, daysBetween, ONE_DAY, startOfDay } from "./gantt/dates";
 import {
   construireEchelle,
   DAY_WIDTH,
   ECHELLES,
+  MARGES,
   type Echelle,
 } from "./gantt/echelle";
 import {
@@ -918,6 +919,36 @@ export function GanttChartV2({
     }
   }
 
+  /** Choisit la plus grande echelle (px/jour) dont l'etendue des donnees
+   *  tient dans la largeur visible, puis cale la vue au debut du planning. */
+  function ajusterEchelle() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const dispo = Math.max(200, el.clientWidth - labelWidth);
+    const dates: number[] = [];
+    taches.forEach((t) => {
+      dates.push(
+        startOfDay(new Date(t.dateDebut)).getTime(),
+        startOfDay(new Date(t.dateFin)).getTime()
+      );
+    });
+    visibleEvents.forEach((e) => dates.push(startOfDay(new Date(e.date)).getTime()));
+    if (dates.length === 0) return;
+    const etendue =
+      Math.round((Math.max(...dates) - Math.min(...dates)) / ONE_DAY) + 3;
+    const choix =
+      ECHELLES.find((s) => etendue * DAY_WIDTH[s] <= dispo) ??
+      ECHELLES[ECHELLES.length - 1];
+    setScale(choix);
+    // Cale la vue sur le debut des donnees (apres recalcul de la grille).
+    requestAnimationFrame(() => {
+      const sc = scrollRef.current;
+      if (!sc) return;
+      sc.scrollLeft = Math.max(0, MARGES[choix].avant * DAY_WIDTH[choix] - 16);
+      sc.scrollTop = 0;
+    });
+  }
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
       {/* Toolbar : échelle + aujourd'hui + successeurs + visibilité events */}
@@ -940,6 +971,14 @@ export function GanttChartV2({
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          onClick={ajusterEchelle}
+          title="Choisir automatiquement l'échelle qui affiche tout le planning d'un coup"
+          className="px-3 py-1 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+        >
+          Ajuster
+        </button>
         <button
           type="button"
           onClick={scrollToToday}
@@ -994,14 +1033,14 @@ export function GanttChartV2({
         ref={scrollRef}
         onWheel={handleWheel}
         onPointerDown={onFondPointerDown}
-        className="overflow-x-auto overscroll-x-contain"
-        style={{ WebkitOverflowScrolling: "touch" }}
+        className="overflow-auto overscroll-contain"
+        style={{ WebkitOverflowScrolling: "touch", maxHeight: "72vh" }}
       >
         <div style={{ minWidth: `max(100%, ${labelWidth + totalDays * dayWidth}px)` }}>
           {/* Header */}
           <div className="flex sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
             <div
-              className="shrink-0 px-3 py-2 text-xs font-semibold text-slate-500 border-r border-slate-200 dark:border-slate-800"
+              className="shrink-0 px-3 py-2 text-xs font-semibold text-slate-500 border-r border-slate-200 dark:border-slate-800 sticky left-0 z-20 bg-slate-50 dark:bg-slate-900"
               style={{ width: labelWidth }}
             >
               Tâche
@@ -1171,8 +1210,8 @@ export function GanttChartV2({
                 >
                   <div
                     onClick={() => onClickTask?.(t.id)}
-                    className={`shrink-0 px-3 py-2 border-r border-slate-200 dark:border-slate-800 min-w-0 flex items-start gap-1.5 ${
-                      onClickTask ? "cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-800/50" : ""
+                    className={`shrink-0 px-3 py-2 border-r border-slate-200 dark:border-slate-800 min-w-0 flex items-start gap-1.5 sticky left-0 z-[6] bg-white dark:bg-slate-900 ${
+                      onClickTask ? "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800" : ""
                     }`}
                     style={{ width: labelWidth }}
                     title={onClickTask ? "Cliquer pour modifier" : undefined}
@@ -1428,7 +1467,7 @@ export function GanttChartV2({
                   className="flex border-b border-slate-100 dark:border-slate-800"
                 >
                   <div
-                    className="shrink-0 px-3 py-2 border-r border-slate-200 dark:border-slate-800"
+                    className="shrink-0 px-3 py-2 border-r border-slate-200 dark:border-slate-800 sticky left-0 z-[6] bg-white dark:bg-slate-900"
                     style={{ width: labelWidth }}
                   >
                     <div className="text-[10px] text-slate-500 flex items-center gap-1">
