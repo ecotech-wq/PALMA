@@ -146,9 +146,14 @@ export function GanttChartV2({
     const maxD = startOfDay(
       new Date(Math.max(...allDates.map((d) => d.getTime())))
     );
-    // Marges : 7 jours avant/après pour pouvoir drag à l'extérieur
-    const min = addDays(minD, -7);
-    const max = addDays(maxD, 14);
+    // Marges proportionnelles à l'échelle : en mode « mois » (4 px/jour),
+    // 14 jours ne remplissaient pas l'écran et les mois suivants
+    // n'apparaissaient pas (constat Youssoufou). On étend aussi la marge
+    // avant pour pouvoir replanifier en arrière.
+    const margeAvant = scale === "jour" ? 7 : scale === "semaine" ? 21 : 45;
+    const margeApres = scale === "jour" ? 21 : scale === "semaine" ? 70 : 200;
+    const min = addDays(minD, -margeAvant);
+    const max = addDays(maxD, margeApres);
     const total = Math.max(14, daysBetween(min, max) + 1);
     const lw = 200;
     const ds: Date[] = [];
@@ -186,7 +191,7 @@ export function GanttChartV2({
       months: ms,
       weeks: ws,
     };
-  }, [taches, visibleEvents]);
+  }, [taches, visibleEvents, scale]);
 
   if (taches.length === 0 && events.length === 0) {
     return (
@@ -228,6 +233,14 @@ export function GanttChartV2({
     if (!canEdit) return;
     e.preventDefault();
     e.stopPropagation();
+    // Capture du pointeur : fiable au tactile (le doigt peut sortir de la
+    // barre sans perdre le drag). Voir CalendarMonth pour le meme motif.
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* indisponible : on continue sans */
+    }
+    const pointerId = e.pointerId;
 
     const startX = e.clientX;
     const startY = e.clientY;
@@ -241,6 +254,7 @@ export function GanttChartV2({
     let lastDuration = initDuration;
 
     function onMove(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return;
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
       if (!moved && Math.hypot(dx, dy) > 5) {
@@ -310,9 +324,21 @@ export function GanttChartV2({
       });
     }
 
-    function onUp() {
+    function onCancel(ev: PointerEvent) {
+      // Interruption (2e doigt, notification, geste systeme) : on annule
+      // sans sauvegarder.
+      if (ev.pointerId !== pointerId) return;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      clearOverride();
+    }
+
+    function onUp(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
 
       const elapsed = Date.now() - startTime;
 
@@ -354,6 +380,7 @@ export function GanttChartV2({
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
   }
 
   /** Drag d'un event (livraison commande / fin location). Plus simple
@@ -362,6 +389,12 @@ export function GanttChartV2({
     if (!canEdit) return;
     e.preventDefault();
     e.stopPropagation();
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* indisponible : on continue sans */
+    }
+    const pointerId = e.pointerId;
     const startX = e.clientX;
     const startY = e.clientY;
     const initOffset = daysBetween(minDate, new Date(ev.date));
@@ -371,6 +404,7 @@ export function GanttChartV2({
     let lastOffset = initOffset;
 
     function onMove(mv: PointerEvent) {
+      if (mv.pointerId !== pointerId) return;
       const dx = mv.clientX - startX;
       const dy = mv.clientY - startY;
       if (!moved && Math.hypot(dx, dy) > 5) moved = true;
@@ -396,9 +430,19 @@ export function GanttChartV2({
       });
     }
 
-    function onUp() {
+    function onCancel(cv: PointerEvent) {
+      if (cv.pointerId !== pointerId) return;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      clearOverride();
+    }
+
+    function onUp(uv: PointerEvent) {
+      if (uv.pointerId !== pointerId) return;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
       if (!moved) return;
 
       const newDate = addDays(minDate, lastOffset);
@@ -426,6 +470,7 @@ export function GanttChartV2({
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
   }
 
   const todayOffset = daysBetween(minDate, startOfDay(new Date()));
@@ -539,7 +584,7 @@ export function GanttChartV2({
         className="overflow-x-auto overscroll-x-contain"
         style={{ WebkitOverflowScrolling: "touch" }}
       >
-        <div style={{ minWidth: labelWidth + totalDays * dayWidth }}>
+        <div style={{ minWidth: `max(100%, ${labelWidth + totalDays * dayWidth}px)` }}>
           {/* Header */}
           <div className="flex sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
             <div
@@ -694,9 +739,17 @@ export function GanttChartV2({
               const offset = offsetFor(t);
               const duration = durationFor(t);
               const left = offset * dayWidth;
-              const width = duration * dayWidth - 4;
+              // Largeur mini 8 px : à l'échelle « mois » (4 px/jour) une tâche
+              // d'un jour devenait invisible (0 px).
+              const width = Math.max(8, duration * dayWidth - 4);
               const done = t.statut === "TERMINEE";
               const isSubtask = !!t.parentId;
+              // Poignées seulement si la barre est assez large pour les
+              // porter (2 x 12 px + une zone de déplacement). Sur une barre
+              // étroite elles se chevauchaient : on croyait tirer un bout et
+              // on déplaçait l'autre (constat Youssoufou en échelle mois).
+              // Barre étroite : déplacement entier + ajustement par la modale.
+              const showHandles = canEdit && width >= 44;
               return (
                 <div
                   key={t.id}
@@ -781,7 +834,7 @@ export function GanttChartV2({
                       title={`${t.nom} — ${t.avancement}% · cliquer pour modifier · glisser les bords pour redimensionner`}
                     >
                       {/* Poignée gauche (resize start) — large, visible */}
-                      {canEdit && (
+                      {showHandles && (
                         <div
                           onPointerDown={(e) => {
                             e.stopPropagation();
@@ -795,7 +848,7 @@ export function GanttChartV2({
                         </div>
                       )}
                       {/* Poignée droite (resize end) — large, visible */}
-                      {canEdit && (
+                      {showHandles && (
                         <div
                           onPointerDown={(e) => {
                             e.stopPropagation();
