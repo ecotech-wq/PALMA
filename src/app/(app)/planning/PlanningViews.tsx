@@ -8,9 +8,10 @@ import { KanbanBoard } from "./KanbanBoard";
 import { TacheListTodoist, type SectionItem } from "./TacheListTodoist";
 import { TacheEditModal, type TacheForEdit } from "./TacheEditModal";
 import { CalendarMonth } from "./CalendarMonth";
+import { PertChart } from "./PertChart";
 import { quickCreateAt } from "./actions";
 
-type Vue = "gantt" | "liste" | "kanban" | "calendrier";
+type Vue = "gantt" | "liste" | "kanban" | "calendrier" | "pert";
 
 type FullTache = TacheForEdit & {
   equipe: { id: string; nom: string } | null;
@@ -29,9 +30,10 @@ type Event = {
 };
 
 /**
- * Wrapper client qui partage l'état d'édition (modale) entre les trois
- * vues Gantt / Kanban / Liste. Un clic sur n'importe quelle tâche (barre
- * Gantt, card Kanban, ou bouton Détail Liste) ouvre la même modale.
+ * Wrapper client qui partage l'état d'édition (modale) entre les vues
+ * Gantt / Kanban / Calendrier / PERT / Liste. Un clic sur n'importe quelle
+ * tâche (barre Gantt, card Kanban, carte PERT, ou bouton Détail Liste)
+ * ouvre la même modale.
  */
 export function PlanningViews({
   view,
@@ -165,6 +167,24 @@ export function PlanningViews({
             chantier: t.chantier,
           }))}
           events={events}
+        />
+      )}
+
+      {view === "pert" && (
+        <PertChart
+          canEdit={canEdit}
+          onClickTask={canEdit ? (id) => setEditingId(id) : undefined}
+          taches={taches.map((t) => ({
+            id: t.id,
+            nom: t.nom,
+            dateDebut: t.dateDebut,
+            dateFin: t.dateFin,
+            avancement: t.avancement,
+            statut: t.statut,
+            equipe: t.equipe,
+            chantier: t.chantier,
+            dependances: t.dependances,
+          }))}
         />
       )}
 

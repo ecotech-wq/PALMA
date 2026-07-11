@@ -2,10 +2,42 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Flag, Package, Truck, Info } from "lucide-react";
+import {
+  AlertTriangle,
+  Flag,
+  Info,
+  Link2,
+  Package,
+  Truck,
+  X,
+} from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
-import { deplacerTache, deplacerEvenement } from "./actions";
+import {
+  ajouterDependance,
+  decalerTacheAvecSuccesseurs,
+  deplacerEvenement,
+  deplacerTache,
+  retirerDependance,
+} from "./actions";
+import { addDays, daysBetween, startOfDay } from "./gantt/dates";
+import {
+  construireEchelle,
+  DAY_WIDTH,
+  ECHELLES,
+  type Echelle,
+} from "./gantt/echelle";
+import {
+  construireSuccesseurs,
+  creeraitUnCycle,
+  successeursTransitifs,
+} from "./gantt/dependances";
+import {
+  CoucheDependances,
+  pointMilieuFleche,
+  type FlecheDep,
+  type LienElastique,
+} from "./gantt/CoucheDependances";
 
 type Tache = {
   id: string;
@@ -17,7 +49,7 @@ type Tache = {
   priorite: number;
   parentId: string | null;
   equipe: { nom: string } | null;
-  chantier: { nom: string };
+  chantier: { id?: string; nom: string };
   /** IDs des prédécesseurs (la tâche dépend d'eux). */
   dependances?: { id: string }[];
 };
@@ -31,8 +63,6 @@ type ExtraEvent = {
   label: string;
   date: Date | string;
 };
-
-const ONE_DAY = 24 * 60 * 60 * 1000;
 
 const statutBgColor: Record<string, string> = {
   A_FAIRE: "bg-slate-400",
@@ -55,46 +85,30 @@ const PRIO_FLAG: Record<number, string> = {
   4: "fill-transparent stroke-slate-400 text-slate-400",
 };
 
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
+// Hauteur d'une ligne Gantt (doit matcher le style height: 44 des cellules)
+const ROW_H = 44;
 
-function daysBetween(a: Date, b: Date): number {
-  return Math.round(
-    (startOfDay(b).getTime() - startOfDay(a).getTime()) / ONE_DAY
-  );
-}
+// Persistance locale du réglage « Entraîner les successeurs »
+const LS_ENTRAINER = "lynx.gantt.entrainerSuccesseurs";
 
-function addDays(d: Date, n: number): Date {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-/** Numéro de semaine ISO (1..53) — utile en mode "semaine". */
-function getISOWeek(d: Date): number {
-  const target = new Date(d.valueOf());
-  const dayNr = (d.getDay() + 6) % 7; // 0 = lundi
-  target.setDate(target.getDate() - dayNr + 3);
-  const firstThursday = target.valueOf();
-  target.setMonth(0, 1);
-  if (target.getDay() !== 4) {
-    target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
-  }
-  return 1 + Math.ceil((firstThursday - target.valueOf()) / (7 * 24 * 3600 * 1000));
+/** Clé de comparaison chantier (id si présent, sinon nom). */
+function chantierKey(c: { id?: string; nom: string }): string {
+  return c.id ?? c.nom;
 }
 
 /**
- * Gantt interactif style Monday.com :
- *  - Drag du milieu de la barre = déplacer (shift)
+ * Gantt interactif façon Monday.com :
+ *  - Drag du milieu de la barre = déplacer (et, si le réglage
+ *    « Entraîner les successeurs » est actif, décaler du même delta
+ *    toutes les tâches qui en dépendent, directement ou non)
  *  - Drag des bords = redimensionner (resize start/end)
- *  - Snap au jour
- *  - Sauvegarde en BDD via deplacerTache au pointerup
- *  - Ligne "aujourd'hui" rouge verticale
- *  - Drapeaux de priorité dans le label
+ *  - Ports circulaires aux extrémités : tirer une flèche élastique vers
+ *    une autre barre pour créer une dépendance (détection de cycle)
+ *  - Clic sur une flèche = sélection, bouton croix pour la supprimer
+ *  - Liseré rouge : tâche non terminée dont la fin est passée (retard)
+ *  - Snap au jour, sauvegarde en BDD au pointerup
+ *  - Ligne « aujourd'hui » rouge + bouton pour la recentrer
+ *  - Échelles jour / semaine / mois / trimestre
  */
 export function GanttChartV2({
   taches,
@@ -115,6 +129,11 @@ export function GanttChartV2({
   const router = useRouter();
   const toast = useToast();
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const rowsRef = useRef<HTMLDivElement | null>(null);
+  // Garde multi-touch : un seul geste (barre, poignée, port, événement)
+  // à la fois. Un second doigt est ignoré tant que le premier est actif.
+  const activeDragRef = useRef(false);
+
   // Position temporaire pendant le drag ; apres sauvegarde, `cible` note les
   // dates envoyees au serveur : l'override n'est retire que quand les props
   // rafraichies les ont rattrapees (sinon la barre revenait un instant a sa
@@ -130,15 +149,59 @@ export function GanttChartV2({
   const [eventOverrides, setEventOverrides] = useState<
     Record<string, { offset: number; cible?: number }>
   >({});
+
   // UI : échelle temporelle + visibilité des events
-  const [scale, setScale] = useState<"jour" | "semaine" | "mois">("jour");
+  const [scale, setScale] = useState<Echelle>("jour");
   const [showEvents, setShowEvents] = useState(false);
 
+  // « Entraîner les successeurs » (mode flexible de Monday) : actif par
+  // défaut, persisté en localStorage. Lu en effet (pas au premier rendu)
+  // pour éviter tout écart d'hydratation SSR/client.
+  const [entrainerSuccesseurs, setEntrainerSuccesseurs] = useState(true);
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem(LS_ENTRAINER);
+      if (v !== null) setEntrainerSuccesseurs(v === "1");
+    } catch {
+      /* stockage indisponible : on garde le défaut */
+    }
+  }, []);
+  function toggleEntrainer() {
+    const next = !entrainerSuccesseurs;
+    setEntrainerSuccesseurs(next);
+    try {
+      window.localStorage.setItem(LS_ENTRAINER, next ? "1" : "0");
+    } catch {
+      /* stockage indisponible : réglage non persisté */
+    }
+  }
+
+  // Dépendances : ports épinglés (tap mobile), tirage de lien en cours,
+  // flèche sélectionnée, ajouts/retraits optimistes (anti-flash).
+  const [portsPinnedId, setPortsPinnedId] = useState<string | null>(null);
+  const [linkSourceId, setLinkSourceId] = useState<string | null>(null);
+  const [linkLine, setLinkLine] = useState<LienElastique | null>(null);
+  const [linkTargetId, setLinkTargetId] = useState<string | null>(null);
+  const [linkInvalid, setLinkInvalid] = useState(false);
+  const [selectedDep, setSelectedDep] = useState<
+    { tacheId: string; depId: string } | null
+  >(null);
+  // Flèches affichées avant confirmation serveur (clé anti-flash : on ne
+  // retire l'ajout que quand les props le contiennent, et on ne réaffiche
+  // un retrait que si le serveur a échoué).
+  const [optimisticDeps, setOptimisticDeps] = useState<
+    { tacheId: string; depId: string }[]
+  >([]);
+  const [removedDeps, setRemovedDeps] = useState<string[]>([]);
+
   // Largeur d'un jour selon l'échelle
-  const dayWidth = scale === "jour" ? 32 : scale === "semaine" ? 10 : 4;
+  const dayWidth = DAY_WIDTH[scale];
 
   // Events filtrés (cachés par défaut, encombrent souvent la vue)
-  const visibleEvents = showEvents ? events : [];
+  const visibleEvents = useMemo(
+    () => (showEvents ? events : []),
+    [showEvents, events]
+  );
 
   // -- Calcul de l'échelle temporelle ---------------------------------------
   const { minDate, totalDays, labelWidth, days, months, weeks } = useMemo(() => {
@@ -147,59 +210,22 @@ export function GanttChartV2({
       allDates.push(new Date(t.dateDebut), new Date(t.dateFin));
     });
     visibleEvents.forEach((e) => allDates.push(new Date(e.date)));
-    if (allDates.length === 0) allDates.push(new Date());
-    const minD = startOfDay(
-      new Date(Math.min(...allDates.map((d) => d.getTime())))
-    );
-    const maxD = startOfDay(
-      new Date(Math.max(...allDates.map((d) => d.getTime())))
-    );
-    // Marges proportionnelles à l'échelle : en mode « mois » (4 px/jour),
-    // 14 jours ne remplissaient pas l'écran et les mois suivants
-    // n'apparaissaient pas (constat Youssoufou). On étend aussi la marge
-    // avant pour pouvoir replanifier en arrière.
-    const margeAvant = scale === "jour" ? 7 : scale === "semaine" ? 21 : 45;
-    const margeApres = scale === "jour" ? 21 : scale === "semaine" ? 70 : 200;
-    const min = addDays(minD, -margeAvant);
-    const max = addDays(maxD, margeApres);
-    const total = Math.max(14, daysBetween(min, max) + 1);
-    const lw = 200;
-    const ds: Date[] = [];
-    for (let i = 0; i < total; i++) ds.push(addDays(min, i));
-    const ms: { label: string; daysCount: number }[] = [];
-    for (const d of ds) {
-      const label = d.toLocaleDateString("fr-FR", {
-        month: "long",
-        year: "numeric",
-      });
-      const last = ms[ms.length - 1];
-      if (last && last.label === label) last.daysCount++;
-      else ms.push({ label, daysCount: 1 });
-    }
-    // Groupement par semaine (utile en mode "semaine")
-    const ws: { label: string; daysCount: number; startIdx: number }[] = [];
-    let cur: typeof ws[number] | null = null;
-    ds.forEach((d, i) => {
-      // Lundi = nouveau segment (ou premier élément)
-      const isMonday = d.getDay() === 1;
-      if (!cur || isMonday) {
-        if (cur) ws.push(cur);
-        const wNum = getISOWeek(d);
-        cur = { label: `S${wNum}`, daysCount: 1, startIdx: i };
-      } else {
-        cur.daysCount++;
-      }
-    });
-    if (cur) ws.push(cur);
-    return {
-      minDate: min,
-      totalDays: total,
-      labelWidth: lw,
-      days: ds,
-      months: ms,
-      weeks: ws,
-    };
+    return construireEchelle(allDates, scale);
   }, [taches, visibleEvents, scale]);
+
+  // Segments mois avec index de départ (bandeau + traits du mode trimestre)
+  const monthSegs = useMemo(() => {
+    let acc = 0;
+    return months.map((m) => {
+      const seg = { ...m, startIdx: acc };
+      acc += m.daysCount;
+      return seg;
+    });
+  }, [months]);
+
+  // Graphe des successeurs (id -> tâches qui dépendent de id), pour
+  // entraîner visuellement les successeurs pendant le drag.
+  const successeursMap = useMemo(() => construireSuccesseurs(taches), [taches]);
 
   // Retire les overrides sauvegardes une fois les props a jour (anti-flash).
   useEffect(() => {
@@ -240,6 +266,28 @@ export function GanttChartV2({
     });
   }, [events]);
 
+  // Purge des dépendances optimistes rattrapées par les props (anti-flash) :
+  // un ajout disparaît de la liste locale quand les props le contiennent,
+  // un retrait quand les props ne le contiennent plus.
+  useEffect(() => {
+    setOptimisticDeps((prev) => {
+      const next = prev.filter((od) => {
+        const t = taches.find((x) => x.id === od.tacheId);
+        if (!t) return false;
+        return !t.dependances?.some((d) => d.id === od.depId);
+      });
+      return next.length === prev.length ? prev : next;
+    });
+    setRemovedDeps((prev) => {
+      const next = prev.filter((key) => {
+        const [tid, did] = key.split("|");
+        const t = taches.find((x) => x.id === tid);
+        return !!t?.dependances?.some((d) => d.id === did);
+      });
+      return next.length === prev.length ? prev : next;
+    });
+  }, [taches]);
+
   if (taches.length === 0 && events.length === 0) {
     return (
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-10 text-center text-sm text-slate-500">
@@ -269,8 +317,13 @@ export function GanttChartV2({
    *
    *  Click vs drag :
    *  - Si le pointer ne bouge pas de plus de 5 px ET que pointerup
-   *    intervient en moins de 350 ms → c'est un CLIC, on ouvre l'édition.
+   *    intervient en moins de 600 ms → c'est un CLIC, on ouvre l'édition.
    *  - Sinon → drag, on sauvegarde les nouvelles dates au pointerup.
+   *
+   *  En mode "move" avec « Entraîner les successeurs » actif, toutes les
+   *  tâches qui dépendent (transitivement) de la barre suivent le même
+   *  delta, à l'écran pendant le drag et en base au relâcher (action
+   *  decalerTacheAvecSuccesseurs, transactionnelle).
    */
   function startDrag(
     tache: Tache,
@@ -278,8 +331,15 @@ export function GanttChartV2({
     e: React.PointerEvent
   ) {
     if (!canEdit) return;
+    // Garde multi-touch : un seul geste à la fois.
+    if (activeDragRef.current) return;
+    activeDragRef.current = true;
     e.preventDefault();
     e.stopPropagation();
+    // Tap sur une barre : fait apparaître les ports de dépendance (mobile),
+    // et désélectionne une éventuelle flèche.
+    setPortsPinnedId(tache.id);
+    setSelectedDep(null);
     // Capture du pointeur : fiable au tactile (le doigt peut sortir de la
     // barre sans perdre le drag). Voir CalendarMonth pour le meme motif.
     try {
@@ -299,6 +359,18 @@ export function GanttChartV2({
     // d'une lecture du state à l'intérieur d'un updater.
     let lastOffset = initOffset;
     let lastDuration = initDuration;
+    let lastDelta = 0;
+
+    // Successeurs entraînés (mode move + réglage actif) : positions de
+    // départ figées au début du geste.
+    const entrainer = mode === "move" && entrainerSuccesseurs;
+    const succInit: { id: string; offset: number; duration: number }[] = [];
+    if (entrainer) {
+      for (const id of successeursTransitifs(tache.id, successeursMap)) {
+        const s = taches.find((x) => x.id === id);
+        if (s) succInit.push({ id, offset: offsetFor(s), duration: durationFor(s) });
+      }
+    }
 
     function onMove(ev: PointerEvent) {
       if (ev.pointerId !== pointerId) return;
@@ -357,16 +429,32 @@ export function GanttChartV2({
       }
       lastOffset = nextOffset;
       lastDuration = nextDuration;
-      setOverrides((prev) => ({
-        ...prev,
-        [tache.id]: { offset: nextOffset, duration: nextDuration },
-      }));
+      lastDelta = mode === "move" ? nextOffset - initOffset : 0;
+      setOverrides((prev) => {
+        const next = {
+          ...prev,
+          [tache.id]: { offset: nextOffset, duration: nextDuration },
+        };
+        // Entraîne visuellement les successeurs du même delta (bornés à
+        // la grille pour l'affichage ; le serveur reçoit le delta exact).
+        for (const s of succInit) {
+          next[s.id] = {
+            offset: Math.max(
+              0,
+              Math.min(s.offset + lastDelta, totalDays - s.duration)
+            ),
+            duration: s.duration,
+          };
+        }
+        return next;
+      });
     }
 
     function clearOverride() {
       setOverrides((p) => {
         const n = { ...p };
         delete n[tache.id];
+        for (const s of succInit) delete n[s.id];
         return n;
       });
     }
@@ -378,6 +466,7 @@ export function GanttChartV2({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
+      activeDragRef.current = false;
       clearOverride();
     }
 
@@ -386,6 +475,7 @@ export function GanttChartV2({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
+      activeDragRef.current = false;
 
       const elapsed = Date.now() - startTime;
 
@@ -412,18 +502,46 @@ export function GanttChartV2({
         clearOverride();
         return;
       }
-      deplacerTache(tache.id, newStart, newEnd)
+
+      // Anti-flash : on garde les overrides à l'écran, annotés de leur
+      // cible ; l'effet les retirera quand les props auront rattrapé.
+      function poserCibles() {
+        setOverrides((prev) => {
+          const next = { ...prev };
+          next[tache.id] = {
+            offset: lastOffset,
+            duration: lastDuration,
+            cible: { debut: newStart.getTime(), fin: newEnd.getTime() },
+          };
+          for (const s of succInit) {
+            const sDebut = addDays(minDate, s.offset + lastDelta);
+            const sFin = addDays(sDebut, s.duration - 1);
+            next[s.id] = {
+              offset: Math.max(
+                0,
+                Math.min(s.offset + lastDelta, totalDays - s.duration)
+              ),
+              duration: s.duration,
+              cible: { debut: sDebut.getTime(), fin: sFin.getTime() },
+            };
+          }
+          return next;
+        });
+      }
+
+      const sauvegarde =
+        mode === "move"
+          ? decalerTacheAvecSuccesseurs(
+              tache.id,
+              newStart,
+              newEnd,
+              entrainerSuccesseurs
+            )
+          : deplacerTache(tache.id, newStart, newEnd);
+
+      sauvegarde
         .then(() => {
-          // On garde l'override a l'ecran et on note la cible : l'effet le
-          // retirera quand les props rafraichies seront identiques.
-          setOverrides((prev) => ({
-            ...prev,
-            [tache.id]: {
-              offset: lastOffset,
-              duration: lastDuration,
-              cible: { debut: newStart.getTime(), fin: newEnd.getTime() },
-            },
-          }));
+          poserCibles();
           router.refresh();
         })
         .catch((err: unknown) => {
@@ -443,6 +561,8 @@ export function GanttChartV2({
    *  qu'une tâche : pas de resize, juste shift de la date. */
   function startEventDrag(ev: ExtraEvent, e: React.PointerEvent) {
     if (!canEdit) return;
+    if (activeDragRef.current) return;
+    activeDragRef.current = true;
     e.preventDefault();
     e.stopPropagation();
     try {
@@ -456,7 +576,7 @@ export function GanttChartV2({
     const initOffset = daysBetween(minDate, new Date(ev.date));
     let moved = false;
     // On suit la position courante via closure plutôt qu'en lisant le
-    // state — évite d'appeler router.refresh() depuis un updater.
+    // state : évite d'appeler router.refresh() depuis un updater.
     let lastOffset = initOffset;
 
     function onMove(mv: PointerEvent) {
@@ -491,6 +611,7 @@ export function GanttChartV2({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
+      activeDragRef.current = false;
       clearOverride();
     }
 
@@ -499,6 +620,7 @@ export function GanttChartV2({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
+      activeDragRef.current = false;
       if (!moved) return;
 
       const newDate = addDays(minDate, lastOffset);
@@ -532,50 +654,234 @@ export function GanttChartV2({
     window.addEventListener("pointercancel", onCancel);
   }
 
-  const todayOffset = daysBetween(minDate, startOfDay(new Date()));
-  const todayLeft = todayOffset >= 0 && todayOffset < totalDays
-    ? todayOffset * dayWidth + dayWidth / 2
-    : null;
+  /**
+   * Tirage d'un lien de dépendance depuis un port (rond aux extrémités
+   * d'une barre) vers une autre barre. Port droit : la cible dépendra de
+   * la source (fin -> début). Port gauche : la source dépendra de la cible.
+   */
+  function startLinkDrag(
+    source: Tache,
+    side: "gauche" | "droite",
+    rowIndex: number,
+    e: React.PointerEvent
+  ) {
+    if (!canEdit) return;
+    if (activeDragRef.current) return;
+    activeDragRef.current = true;
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* indisponible : on continue sans */
+    }
+    const pointerId = e.pointerId;
+    const barLeft = offsetFor(source) * dayWidth;
+    const barWidth = Math.max(8, durationFor(source) * dayWidth - 4);
+    const x0 = side === "droite" ? barLeft + barWidth : barLeft;
+    const y0 = rowIndex * ROW_H + ROW_H / 2;
+    // Cible courante suivie en closure (l'état ne sert qu'au rendu).
+    let cibleId: string | null = null;
+    let cibleInvalide = false;
 
-  // Hauteur d'une ligne Gantt (doit matcher h-44 + bordure)
-  const ROW_H = 44;
+    setLinkSourceId(source.id);
+    setPortsPinnedId(source.id);
+    setSelectedDep(null);
+    setLinkLine({ x0, y0, x1: x0, y1: y0 });
+
+    function coords(ev: PointerEvent) {
+      const rows = rowsRef.current;
+      if (!rows) return { x: x0, y: y0 };
+      const rect = rows.getBoundingClientRect();
+      return { x: ev.clientX - rect.left - labelWidth, y: ev.clientY - rect.top };
+    }
+
+    function onMove(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return;
+      const scroller = scrollRef.current;
+      if (scroller) {
+        const rect = scroller.getBoundingClientRect();
+        const EDGE = 60;
+        if (ev.clientX > rect.right - EDGE) scroller.scrollLeft += 8;
+        else if (ev.clientX < rect.left + EDGE) scroller.scrollLeft -= 8;
+      }
+      // Ligne cible sous le doigt (même motif que CalendarMonth :
+      // elementFromPoint + closest sur un data-attribute).
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const row = el?.closest?.("[data-lienrow]") as HTMLElement | null;
+      const id = row?.dataset.lienrow ?? null;
+      if (id && id !== source.id) {
+        const t = taches.find((x) => x.id === id);
+        cibleId = t ? id : null;
+        cibleInvalide =
+          !!t && chantierKey(t.chantier) !== chantierKey(source.chantier);
+      } else {
+        cibleId = null;
+        cibleInvalide = false;
+      }
+      const p = coords(ev);
+      setLinkLine({ x0, y0, x1: p.x, y1: p.y });
+      setLinkTargetId(cibleId);
+      setLinkInvalid(cibleInvalide);
+    }
+
+    function fin() {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      activeDragRef.current = false;
+      setLinkLine(null);
+      setLinkTargetId(null);
+      setLinkInvalid(false);
+      setLinkSourceId(null);
+    }
+
+    function onCancel(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return;
+      fin();
+    }
+
+    function onUp(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return;
+      fin();
+      if (!cibleId) return;
+      const cible = taches.find((x) => x.id === cibleId);
+      if (!cible) return;
+      if (cibleInvalide) {
+        toast.error(
+          "Impossible : les deux tâches doivent appartenir au même chantier."
+        );
+        return;
+      }
+      // Port droit : la cible dépend de la source. Port gauche : l'inverse.
+      const tacheId = side === "droite" ? cible.id : source.id;
+      const depId = side === "droite" ? source.id : cible.id;
+      const dejaProps = taches
+        .find((x) => x.id === tacheId)
+        ?.dependances?.some((d) => d.id === depId);
+      const dejaOptimiste = optimisticDeps.some(
+        (x) => x.tacheId === tacheId && x.depId === depId
+      );
+      if (dejaProps || dejaOptimiste) {
+        toast.info("Cette dépendance existe déjà.");
+        return;
+      }
+      // Pré-contrôle client du cycle (le serveur refait la vérification
+      // en base, qui reste l'autorité).
+      if (creeraitUnCycle(tacheId, depId, taches)) {
+        toast.error("Impossible : cela créerait un cycle de dépendances.");
+        return;
+      }
+      // Anti-flash : la flèche apparaît tout de suite et n'est retirée
+      // que quand les props rafraîchies la contiennent (ou sur erreur).
+      setOptimisticDeps((prev) => [...prev, { tacheId, depId }]);
+      ajouterDependance(tacheId, depId)
+        .then(() => router.refresh())
+        .catch((err: unknown) => {
+          setOptimisticDeps((prev) =>
+            prev.filter((x) => !(x.tacheId === tacheId && x.depId === depId))
+          );
+          toast.error(
+            err instanceof Error
+              ? err.message
+              : "Erreur lors de la création de la dépendance"
+          );
+        });
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  }
+
+  /** Suppression d'une flèche sélectionnée (bouton croix + confirmation). */
+  function supprimerDependance(tacheId: string, depId: string) {
+    if (!window.confirm("Supprimer cette dépendance ?")) return;
+    const key = `${tacheId}|${depId}`;
+    setSelectedDep(null);
+    // Anti-flash inversé : la flèche disparaît tout de suite ; elle ne
+    // réapparaît que si le serveur échoue.
+    setRemovedDeps((prev) => [...prev, key]);
+    setOptimisticDeps((prev) =>
+      prev.filter((x) => !(x.tacheId === tacheId && x.depId === depId))
+    );
+    retirerDependance(tacheId, depId)
+      .then(() => router.refresh())
+      .catch((err: unknown) => {
+        setRemovedDeps((prev) => prev.filter((k) => k !== key));
+        toast.error(
+          err instanceof Error
+            ? err.message
+            : "Erreur lors de la suppression de la dépendance"
+        );
+      });
+  }
+
+  const todayStart = startOfDay(new Date());
+  const todayOffset = daysBetween(minDate, todayStart);
+  const todayLeft =
+    todayOffset >= 0 && todayOffset < totalDays
+      ? todayOffset * dayWidth + dayWidth / 2
+      : null;
+
+  /** Recentre la vue sur la ligne « aujourd'hui ». */
+  function scrollToToday() {
+    const el = scrollRef.current;
+    if (!el || todayLeft === null) return;
+    el.scrollTo({
+      left: Math.max(0, labelWidth + todayLeft - el.clientWidth / 2),
+      behavior: "smooth",
+    });
+  }
+
   // Index par id pour résoudre les dépendances (numéro de ligne)
   const taskRowIndex = new Map(taches.map((t, i) => [t.id, i]));
 
-  // Construit les flèches de dépendance : pour chaque tache T et chaque
-  // dep D, ligne de (right de D, milieu) → (left de T, milieu).
-  type Arrow = {
-    fromX: number;
-    fromY: number;
-    toX: number;
-    toY: number;
-    blocking: boolean;
-  };
-  const arrows: Arrow[] = [];
-  taches.forEach((t, ti) => {
-    if (!t.dependances || t.dependances.length === 0) return;
-    const tStart = offsetFor(t) * dayWidth;
-    const tCenterY = ti * ROW_H + ROW_H / 2;
-    for (const dep of t.dependances) {
-      const di = taskRowIndex.get(dep.id);
-      if (di === undefined) continue;
-      const d = taches[di];
-      const dEnd = (offsetFor(d) + durationFor(d)) * dayWidth - 2;
-      const dCenterY = di * ROW_H + ROW_H / 2;
-      // "Bloquante" si la dep n'est pas terminée ET sa fin est après le
-      // début de t (timing impossible).
-      const blocking =
-        d.statut !== "TERMINEE" &&
-        new Date(d.dateFin) > new Date(t.dateDebut);
-      arrows.push({
-        fromX: dEnd,
-        fromY: dCenterY,
-        toX: tStart,
-        toY: tCenterY,
-        blocking,
-      });
+  // Construit les flèches : dépendances des props (hors retraits
+  // optimistes) + ajouts optimistes pas encore rattrapés par les props.
+  const fleches: FlecheDep[] = [];
+  function pousserFleche(tacheId: string, depId: string, optimiste: boolean) {
+    const ti = taskRowIndex.get(tacheId);
+    const di = taskRowIndex.get(depId);
+    if (ti === undefined || di === undefined) return;
+    const t = taches[ti];
+    const d = taches[di];
+    // "Bloquante" si la dep n'est pas terminée ET sa fin (affichée) est
+    // après le début de t : timing impossible. Basé sur les offsets pour
+    // suivre les barres en direct pendant un drag.
+    const bloquante =
+      d.statut !== "TERMINEE" &&
+      offsetFor(d) + durationFor(d) - 1 > offsetFor(t);
+    fleches.push({
+      tacheId,
+      depId,
+      fromX: (offsetFor(d) + durationFor(d)) * dayWidth - 2,
+      fromY: di * ROW_H + ROW_H / 2,
+      toX: offsetFor(t) * dayWidth,
+      toY: ti * ROW_H + ROW_H / 2,
+      bloquante,
+      optimiste,
+    });
+  }
+  taches.forEach((t) => {
+    for (const dep of t.dependances ?? []) {
+      if (removedDeps.includes(`${t.id}|${dep.id}`)) continue;
+      pousserFleche(t.id, dep.id, false);
     }
   });
+  for (const od of optimisticDeps) {
+    if (removedDeps.includes(`${od.tacheId}|${od.depId}`)) continue;
+    const deja = taches
+      .find((x) => x.id === od.tacheId)
+      ?.dependances?.some((d) => d.id === od.depId);
+    if (!deja) pousserFleche(od.tacheId, od.depId, true);
+  }
+  const flecheSelectionnee = selectedDep
+    ? fleches.find(
+        (a) =>
+          a.tacheId === selectedDep.tacheId && a.depId === selectedDep.depId
+      ) ?? null
+    : null;
 
   // Scroll horizontal molette (Shift+wheel ou trackpad horizontal)
   function handleWheel(e: React.WheelEvent<HTMLDivElement>) {
@@ -591,12 +897,23 @@ export function GanttChartV2({
     }
   }
 
+  /** Clic sur le fond : désélectionne la flèche et dépingle les ports
+   *  (les gestes sur barres/ports/flèches stoppent la propagation). */
+  function onFondPointerDown(e: React.PointerEvent) {
+    const el = e.target as Element | null;
+    if (!el) return;
+    if (!el.closest?.("[data-arrow-ui]")) setSelectedDep(null);
+    if (!el.closest?.("[data-port]") && !el.closest?.("[data-barre]")) {
+      setPortsPinnedId(null);
+    }
+  }
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-      {/* Toolbar : échelle + visibilité events */}
-      <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 flex-wrap">
+      {/* Toolbar : échelle + aujourd'hui + successeurs + visibilité events */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 flex-wrap">
         <div className="inline-flex rounded-md overflow-hidden border border-slate-300 dark:border-slate-700 text-xs">
-          {(["jour", "semaine", "mois"] as const).map((s, i) => (
+          {ECHELLES.map((s, i) => (
             <button
               key={s}
               type="button"
@@ -613,8 +930,34 @@ export function GanttChartV2({
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          onClick={scrollToToday}
+          disabled={todayLeft === null}
+          title="Recentrer la vue sur la ligne rouge (aujourd'hui)"
+          className="px-3 py-1 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Aujourd&apos;hui
+        </button>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={toggleEntrainer}
+            aria-pressed={entrainerSuccesseurs}
+            title="Quand une barre est déplacée, décaler du même nombre de jours toutes les tâches qui en dépendent (directement ou non)"
+            className={cn(
+              "inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded-md border transition",
+              entrainerSuccesseurs
+                ? "bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100 font-medium"
+                : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+            )}
+          >
+            <Link2 size={13} className="shrink-0" />
+            Entraîner les successeurs
+          </button>
+        )}
         {events.length > 0 && (
-          <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+          <label className="ml-auto inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
             <input
               type="checkbox"
               checked={showEvents}
@@ -640,6 +983,7 @@ export function GanttChartV2({
       <div
         ref={scrollRef}
         onWheel={handleWheel}
+        onPointerDown={onFondPointerDown}
         className="overflow-x-auto overscroll-x-contain"
         style={{ WebkitOverflowScrolling: "touch" }}
       >
@@ -655,24 +999,24 @@ export function GanttChartV2({
             <div className="flex-1 relative">
               {/* Toujours : bandeau mois */}
               <div className="flex border-b border-slate-200 dark:border-slate-800">
-                {months.map((m, i) => (
+                {monthSegs.map((m, i) => (
                   <div
                     key={i}
-                    className="text-xs font-semibold text-slate-600 capitalize px-2 py-1 border-r border-slate-200 dark:border-slate-800 last:border-r-0 truncate"
+                    className="text-xs font-semibold text-slate-600 dark:text-slate-400 capitalize px-2 py-1 border-r border-slate-200 dark:border-slate-800 last:border-r-0 truncate"
                     style={{ width: m.daysCount * dayWidth }}
                   >
                     {m.label}
                   </div>
                 ))}
               </div>
-              {/* 2e bandeau : jours (jour) / semaines (semaine) / rien (mois) */}
+              {/* 2e bandeau : jours (jour) / semaines (semaine) /
+                  rien (mois, trimestre : le bandeau mois fait office) */}
               {scale === "jour" && (
                 <div className="flex">
                   {days.map((d, i) => {
                     const dow = d.getDay();
                     const isWeekend = dow === 0 || dow === 6;
-                    const today =
-                      startOfDay(new Date()).getTime() === d.getTime();
+                    const today = todayStart.getTime() === d.getTime();
                     return (
                       <div
                         key={i}
@@ -703,12 +1047,11 @@ export function GanttChartV2({
                   ))}
                 </div>
               )}
-              {/* En mode "mois" : pas de 2e ligne, le bandeau mois fait office */}
             </div>
           </div>
 
           {/* Tasks */}
-          <div className="relative">
+          <div ref={rowsRef} className="relative">
             {/* Ligne "aujourd'hui" verticale */}
             {todayLeft !== null && (
               <div
@@ -719,82 +1062,52 @@ export function GanttChartV2({
               </div>
             )}
 
-            {/* SVG overlay : flèches de dépendances entre tâches */}
-            {arrows.length > 0 && (
-              <svg
-                className="absolute pointer-events-none z-[4]"
-                style={{
-                  left: labelWidth,
-                  top: 0,
-                  width: totalDays * dayWidth,
-                  height: taches.length * ROW_H,
-                }}
-                aria-hidden="true"
-              >
-                <defs>
-                  <marker
-                    id="arrow-blocking"
-                    viewBox="0 0 10 10"
-                    refX="9"
-                    refY="5"
-                    markerWidth="6"
-                    markerHeight="6"
-                    orient="auto-start-reverse"
-                  >
-                    <path
-                      d="M 0 0 L 10 5 L 0 10 z"
-                      fill="rgb(220 38 38)"
-                    />
-                  </marker>
-                  <marker
-                    id="arrow-ok"
-                    viewBox="0 0 10 10"
-                    refX="9"
-                    refY="5"
-                    markerWidth="6"
-                    markerHeight="6"
-                    orient="auto-start-reverse"
-                  >
-                    <path
-                      d="M 0 0 L 10 5 L 0 10 z"
-                      fill="rgb(100 116 139)"
-                    />
-                  </marker>
-                </defs>
-                {arrows.map((a, i) => {
-                  // Trace en L : sortie horizontale sur 10px puis vertical
-                  // puis horizontal jusqu'au début de la tâche suivante.
-                  // Si la dep est plus à droite que t, on contourne par
-                  // au-dessus.
-                  const stroke = a.blocking
-                    ? "rgb(220 38 38)"
-                    : "rgb(100 116 139)";
-                  const marker = a.blocking
-                    ? "url(#arrow-blocking)"
-                    : "url(#arrow-ok)";
-                  const dashed = a.blocking ? "" : "4 3";
-                  const midX = a.toX > a.fromX
-                    ? a.fromX + Math.max(8, (a.toX - a.fromX) / 2)
-                    : a.fromX + 12;
-                  // Path : M from → H midX → V to.y → H to.x
-                  const d = `M ${a.fromX} ${a.fromY} H ${midX} V ${a.toY} H ${a.toX}`;
-                  return (
-                    <path
-                      key={i}
-                      d={d}
-                      fill="none"
-                      stroke={stroke}
-                      strokeWidth={1.5}
-                      strokeDasharray={dashed}
-                      markerEnd={marker}
-                      opacity={a.blocking ? 0.9 : 0.6}
-                    />
-                  );
-                })}
-              </svg>
+            {/* SVG overlay : flèches de dépendances + lien élastique */}
+            {(fleches.length > 0 || linkLine) && (
+              <CoucheDependances
+                fleches={fleches}
+                left={labelWidth}
+                width={totalDays * dayWidth}
+                height={taches.length * ROW_H}
+                selection={
+                  selectedDep ? `${selectedDep.tacheId}|${selectedDep.depId}` : null
+                }
+                onSelect={
+                  canEdit
+                    ? (a) => setSelectedDep({ tacheId: a.tacheId, depId: a.depId })
+                    : undefined
+                }
+                clicsDesactives={linkLine !== null}
+                lien={linkLine}
+                lienInvalide={linkInvalid}
+              />
             )}
 
-            {taches.map((t) => {
+            {/* Bouton flottant de suppression de la flèche sélectionnée */}
+            {flecheSelectionnee && (
+              <button
+                type="button"
+                data-arrow-ui="1"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() =>
+                  supprimerDependance(
+                    flecheSelectionnee.tacheId,
+                    flecheSelectionnee.depId
+                  )
+                }
+                className="absolute z-[7] w-9 h-9 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center rounded-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 shadow-md text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                style={{
+                  left: labelWidth + pointMilieuFleche(flecheSelectionnee).x,
+                  top: pointMilieuFleche(flecheSelectionnee).y,
+                }}
+                title="Supprimer cette dépendance"
+                aria-label="Supprimer la dépendance sélectionnée"
+              >
+                <X size={15} />
+              </button>
+            )}
+
+            {taches.map((t, ti) => {
               const offset = offsetFor(t);
               const duration = durationFor(t);
               const left = offset * dayWidth;
@@ -809,10 +1122,20 @@ export function GanttChartV2({
               // on déplaçait l'autre (constat Youssoufou en échelle mois).
               // Barre étroite : déplacement entier + ajustement par la modale.
               const showHandles = canEdit && width >= 44;
+              // Retard : non terminée et fin (affichée) déjà passée.
+              const enRetard =
+                !done &&
+                addDays(minDate, offset + duration - 1).getTime() <
+                  todayStart.getTime();
+              // Ports de dépendance : visibles au survol (desktop, via
+              // group-hover) ou épinglés après un tap sur la barre (mobile).
+              const portsVisibles =
+                portsPinnedId === t.id || linkSourceId === t.id;
+              const cibleDeLien = linkTargetId === t.id;
               return (
                 <div
                   key={t.id}
-                  className="flex border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/40 dark:hover:bg-slate-800/30 transition"
+                  className="group flex border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/40 dark:hover:bg-slate-800/30 transition"
                 >
                   <div
                     onClick={() => onClickTask?.(t.id)}
@@ -842,12 +1165,13 @@ export function GanttChartV2({
                     </div>
                   </div>
                   <div
+                    data-lienrow={t.id}
                     className="relative flex-1"
-                    style={{ height: 44, width: totalDays * dayWidth }}
+                    style={{ height: ROW_H, width: totalDays * dayWidth }}
                     onClick={(e) => {
                       // Click sur empty cell : crée une tâche à la date cliquée.
                       // On ne déclenche que si le clic est direct sur ce
-                      // conteneur (donc PAS sur une barre / poignée).
+                      // conteneur (donc PAS sur une barre / poignée / port).
                       if (e.target !== e.currentTarget) return;
                       if (!canEdit || !onEmptyCellClick) return;
                       const rect =
@@ -861,21 +1185,35 @@ export function GanttChartV2({
                       );
                     }}
                   >
-                    {days.map((d, i) => {
-                      const dow = d.getDay();
-                      const isWeekend = dow === 0 || dow === 6;
-                      return (
-                        <div
-                          key={i}
-                          className={cn(
-                            "absolute top-0 bottom-0 border-r border-slate-100 dark:border-slate-800/50 pointer-events-none",
-                            isWeekend && "bg-slate-50 dark:bg-slate-800/20"
-                          )}
-                          style={{ left: i * dayWidth, width: dayWidth }}
-                        />
-                      );
-                    })}
+                    {scale === "trimestre"
+                      ? // À 2 px/jour, des traits par jour seraient illisibles
+                        // (et très lourds en DOM) : traits aux frontières de mois.
+                        monthSegs.map((m, i) => (
+                          <div
+                            key={i}
+                            className="absolute top-0 bottom-0 border-r border-slate-100 dark:border-slate-800/50 pointer-events-none"
+                            style={{
+                              left: m.startIdx * dayWidth,
+                              width: m.daysCount * dayWidth,
+                            }}
+                          />
+                        ))
+                      : days.map((d, i) => {
+                          const dow = d.getDay();
+                          const isWeekend = dow === 0 || dow === 6;
+                          return (
+                            <div
+                              key={i}
+                              className={cn(
+                                "absolute top-0 bottom-0 border-r border-slate-100 dark:border-slate-800/50 pointer-events-none",
+                                isWeekend && "bg-slate-50 dark:bg-slate-800/20"
+                              )}
+                              style={{ left: i * dayWidth, width: dayWidth }}
+                            />
+                          );
+                        })}
                     <div
+                      data-barre="1"
                       onPointerDown={(e) => startDrag(t, "move", e)}
                       className={cn(
                         "absolute top-2 bottom-2 rounded-md shadow-sm overflow-hidden flex items-center text-xs select-none",
@@ -883,16 +1221,24 @@ export function GanttChartV2({
                         statutBorderColor[t.statut],
                         "border",
                         canEdit ? "cursor-grab active:cursor-grabbing" : "",
-                        done && "opacity-70"
+                        done && "opacity-70",
+                        // Retard : liseré terracotta, lisible sur fond
+                        // clair comme sombre.
+                        enRetard && "ring-2 ring-red-600 dark:ring-red-400",
+                        // Cible d'un lien de dépendance en cours de tirage.
+                        cibleDeLien &&
+                          (linkInvalid
+                            ? "ring-2 ring-red-500"
+                            : "ring-2 ring-brand-500")
                       )}
                       style={{
                         left,
                         width,
                         touchAction: "none",
                       }}
-                      title={`${t.nom} — ${t.avancement}% · cliquer pour modifier · glisser les bords pour redimensionner`}
+                      title={`${t.nom} · ${t.avancement}%${enRetard ? " · EN RETARD" : ""} · cliquer pour modifier · glisser les bords pour redimensionner`}
                     >
-                      {/* Poignée gauche (resize start) — large, visible */}
+                      {/* Poignée gauche (resize start) : large, visible */}
                       {showHandles && (
                         <div
                           onPointerDown={(e) => {
@@ -906,7 +1252,7 @@ export function GanttChartV2({
                           <span className="block w-[2px] h-3 bg-white/80 rounded-full" />
                         </div>
                       )}
-                      {/* Poignée droite (resize end) — large, visible */}
+                      {/* Poignée droite (resize end) : large, visible */}
                       {showHandles && (
                         <div
                           onPointerDown={(e) => {
@@ -925,6 +1271,14 @@ export function GanttChartV2({
                         className="absolute inset-y-0 left-0 bg-black/20 pointer-events-none"
                         style={{ width: `${t.avancement}%` }}
                       />
+                      {/* Icône retard (si la barre est assez large) */}
+                      {enRetard && width >= 56 && (
+                        <AlertTriangle
+                          size={12}
+                          className="relative ml-1.5 shrink-0 text-white/95 pointer-events-none"
+                          aria-label="Tâche en retard"
+                        />
+                      )}
                       {/* Texte centré */}
                       <span className="relative px-2 text-white truncate font-medium pointer-events-none">
                         {duration >= 3
@@ -934,6 +1288,51 @@ export function GanttChartV2({
                           : ""}
                       </span>
                     </div>
+
+                    {/* Ports de dépendance (ronds aux extrémités) : tirer
+                        vers une autre barre pour créer une dépendance.
+                        Positionnés hors de la barre pour ne pas gêner les
+                        poignées de redimensionnement. */}
+                    {canEdit && (
+                      <>
+                        <button
+                          type="button"
+                          data-port="1"
+                          aria-label={`Créer une dépendance vers « ${t.nom} » (la tâche dépendra de la cible)`}
+                          onPointerDown={(e) =>
+                            startLinkDrag(t, "gauche", ti, e)
+                          }
+                          className={cn(
+                            "absolute top-1/2 -translate-y-1/2 z-[6] w-9 h-9 flex items-center justify-center rounded-full",
+                            "opacity-0 pointer-events-none transition-opacity",
+                            "group-hover:opacity-100 group-hover:pointer-events-auto",
+                            portsVisibles && "opacity-100 pointer-events-auto"
+                          )}
+                          style={{ left: left - 34, touchAction: "none" }}
+                          title="Tirer vers une autre barre : cette tâche dépendra de la barre visée"
+                        >
+                          <span className="block w-3.5 h-3.5 rounded-full border-2 border-slate-500 dark:border-slate-300 bg-white dark:bg-slate-900 shadow-sm" />
+                        </button>
+                        <button
+                          type="button"
+                          data-port="1"
+                          aria-label={`Créer une dépendance depuis « ${t.nom} » (la cible dépendra de cette tâche)`}
+                          onPointerDown={(e) =>
+                            startLinkDrag(t, "droite", ti, e)
+                          }
+                          className={cn(
+                            "absolute top-1/2 -translate-y-1/2 z-[6] w-9 h-9 flex items-center justify-center rounded-full",
+                            "opacity-0 pointer-events-none transition-opacity",
+                            "group-hover:opacity-100 group-hover:pointer-events-auto",
+                            portsVisibles && "opacity-100 pointer-events-auto"
+                          )}
+                          style={{ left: left + width - 2, touchAction: "none" }}
+                          title="Tirer vers une autre barre : la barre visée dépendra de cette tâche"
+                        >
+                          <span className="block w-3.5 h-3.5 rounded-full border-2 border-slate-500 dark:border-slate-300 bg-white dark:bg-slate-900 shadow-sm" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -1001,11 +1400,16 @@ export function GanttChartV2({
       </div>
       {canEdit && (
         <div className="text-[11px] text-slate-500 dark:text-slate-400 px-3 py-2 border-t border-slate-100 dark:border-slate-800 italic leading-relaxed">
-          Tâches : cliquer = modifier · glisser barre = déplacer ·
-          glisser <strong>poignées sombres</strong> aux extrémités = ajuster la
-          durée d&apos;un seul côté · clic sur case vide = créer à cette
-          date. Événements (livraisons, restitutions) : glisser pour
-          replanifier. Ligne rouge = aujourd&apos;hui. Scroll horizontal :{" "}
+          Tâches : cliquer = modifier · glisser barre = déplacer (avec ses
+          successeurs si le réglage est actif) · glisser{" "}
+          <strong>poignées sombres</strong> aux extrémités = ajuster la durée
+          d&apos;un seul côté · clic sur case vide = créer à cette date.
+          Dépendances : survoler ou toucher une barre fait apparaître les{" "}
+          <strong>ronds</strong> à ses extrémités ; tirer un rond vers une
+          autre barre crée la dépendance ; cliquer une flèche = la
+          sélectionner puis la supprimer via la croix. Liseré rouge = tâche en
+          retard. Ligne rouge = aujourd&apos;hui (bouton « Aujourd&apos;hui »
+          pour la recentrer). Scroll horizontal :{" "}
           <kbd className="px-1 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800">
             Shift
           </kbd>{" "}

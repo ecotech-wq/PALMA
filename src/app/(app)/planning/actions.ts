@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/auth-helpers";
 import { parseQuickAdd, fuzzyMatch } from "@/lib/quick-add-parser";
 
 const tacheSchema = z.object({
@@ -681,4 +682,229 @@ export async function createLabel(input: {
 export async function deleteLabel(labelId: string) {
   await db.label.delete({ where: { id: labelId } });
   revalidatePath("/planning");
+}
+
+/* -------------------- Dépendances (Gantt façon Monday) -------------------- */
+
+/** Garde d'édition du planning : toute l'équipe sauf les comptes client
+ *  (même règle que le flag canEdit calculé dans page.tsx). */
+async function requireEditionPlanning() {
+  const me = await requireAuth();
+  if (me.isClient) {
+    throw new Error("Le planning est en lecture seule pour les clients");
+  }
+  return me;
+}
+
+const dependanceSchema = z.object({
+  tacheId: z.string().min(1),
+  depId: z.string().min(1),
+});
+
+/** Profondeur maximale des parcours de graphe (anti-emballement). */
+const PROFONDEUR_MAX_DEPS = 100;
+
+/**
+ * Crée une dépendance : `tacheId` dépendra de `depId` (depId devient un
+ * prédécesseur). Refuse l'auto-dépendance, le cross-chantier et tout
+ * cycle : on remonte les prédécesseurs de depId en largeur (une requête
+ * par niveau, ensemble visité en garde anti-boucle) ; si tacheId est
+ * atteint, la liaison fermerait un cycle.
+ */
+export async function ajouterDependance(tacheId: string, depId: string) {
+  await requireEditionPlanning();
+  const ids = dependanceSchema.parse({ tacheId, depId });
+  if (ids.tacheId === ids.depId) {
+    throw new Error("Une tâche ne peut pas dépendre d'elle-même");
+  }
+
+  const [tache, dep] = await Promise.all([
+    db.tache.findUnique({
+      where: { id: ids.tacheId },
+      select: {
+        id: true,
+        nom: true,
+        chantierId: true,
+        deletedAt: true,
+        dependances: { where: { id: ids.depId }, select: { id: true } },
+      },
+    }),
+    db.tache.findUnique({
+      where: { id: ids.depId },
+      select: { id: true, nom: true, chantierId: true, deletedAt: true },
+    }),
+  ]);
+  if (!tache || tache.deletedAt) throw new Error("Tâche introuvable");
+  if (!dep || dep.deletedAt) {
+    throw new Error("Tâche prédécesseur introuvable");
+  }
+  if (tache.chantierId !== dep.chantierId) {
+    throw new Error(
+      "Impossible : les deux tâches doivent appartenir au même chantier"
+    );
+  }
+  // Idempotent : la dépendance existe déjà, rien à faire.
+  if (tache.dependances.length > 0) return;
+
+  // Détection de cycle : parcours des prédécesseurs de depId.
+  let frontiere: string[] = [ids.depId];
+  const visites = new Set<string>(frontiere);
+  for (let prof = 0; frontiere.length > 0; prof++) {
+    if (prof >= PROFONDEUR_MAX_DEPS) {
+      throw new Error(
+        "Chaîne de dépendances trop profonde pour vérifier l'absence de cycle (100 niveaux max)"
+      );
+    }
+    // Prédécesseurs de la frontière : tâches dont un dépendant est dans
+    // la frontière (une seule requête par niveau).
+    const rows = await db.tache.findMany({
+      where: { dependants: { some: { id: { in: frontiere } } } },
+      select: { id: true },
+    });
+    const suivante: string[] = [];
+    for (const r of rows) {
+      if (r.id === ids.tacheId) {
+        throw new Error(
+          `Impossible : « ${dep.nom} » dépend déjà, directement ou non, de « ${tache.nom} » (cela créerait un cycle)`
+        );
+      }
+      if (!visites.has(r.id)) {
+        visites.add(r.id);
+        suivante.push(r.id);
+      }
+    }
+    frontiere = suivante;
+  }
+
+  await db.tache.update({
+    where: { id: ids.tacheId },
+    data: { dependances: { connect: { id: ids.depId } } },
+  });
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${tache.chantierId}`);
+}
+
+/** Retire la dépendance « tacheId dépend de depId » (flèche du Gantt). */
+export async function retirerDependance(tacheId: string, depId: string) {
+  await requireEditionPlanning();
+  const ids = dependanceSchema.parse({ tacheId, depId });
+  const tache = await db.tache.findUnique({
+    where: { id: ids.tacheId },
+    select: { chantierId: true },
+  });
+  if (!tache) throw new Error("Tâche introuvable");
+  await db.tache.update({
+    where: { id: ids.tacheId },
+    data: { dependances: { disconnect: { id: ids.depId } } },
+  });
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${tache.chantierId}`);
+}
+
+/**
+ * Déplace une tâche et, si `decalerSuccesseurs` est vrai (mode flexible
+ * de Monday), décale du même nombre de jours TOUTES les tâches qui en
+ * dépendent, directement ou transitivement. Parcours en largeur des
+ * successeurs (une requête par niveau), ensemble visité en garde
+ * anti-cycle, profondeur bornée à 100, et écriture en UNE transaction.
+ */
+export async function decalerTacheAvecSuccesseurs(
+  id: string,
+  nouvelleDateDebut: Date | string,
+  nouvelleDateFin: Date | string,
+  decalerSuccesseurs: boolean
+) {
+  await requireEditionPlanning();
+  z.object({ id: z.string().min(1), decalerSuccesseurs: z.boolean() }).parse({
+    id,
+    decalerSuccesseurs,
+  });
+  const dStart = new Date(nouvelleDateDebut);
+  const dEnd = new Date(nouvelleDateFin);
+  if (Number.isNaN(dStart.getTime()) || Number.isNaN(dEnd.getTime())) {
+    throw new Error("Dates invalides");
+  }
+  dStart.setHours(0, 0, 0, 0);
+  dEnd.setHours(0, 0, 0, 0);
+  if (dEnd < dStart) {
+    throw new Error("Date de fin avant date de début");
+  }
+
+  const tache = await db.tache.findUnique({
+    where: { id },
+    select: { id: true, chantierId: true, dateDebut: true, deletedAt: true },
+  });
+  if (!tache || tache.deletedAt) throw new Error("Tâche introuvable");
+
+  const UN_JOUR = 24 * 60 * 60 * 1000;
+  // Arrondi : absorbe l'écart fuseau local / minuit UTC des colonnes Date.
+  const deltaJours = Math.round(
+    (dStart.getTime() - new Date(tache.dateDebut).getTime()) / UN_JOUR
+  );
+
+  const chantiersTouches = new Set<string>([tache.chantierId]);
+  const updates = [
+    db.tache.update({
+      where: { id },
+      data: { dateDebut: dStart, dateFin: dEnd },
+    }),
+  ];
+
+  if (decalerSuccesseurs && deltaJours !== 0) {
+    const visites = new Set<string>([id]);
+    let frontiere: string[] = [id];
+    const successeurs: {
+      id: string;
+      dateDebut: Date;
+      dateFin: Date;
+      chantierId: string;
+    }[] = [];
+    for (let prof = 0; frontiere.length > 0; prof++) {
+      if (prof >= PROFONDEUR_MAX_DEPS) {
+        throw new Error(
+          "Chaîne de dépendances trop profonde (100 niveaux max) : décalage annulé"
+        );
+      }
+      const rows = await db.tache.findMany({
+        where: {
+          deletedAt: null,
+          dependances: { some: { id: { in: frontiere } } },
+        },
+        select: { id: true, dateDebut: true, dateFin: true, chantierId: true },
+      });
+      const suivante: string[] = [];
+      for (const r of rows) {
+        if (visites.has(r.id)) continue;
+        visites.add(r.id);
+        successeurs.push(r);
+        suivante.push(r.id);
+      }
+      frontiere = suivante;
+    }
+    for (const s of successeurs) {
+      // Arithmétique en millisecondes sur la valeur stockée (minuit UTC
+      // des colonnes @db.Date) : le jour civil est décalé d'exactement
+      // deltaJours, sans effet de fuseau ni d'heure d'été.
+      updates.push(
+        db.tache.update({
+          where: { id: s.id },
+          data: {
+            dateDebut: new Date(
+              new Date(s.dateDebut).getTime() + deltaJours * UN_JOUR
+            ),
+            dateFin: new Date(
+              new Date(s.dateFin).getTime() + deltaJours * UN_JOUR
+            ),
+          },
+        })
+      );
+      chantiersTouches.add(s.chantierId);
+    }
+  }
+
+  await db.$transaction(updates);
+  revalidatePath("/planning");
+  for (const chantierId of chantiersTouches) {
+    revalidatePath(`/chantiers/${chantierId}`);
+  }
 }

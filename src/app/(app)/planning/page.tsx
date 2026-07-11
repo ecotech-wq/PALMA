@@ -10,7 +10,6 @@ import {
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
-import { PertChart } from "./PertChart";
 import { CreateTacheForm } from "./TacheForm";
 import { TacheList } from "./TacheList";
 import { PlanningViews } from "./PlanningViews";
@@ -160,7 +159,6 @@ export default async function PlanningPage({
     })),
   ];
 
-  const tachesPourPert = taches.filter((t) => !chantier || t.chantierId === chantier);
   const tachesCandidates = taches.map((t) => ({
     id: t.id,
     nom: t.nom,
@@ -266,10 +264,10 @@ export default async function PlanningPage({
             Aucune tâche pour cette sélection.
           </CardBody>
         </Card>
-      ) : view !== "pert" ? (
+      ) : (
         <div className="space-y-3">
           <PlanningViews
-            view={view as "gantt" | "kanban" | "liste" | "calendrier"}
+            view={view}
             canEdit={canEdit}
             taches={taches.map((t) => ({
               id: t.id,
@@ -321,9 +319,7 @@ export default async function PlanningPage({
             </details>
           )}
         </div>
-      ) : null}
-
-      {view === "pert" && <PertChart taches={tachesPourPert} />}
+      )}
     </div>
   );
 }
