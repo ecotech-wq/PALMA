@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Flag, Package, Truck, Info } from "lucide-react";
 import { useToast } from "@/components/Toast";
@@ -115,12 +115,20 @@ export function GanttChartV2({
   const router = useRouter();
   const toast = useToast();
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Position temporaire pendant le drag ; apres sauvegarde, `cible` note les
+  // dates envoyees au serveur : l'override n'est retire que quand les props
+  // rafraichies les ont rattrapees (sinon la barre revenait un instant a sa
+  // position d'origine, flash signale par Youssoufou).
   const [overrides, setOverrides] = useState<
-    Record<string, { offset: number; duration: number }>
+    Record<
+      string,
+      { offset: number; duration: number; cible?: { debut: number; fin: number } }
+    >
   >({});
-  // Override visuel pour le drag d'un event (livraison/restitution)
+  // Override visuel pour le drag d'un event (livraison/restitution),
+  // meme principe de cible que les barres.
   const [eventOverrides, setEventOverrides] = useState<
-    Record<string, number>
+    Record<string, { offset: number; cible?: number }>
   >({});
   // UI : échelle temporelle + visibilité des events
   const [scale, setScale] = useState<"jour" | "semaine" | "mois">("jour");
@@ -192,6 +200,45 @@ export function GanttChartV2({
       weeks: ws,
     };
   }, [taches, visibleEvents, scale]);
+
+  // Retire les overrides sauvegardes une fois les props a jour (anti-flash).
+  useEffect(() => {
+    setOverrides((prev) => {
+      let change = false;
+      const next = { ...prev };
+      for (const [id, ov] of Object.entries(prev)) {
+        if (!ov.cible) continue; // drag encore en cours
+        const t = taches.find((x) => x.id === id);
+        const rattrape =
+          t &&
+          startOfDay(new Date(t.dateDebut)).getTime() === ov.cible.debut &&
+          startOfDay(new Date(t.dateFin)).getTime() === ov.cible.fin;
+        if (!t || rattrape) {
+          delete next[id];
+          change = true;
+        }
+      }
+      return change ? next : prev;
+    });
+  }, [taches]);
+
+  useEffect(() => {
+    setEventOverrides((prev) => {
+      let change = false;
+      const next = { ...prev };
+      for (const [id, ov] of Object.entries(prev)) {
+        if (ov.cible === undefined) continue;
+        const evt = events.find((x) => x.id === id);
+        const rattrape =
+          evt && startOfDay(new Date(evt.date)).getTime() === ov.cible;
+        if (!evt || rattrape) {
+          delete next[id];
+          change = true;
+        }
+      }
+      return change ? next : prev;
+    });
+  }, [events]);
 
   if (taches.length === 0 && events.length === 0) {
     return (
@@ -367,8 +414,17 @@ export function GanttChartV2({
       }
       deplacerTache(tache.id, newStart, newEnd)
         .then(() => {
+          // On garde l'override a l'ecran et on note la cible : l'effet le
+          // retirera quand les props rafraichies seront identiques.
+          setOverrides((prev) => ({
+            ...prev,
+            [tache.id]: {
+              offset: lastOffset,
+              duration: lastDuration,
+              cible: { debut: newStart.getTime(), fin: newEnd.getTime() },
+            },
+          }));
           router.refresh();
-          clearOverride();
         })
         .catch((err: unknown) => {
           toast.error(
@@ -419,7 +475,7 @@ export function GanttChartV2({
       const deltaDays = Math.round(dx / dayWidth);
       // Bornage à la grille visible (comme les barres de tâches).
       lastOffset = Math.max(0, Math.min(initOffset + deltaDays, totalDays - 1));
-      setEventOverrides((prev) => ({ ...prev, [ev.id]: lastOffset }));
+      setEventOverrides((prev) => ({ ...prev, [ev.id]: { offset: lastOffset } }));
     }
 
     function clearOverride() {
@@ -457,8 +513,11 @@ export function GanttChartV2({
       // "Cannot update a component while rendering a different component".
       deplacerEvenement(ev.type, ev.realId ?? ev.id, newDate)
         .then(() => {
+          setEventOverrides((prev) => ({
+            ...prev,
+            [ev.id]: { offset: lastOffset, cible: newDate.getTime() },
+          }));
           router.refresh();
-          clearOverride();
         })
         .catch((err: unknown) => {
           toast.error(
@@ -882,13 +941,13 @@ export function GanttChartV2({
 
             {/* Event markers (draggables si canEdit), filtrés par showEvents */}
             {visibleEvents.map((ev) => {
-              const ovOffset = eventOverrides[ev.id];
+              const ov = eventOverrides[ev.id];
               const offset =
-                ovOffset !== undefined
-                  ? ovOffset
+                ov !== undefined
+                  ? ov.offset
                   : daysBetween(minDate, new Date(ev.date));
               const left = offset * dayWidth;
-              const isDragging = ovOffset !== undefined;
+              const isDragging = ov !== undefined && ov.cible === undefined;
               return (
                 <div
                   key={ev.id}

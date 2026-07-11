@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Calendar,
@@ -173,6 +173,23 @@ export function KanbanBoard({
     return (statutOverride[t.id] ?? t.statut) as StatutTache;
   }
 
+  // Retire un override quand les props rafraichies l'ont rattrape (anti-flash).
+  useEffect(() => {
+    setStatutOverride((prev) => {
+      let change = false;
+      const next = { ...prev };
+      for (const [id, col] of Object.entries(prev)) {
+        if (savingId === id) continue; // sauvegarde encore en cours
+        const t = taches.find((x) => x.id === id);
+        if (!t || t.statut === col) {
+          delete next[id];
+          change = true;
+        }
+      }
+      return change ? next : prev;
+    });
+  }, [taches, savingId]);
+
   /** Applique le drop : override optimiste puis action serveur. */
   function dropTask(id: string, col: StatutTache) {
     const t = taches.find((x) => x.id === id);
@@ -186,17 +203,19 @@ export function KanbanBoard({
       try {
         await setStatut(id, col);
         toast.success("Statut modifié");
+        // On GARDE l'override : le retirer avant l'arrivee des props
+        // rafraichies ferait revenir la carte un instant dans sa colonne
+        // d'origine (meme flash que sur le Gantt). L'effet ci-dessous le
+        // retire quand les props ont rattrape.
         router.refresh();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Erreur");
-      } finally {
-        // Le router.refresh recharge les props ; on nettoie l'override pour
-        // ne pas garder une valeur potentiellement obsolète.
         setStatutOverride((prev) => {
           const next = { ...prev };
           delete next[id];
           return next;
         });
+      } finally {
         setSavingId(null);
       }
     });
