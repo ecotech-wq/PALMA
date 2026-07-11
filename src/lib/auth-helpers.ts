@@ -252,8 +252,10 @@ export async function getAccessibleChantierIds(
 
 /** Frontière d'espace pour l'accès à UN chantier : lève si le projet
  *  n'appartient pas à un espace de l'utilisateur. Appliqué avant le
- *  court-circuit admin. Régime hérité (espaceIds null) : pas de bornage. */
-async function verifierEspaceDuChantier(
+ *  court-circuit admin. Régime hérité (espaceIds null) : pas de bornage.
+ *  Exportée pour les server actions qui reçoivent un chantierId (ou un
+ *  objet rattaché à un chantier) et doivent le borner à l'espace. */
+export async function verifierEspaceDuChantier(
   user: CurrentUser,
   chantierId: string
 ): Promise<void> {

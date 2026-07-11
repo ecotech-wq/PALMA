@@ -88,6 +88,16 @@ const PRIO_FLAG: Record<number, string> = {
 // Hauteur d'une ligne Gantt (doit matcher le style height: 44 des cellules)
 const ROW_H = 44;
 
+// Largeur de la zone tactile d'une poignée EXTERNE (barres étroites).
+// Le grip visible ne fait que ~3 px, mais la zone de prise s'étend sur
+// 24 px vers l'extérieur de la barre. Compromis assumé : ces 24 px
+// recouvrent une partie de la case vide voisine (les 24 premiers px à
+// gauche et à droite d'une barre étroite ne déclenchent plus le
+// clic-création) ; le reste de la ligne reste cliquable pour créer, et
+// sans cette zone une tâche d'1-2 jours serait impossible à
+// redimensionner au doigt.
+const EXT_HANDLE_W = 24;
+
 // Persistance locale du réglage « Entraîner les successeurs »
 const LS_ENTRAINER = "lynx.gantt.entrainerSuccesseurs";
 
@@ -1116,12 +1126,34 @@ export function GanttChartV2({
               const width = Math.max(8, duration * dayWidth - 4);
               const done = t.statut === "TERMINEE";
               const isSubtask = !!t.parentId;
-              // Poignées seulement si la barre est assez large pour les
-              // porter (2 x 12 px + une zone de déplacement). Sur une barre
-              // étroite elles se chevauchaient : on croyait tirer un bout et
-              // on déplaçait l'autre (constat Youssoufou en échelle mois).
-              // Barre étroite : déplacement entier + ajustement par la modale.
-              const showHandles = canEdit && width >= 44;
+              // Poignées INTERNES seulement si la barre est assez large pour
+              // les porter (2 x 12 px + une zone de déplacement). Sur une
+              // barre étroite elles se chevauchaient : on croyait tirer un
+              // bout et on déplaçait l'autre (constat Youssoufou en échelle
+              // mois). Barre étroite : poignées EXTERNES accolées aux bords
+              // (une tâche d'1-2 jours restait sinon impossible à agrandir,
+              // constat Youssoufou 2026-07-11).
+              // Le choix interne/externe se fonde sur la largeur AVANT le
+              // geste (props), pas sur la largeur vivante : sinon la
+              // poignée en cours d'utilisation serait démontée dès que la
+              // barre franchit le seuil de 44 px pendant le drag (l'élément
+              // qui capture le pointeur disparaîtrait du DOM, ce qui casse
+              // le geste au tactile). Les POSITIONS, elles, suivent la
+              // barre en direct (left / width).
+              const durProps = Math.max(
+                1,
+                daysBetween(new Date(t.dateDebut), new Date(t.dateFin)) + 1
+              );
+              const widthProps = Math.max(8, durProps * dayWidth - 4);
+              const showHandles = canEdit && widthProps >= 44;
+              const showExtHandles = canEdit && widthProps < 44;
+              // Ports de dépendance décalés au-delà des poignées externes
+              // pour qu'aucune zone ne se chevauche (le même 2 px de
+              // recouvrement « au baiser » que sur une barre large).
+              const portGaucheX =
+                left - 34 - (showExtHandles ? EXT_HANDLE_W : 0);
+              const portDroitX =
+                left + width - 2 + (showExtHandles ? EXT_HANDLE_W : 0);
               // Retard : non terminée et fin (affichée) déjà passée.
               const enRetard =
                 !done &&
@@ -1289,6 +1321,49 @@ export function GanttChartV2({
                       </span>
                     </div>
 
+                    {/* Poignées EXTERNES (barre trop étroite pour des
+                        poignées internes) : petit grip vertical discret
+                        accolé à chaque bord, zone tactile de 24 px vers
+                        l'extérieur (voir EXT_HANDLE_W pour le compromis
+                        avec le clic-création). Rendues HORS de la barre :
+                        celle-ci est en overflow-hidden. */}
+                    {showExtHandles && (
+                      <>
+                        <div
+                          data-barre="1"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            startDrag(t, "left", e);
+                          }}
+                          className="absolute top-0 bottom-0 z-[6] flex items-center justify-end cursor-ew-resize group/ext"
+                          style={{
+                            left: left - EXT_HANDLE_W,
+                            width: EXT_HANDLE_W,
+                            touchAction: "none",
+                          }}
+                          title="Glisser pour modifier la date de début"
+                        >
+                          <span className="block w-[3px] h-3.5 mr-[2px] rounded-full bg-slate-400/90 dark:bg-slate-500 shadow-sm group-hover/ext:bg-slate-600 dark:group-hover/ext:bg-slate-300 transition-colors" />
+                        </div>
+                        <div
+                          data-barre="1"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            startDrag(t, "right", e);
+                          }}
+                          className="absolute top-0 bottom-0 z-[6] flex items-center justify-start cursor-ew-resize group/ext"
+                          style={{
+                            left: left + width,
+                            width: EXT_HANDLE_W,
+                            touchAction: "none",
+                          }}
+                          title="Glisser pour modifier la date de fin"
+                        >
+                          <span className="block w-[3px] h-3.5 ml-[2px] rounded-full bg-slate-400/90 dark:bg-slate-500 shadow-sm group-hover/ext:bg-slate-600 dark:group-hover/ext:bg-slate-300 transition-colors" />
+                        </div>
+                      </>
+                    )}
+
                     {/* Ports de dépendance (ronds aux extrémités) : tirer
                         vers une autre barre pour créer une dépendance.
                         Positionnés hors de la barre pour ne pas gêner les
@@ -1308,7 +1383,7 @@ export function GanttChartV2({
                             "group-hover:opacity-100 group-hover:pointer-events-auto",
                             portsVisibles && "opacity-100 pointer-events-auto"
                           )}
-                          style={{ left: left - 34, touchAction: "none" }}
+                          style={{ left: portGaucheX, touchAction: "none" }}
                           title="Tirer vers une autre barre : cette tâche dépendra de la barre visée"
                         >
                           <span className="block w-3.5 h-3.5 rounded-full border-2 border-slate-500 dark:border-slate-300 bg-white dark:bg-slate-900 shadow-sm" />
@@ -1326,7 +1401,7 @@ export function GanttChartV2({
                             "group-hover:opacity-100 group-hover:pointer-events-auto",
                             portsVisibles && "opacity-100 pointer-events-auto"
                           )}
-                          style={{ left: left + width - 2, touchAction: "none" }}
+                          style={{ left: portDroitX, touchAction: "none" }}
                           title="Tirer vers une autre barre : la barre visée dépendra de cette tâche"
                         >
                           <span className="block w-3.5 h-3.5 rounded-full border-2 border-slate-500 dark:border-slate-300 bg-white dark:bg-slate-900 shadow-sm" />
@@ -1403,7 +1478,9 @@ export function GanttChartV2({
           Tâches : cliquer = modifier · glisser barre = déplacer (avec ses
           successeurs si le réglage est actif) · glisser{" "}
           <strong>poignées sombres</strong> aux extrémités = ajuster la durée
-          d&apos;un seul côté · clic sur case vide = créer à cette date.
+          d&apos;un seul côté (sur une barre étroite, les poignées sont les{" "}
+          <strong>petits traits gris</strong> accolés à ses bords) · clic sur
+          case vide = créer à cette date.
           Dépendances : survoler ou toucher une barre fait apparaître les{" "}
           <strong>ronds</strong> à ses extrémités ; tirer un rond vers une
           autre barre crée la dépendance ; cliquer une flèche = la

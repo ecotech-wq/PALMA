@@ -16,18 +16,33 @@ import { PlanningViews } from "./PlanningViews";
 import { QuickAddBar } from "./QuickAddBar";
 import { requireAuth, getAccessibleChantierIds, espaceFilter } from "@/lib/auth-helpers";
 import { createTache, deleteTache, setAvancement, updateTache } from "./actions";
+import { FiltresPlanning } from "./FiltresPlanning";
+import { construireWhereTaches, validerChantier } from "./filtres";
 
 type Vue = "gantt" | "liste" | "pert" | "kanban" | "calendrier";
+
+type Param = string | string[] | undefined;
+
+/** Premier élément d'un query param éventuellement répété, "" → undefined. */
+function premier(v: Param): string | undefined {
+  const s = Array.isArray(v) ? v[0] : v;
+  return s || undefined;
+}
 
 export default async function PlanningPage({
   searchParams,
 }: {
-  searchParams: Promise<{ chantier?: string | string[]; vue?: string | string[] }>;
+  searchParams: Promise<{
+    chantier?: Param;
+    ouvrier?: Param;
+    equipe?: Param;
+    espace?: Param;
+    vue?: Param;
+  }>;
 }) {
   const sp = await searchParams;
   const me = await requireAuth();
   const canEdit = !me.isClient;
-  const chantier = Array.isArray(sp.chantier) ? sp.chantier[0] : sp.chantier;
   const vueRaw = Array.isArray(sp.vue) ? sp.vue[0] : sp.vue;
   const view: Vue =
     vueRaw === "liste"
@@ -42,15 +57,33 @@ export default async function PlanningPage({
 
   // Socle espaces : bornage aux chantiers accessibles (espace courant).
   const accessibleIds = await getAccessibleChantierIds(me);
-  const borne = accessibleIds === null ? {} : { chantierId: { in: accessibleIds } };
   const borneId = accessibleIds === null ? {} : { id: { in: accessibleIds } };
+
+  // Filtres GET, validés côté serveur : un id de chantier hors périmètre
+  // est ignoré (voir validerChantier). Le filtre entreprise n'existe que
+  // pour l'admin global en mode « toutes les entreprises » : si un espace
+  // courant est déjà sélectionné, le bornage fait déjà ce travail.
+  const chantier = validerChantier(premier(sp.chantier), accessibleIds);
+  const ouvrierSel = premier(sp.ouvrier);
+  const equipeSel = premier(sp.equipe);
+  const filtreEspaceVisible =
+    me.isGlobalAdmin && !me.espaceCourant && me.espaces.length > 0;
+  const espaceBrut = premier(sp.espace);
+  const espaceSel =
+    filtreEspaceVisible && espaceBrut && me.espaces.some((s) => s.id === espaceBrut)
+      ? espaceBrut
+      : undefined;
 
   const [taches, chantiers, equipes, commandes, locations, sections, ouvriers] =
     await Promise.all([
     db.tache.findMany({
-      where: chantier
-        ? { chantierId: chantier, deletedAt: null, ...borne }
-        : { deletedAt: null, ...borne },
+      where: construireWhereTaches({
+        accessibleIds,
+        chantierId: chantier,
+        ouvrierId: ouvrierSel,
+        equipeId: equipeSel,
+        espaceId: espaceSel,
+      }),
       include: {
         chantier: { select: { id: true, nom: true } },
         equipe: { select: { id: true, nom: true } },
@@ -78,12 +111,20 @@ export default async function PlanningPage({
       ],
     }),
     db.chantier.findMany({
-      where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] }, ...borneId },
+      where: {
+        statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] },
+        ...borneId,
+        // Options cohérentes avec le filtre entreprise (validé plus haut)
+        ...(espaceSel ? { espaceId: espaceSel } : {}),
+      },
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),
     db.equipe.findMany({
-      where: espaceFilter(me),
+      where: {
+        ...espaceFilter(me),
+        ...(espaceSel ? { espaceId: espaceSel } : {}),
+      },
       select: { id: true, nom: true, chantierId: true },
       orderBy: { nom: "asc" },
     }),
@@ -92,7 +133,15 @@ export default async function PlanningPage({
         statut: { in: ["COMMANDEE", "EN_LIVRAISON"] },
         dateLivraisonPrevue: { not: null },
         deletedAt: null,
+        // Même bornage espace que les tâches : sans lui, fournisseurs et
+        // noms de chantiers de TOUS les espaces partiraient au client.
+        // Le filtre chantier (validé contre accessibleIds) prime ensuite.
+        ...(accessibleIds !== null
+          ? { chantierId: { in: accessibleIds } }
+          : {}),
         ...(chantier ? { chantierId: chantier } : {}),
+        // Cohérence avec le filtre entreprise (les events suivent les tâches)
+        ...(espaceSel ? { chantier: { espaceId: espaceSel } } : {}),
       },
       select: {
         id: true,
@@ -104,7 +153,17 @@ export default async function PlanningPage({
     db.locationPret.findMany({
       where: {
         cloture: false,
+        // Même bornage espace que les tâches. Le filtre { in } ne retient
+        // que les chantierId non nuls : une location sans chantier n'est
+        // rattachable à aucune entreprise, donc exclue quand le bornage
+        // est actif. Le filtre chantier (validé) prime ensuite.
+        ...(accessibleIds !== null
+          ? { chantierId: { in: accessibleIds } }
+          : {}),
         ...(chantier ? { chantierId: chantier } : {}),
+        // Une location sans chantier n'est rattachable à aucune entreprise :
+        // exclue quand le filtre entreprise est actif.
+        ...(espaceSel ? { chantier: { espaceId: espaceSel } } : {}),
       },
       select: {
         id: true,
@@ -114,22 +173,37 @@ export default async function PlanningPage({
       },
     }),
     db.section.findMany({
-      where: chantier ? { chantierId: chantier } : {},
+      // Bornées aux chantiers accessibles : la vue Liste affiche même les
+      // sections vides, donc sans bornage les noms de sections des autres
+      // espaces seraient visibles par tout utilisateur.
+      where: chantier
+        ? { chantierId: chantier }
+        : accessibleIds !== null
+          ? { chantierId: { in: accessibleIds } }
+          : {},
       select: { id: true, chantierId: true, nom: true, ordre: true },
       orderBy: { ordre: "asc" },
     }),
-    // Liste des ouvriers actifs (pour le multi-select dans la modale)
+    // Liste des ouvriers actifs (multi-select de la modale + filtre)
     db.ouvrier.findMany({
-      where: { actif: true, ...espaceFilter(me) },
+      where: {
+        actif: true,
+        ...espaceFilter(me),
+        ...(espaceSel ? { espaceId: espaceSel } : {}),
+      },
       select: { id: true, nom: true, prenom: true, equipeId: true },
       orderBy: [{ nom: "asc" }, { prenom: "asc" }],
     }),
   ]);
 
+  // Labels globaux (chantierId null) + labels des chantiers accessibles :
+  // même frontière d'espace que les sections.
   const allLabels = await db.label.findMany({
     where: chantier
       ? { OR: [{ chantierId: null }, { chantierId: chantier }] }
-      : {},
+      : accessibleIds !== null
+        ? { OR: [{ chantierId: null }, { chantierId: { in: accessibleIds } }] }
+        : {},
     select: { id: true, nom: true, couleur: true },
     orderBy: { nom: "asc" },
   });
@@ -189,18 +263,43 @@ export default async function PlanningPage({
               method="get"
               className="flex flex-wrap items-center gap-2 sm:gap-3"
             >
-              <select
-                name="chantier"
-                defaultValue={chantier ?? ""}
-                className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm flex-1 sm:flex-none min-w-0"
-              >
-                <option value="">Tous les chantiers</option>
-                {chantiers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nom}
-                  </option>
-                ))}
-              </select>
+              <FiltresPlanning
+                chantiers={chantiers}
+                ouvriers={ouvriers.map((o) => ({
+                  id: o.id,
+                  nom: o.nom,
+                  prenom: o.prenom,
+                }))}
+                equipes={equipes.map((e) => ({ id: e.id, nom: e.nom }))}
+                espaces={
+                  filtreEspaceVisible
+                    ? me.espaces.map((s) => ({ id: s.id, nom: s.nom }))
+                    : null
+                }
+                valeurs={{
+                  chantier: chantier ?? "",
+                  ouvrier: ouvrierSel ?? "",
+                  equipe: equipeSel ?? "",
+                  espace: espaceSel ?? "",
+                }}
+                vue={view}
+              />
+
+              {/* Les selects naviguent d'eux-mêmes (router.push) ; ces
+                  champs cachés conservent les filtres actifs quand on
+                  change de vue via les boutons submit du formulaire GET. */}
+              {chantier && (
+                <input type="hidden" name="chantier" value={chantier} />
+              )}
+              {ouvrierSel && (
+                <input type="hidden" name="ouvrier" value={ouvrierSel} />
+              )}
+              {equipeSel && (
+                <input type="hidden" name="equipe" value={equipeSel} />
+              )}
+              {espaceSel && (
+                <input type="hidden" name="espace" value={espaceSel} />
+              )}
 
               <div className="inline-flex border border-slate-300 dark:border-slate-700 rounded-md overflow-hidden text-sm shrink-0">
                 {(

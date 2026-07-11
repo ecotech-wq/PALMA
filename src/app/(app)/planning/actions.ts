@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/auth-helpers";
+import { requireAuth, verifierEspaceDuChantier } from "@/lib/auth-helpers";
 import { parseQuickAdd, fuzzyMatch } from "@/lib/quick-add-parser";
 
 const tacheSchema = z.object({
@@ -269,6 +269,7 @@ export async function deplacerEvenement(
   id: string,
   newDate: Date | string
 ) {
+  const me = await requireEditionPlanning();
   if (!id) throw new Error("ID manquant");
   // Robustesse : accepte aussi bien "cmd-XYZ" / "loc-XYZ" que "XYZ"
   const cleanId = id.replace(/^(cmd-|loc-)/, "");
@@ -277,6 +278,13 @@ export async function deplacerEvenement(
   const date = new Date(newDate);
   date.setHours(0, 0, 0, 0);
   if (type === "COMMANDE") {
+    // Frontière d'espace : bornée par le chantier de la commande.
+    const existante = await db.commande.findUnique({
+      where: { id: cleanId },
+      select: { chantierId: true },
+    });
+    if (!existante) throw new Error("Commande introuvable");
+    await verifierEspaceDuChantier(me, existante.chantierId);
     const c = await db.commande.update({
       where: { id: cleanId },
       data: { dateLivraisonPrevue: date },
@@ -284,6 +292,20 @@ export async function deplacerEvenement(
     revalidatePath("/planning");
     revalidatePath(`/chantiers/${c.chantierId}`);
   } else {
+    // Frontière d'espace : bornée par le chantier de la location. Une
+    // location sans chantier n'est rattachable à aucun espace : refusée
+    // dès que l'utilisateur est borné (deny par défaut, cohérent avec
+    // le bornage de la page planning qui ne la lui montre pas).
+    const existante = await db.locationPret.findUnique({
+      where: { id: cleanId },
+      select: { chantierId: true },
+    });
+    if (!existante) throw new Error("Location introuvable");
+    if (existante.chantierId) {
+      await verifierEspaceDuChantier(me, existante.chantierId);
+    } else if (me.espaceIds) {
+      throw new Error("Cette location n'appartient pas à votre espace");
+    }
     const l = await db.locationPret.update({
       where: { id: cleanId },
       data: { dateFinPrevue: date },
@@ -303,6 +325,7 @@ export async function deplacerTache(
   dateDebut: Date | string,
   dateFin: Date | string
 ) {
+  const me = await requireEditionPlanning();
   const dStart = new Date(dateDebut);
   const dEnd = new Date(dateFin);
   dStart.setHours(0, 0, 0, 0);
@@ -310,6 +333,13 @@ export async function deplacerTache(
   if (dEnd < dStart) {
     throw new Error("Date de fin avant date de début");
   }
+  // Frontière d'espace : bornée par le chantier de la tâche.
+  const existante = await db.tache.findUnique({
+    where: { id },
+    select: { chantierId: true },
+  });
+  if (!existante) throw new Error("Tâche introuvable");
+  await verifierEspaceDuChantier(me, existante.chantierId);
   const t = await db.tache.update({
     where: { id },
     data: { dateDebut: dStart, dateFin: dEnd },
@@ -437,22 +467,42 @@ export async function quickAddTache(input: string, defaultChantierId?: string) {
 
 /**
  * Création rapide à une date donnée et pour un chantier donné (clic
- * sur case vide du Gantt). Retourne l'ID pour ouvrir directement la
- * modale d'édition.
+ * sur case vide du Gantt, cliquer-glisser sur le calendrier). Retourne
+ * l'ID pour ouvrir directement la modale d'édition.
+ * `dateFin` optionnelle : absente, la tâche dure 3 jours (comportement
+ * historique du Gantt) ; fournie, la tâche couvre exactement la plage.
  */
 export async function quickCreateAt({
   chantierId,
   date,
+  dateFin,
   nom = "Nouvelle tâche",
 }: {
   chantierId: string;
   date: Date | string;
+  dateFin?: Date | string;
   nom?: string;
 }): Promise<{ id: string }> {
+  const me = await requireEditionPlanning();
+  // Frontière d'espace : le chantier cible doit appartenir à un espace
+  // de l'utilisateur (un chantierId arbitraire est refusé).
+  await verifierEspaceDuChantier(me, chantierId);
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
-  const fin = new Date(d);
-  fin.setDate(fin.getDate() + 2); // 3 jours par défaut
+  let fin: Date;
+  if (dateFin !== undefined) {
+    fin = new Date(dateFin);
+    fin.setHours(0, 0, 0, 0);
+  } else {
+    fin = new Date(d);
+    fin.setDate(fin.getDate() + 2); // 3 jours par défaut
+  }
+  if (Number.isNaN(d.getTime()) || Number.isNaN(fin.getTime())) {
+    throw new Error("Dates invalides");
+  }
+  if (fin < d) {
+    throw new Error("Date de fin avant date de début");
+  }
 
   const t = await db.tache.create({
     data: {

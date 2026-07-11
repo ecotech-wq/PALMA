@@ -91,10 +91,10 @@ const PRIO_FLAG_COLORS: Record<number, string> = {
 };
 
 const PRIO_LABELS: Record<number, string> = {
-  1: "P1 — Urgent",
-  2: "P2 — Haute",
-  3: "P3 — Moyenne",
-  4: "P4 — Aucune",
+  1: "P1 - Urgent",
+  2: "P2 - Haute",
+  3: "P3 - Moyenne",
+  4: "P4 - Aucune",
 };
 
 /**
@@ -158,7 +158,7 @@ export function TacheListTodoist({
 }: {
   taches: TacheTodo[];
   sections?: SectionItem[];
-  /** Pour le bouton "Ajouter une section" — chantier cible. */
+  /** Pour le bouton "Ajouter une section" : chantier cible. */
   defaultChantierId?: string;
   onEdit?: (id: string) => void;
 }) {
@@ -368,7 +368,10 @@ function SectionHeader({
   }
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-slate-50/80 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800">
+    // `group` : les actions renommer/supprimer se révèlent au survol de
+    // TOUTE la ligne d'en-tête (avant, aucun ancêtre ne portait la classe
+    // et les boutons restaient invisibles sur desktop).
+    <div className="group flex items-center gap-2 px-3 py-2 bg-slate-50/80 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800">
       <button
         type="button"
         onClick={onToggle}
@@ -394,7 +397,7 @@ function SectionHeader({
                 }
               }}
               disabled={pending}
-              className="flex-1 bg-transparent outline-none text-sm font-semibold text-slate-800 dark:text-slate-200 border-b border-slate-300 focus:border-brand-500"
+              className="flex-1 bg-transparent outline-none text-sm font-semibold text-slate-800 dark:text-slate-200 border-b border-slate-300 dark:border-slate-600 focus:border-brand-500"
             />
           ) : (
             <h3
@@ -418,14 +421,14 @@ function SectionHeader({
         {done}/{total}
       </span>
       {section && !editing && (
-        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 hover:opacity-100 focus-within:opacity-100">
+        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
           <button
             type="button"
             onClick={() => {
               setName(section.nom);
               setEditing(true);
             }}
-            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500"
+            className="p-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500"
             title="Renommer"
             aria-label="Renommer"
           >
@@ -435,7 +438,7 @@ function SectionHeader({
             type="button"
             onClick={handleDelete}
             disabled={pending}
-            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-red-600"
+            className="p-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-red-600"
             title="Supprimer la section"
             aria-label="Supprimer"
           >
@@ -500,7 +503,7 @@ function AddSectionInline({ chantierId }: { chantierId: string }) {
         }}
         placeholder="Nom de la section (ex : Gros œuvre, Finitions...)"
         disabled={pending}
-        className="flex-1 bg-transparent outline-none text-sm border-b border-slate-200 focus:border-brand-500 pb-0.5"
+        className="flex-1 bg-transparent outline-none text-sm border-b border-slate-200 dark:border-slate-700 focus:border-brand-500 pb-0.5"
       />
       <button
         type="button"
@@ -614,10 +617,12 @@ function TacheRow({
         }`}
         style={{ paddingLeft: `${12 + depth * 24}px` }}
       >
-        {/* Poignée drag (visible au survol, top-level uniquement) */}
+        {/* Poignée drag (visible au survol, top-level uniquement).
+            Masquée au tactile : le drag HTML5 ne fonctionne qu'à la
+            souris, inutile de réserver la place sur téléphone. */}
         {dnd && depth === 0 && (
           <span
-            className="shrink-0 mt-1 -ml-1 text-slate-300 dark:text-slate-600 cursor-grab opacity-0 group-hover:opacity-100 transition"
+            className="shrink-0 mt-1 -ml-1 text-slate-300 dark:text-slate-600 cursor-grab opacity-0 group-hover:opacity-100 transition pointer-coarse:hidden"
             title="Glisser pour réordonner"
           >
             <GripVertical size={12} />
@@ -642,14 +647,16 @@ function TacheRow({
           <span className="shrink-0 w-[14px]" />
         )}
 
-        {/* Checkbox de complétion */}
+        {/* Checkbox de complétion. La zone tactile déborde du rond visible
+            (pseudo-élément) pour approcher les 44 px au doigt sans casser
+            l'alignement de la ligne. */}
         <button
           type="button"
           onClick={handleToggle}
           disabled={pending}
           aria-label={done ? "Marquer non terminée" : "Marquer terminée"}
           title={done ? "Marquer non terminée" : "Marquer terminée"}
-          className={`shrink-0 mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center transition ${
+          className={`relative touch-manipulation before:absolute before:-inset-2.5 before:content-[''] before:rounded-full shrink-0 mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center transition ${
             done
               ? "bg-green-500 border-green-600 text-white"
               : t.priorite === 1
@@ -748,15 +755,16 @@ function TacheRow({
           </div>
         </div>
 
-        {/* Actions à droite */}
-        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition">
+        {/* Actions à droite. Révélées au survol sur desktop ; toujours
+            visibles sur écran tactile (pas de survol au doigt). */}
+        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition">
           <button
             type="button"
             onClick={handleCyclePriority}
             disabled={pending}
             aria-label="Changer la priorité"
             title={PRIO_LABELS[t.priorite] + " (clic pour cycler)"}
-            className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700"
+            className="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700"
           >
             <Flag size={14} className={PRIO_FLAG_COLORS[t.priorite]} />
           </button>
@@ -766,7 +774,7 @@ function TacheRow({
               onClick={() => setShowAddSub((v) => !v)}
               aria-label="Ajouter une sous-tâche"
               title="Ajouter une sous-tâche"
-              className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 hover:text-brand-600"
+              className="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 hover:text-brand-600"
             >
               <Plus size={14} />
             </button>
@@ -777,7 +785,7 @@ function TacheRow({
               onClick={() => onEdit(t.id)}
               aria-label="Modifier"
               title="Modifier en détail"
-              className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"
+              className="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"
             >
               <span className="text-[11px] font-medium px-1">Détail</span>
             </button>
@@ -788,7 +796,7 @@ function TacheRow({
             disabled={pending}
             aria-label="Supprimer"
             title="Supprimer"
-            className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 hover:text-red-600"
+            className="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 hover:text-red-600"
           >
             <Trash2 size={14} />
           </button>

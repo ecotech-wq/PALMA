@@ -4,7 +4,7 @@ import {
   ordonnerNiveauxParBarycentre,
   PERT_NODE_H,
   PERT_PADDING,
-} from "./layout";
+} from "./disposition";
 
 describe("ordonnerNiveauxParBarycentre", () => {
   it("réordonne un niveau selon la ligne des prédécesseurs (décroisement)", () => {

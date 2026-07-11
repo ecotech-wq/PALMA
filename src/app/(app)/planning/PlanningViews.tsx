@@ -102,6 +102,29 @@ export function PlanningViews({
     }
   }
 
+  /** Cliquer-glisser sur des cases vides du calendrier : crée une tâche
+   *  couvrant exactement la plage, puis ouvre la modale d'édition. */
+  async function handleEmptyRangeClick(
+    dateDebut: Date,
+    dateFin: Date,
+    chantierNom: string
+  ) {
+    const chantierId = chantierByNom.get(chantierNom);
+    if (!chantierId) {
+      toast.error("Chantier introuvable");
+      return;
+    }
+    try {
+      const { id } = await quickCreateAt({ chantierId, date: dateDebut, dateFin });
+      router.refresh();
+      // Même délai que handleEmptyCellClick : laisse router.refresh
+      // peupler `taches` avant d'ouvrir la modale.
+      setTimeout(() => setEditingId(id), 350);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
   return (
     <>
       {view === "gantt" && (
@@ -153,6 +176,7 @@ export function PlanningViews({
           canEdit={canEdit}
           onClickTask={canEdit ? (id) => setEditingId(id) : undefined}
           onEmptyCellClick={canEdit ? handleEmptyCellClick : undefined}
+          onEmptyRangeClick={canEdit ? handleEmptyRangeClick : undefined}
           chantiers={chantiers}
           defaultChantierId={defaultChantierId}
           taches={taches.map((t) => ({

@@ -13,7 +13,7 @@ import {
   ordonnerNiveauxParBarycentre,
   PERT_NODE_H,
   PERT_NODE_W,
-} from "./pert/layout";
+} from "./pert/disposition";
 
 type TachePert = {
   id: string;
