@@ -1,6 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Trash2, Banknote, Wrench, Plus, ChevronRight, Calendar } from "lucide-react";
+import {
+  Trash2,
+  Banknote,
+  Wrench,
+  Plus,
+  ChevronRight,
+  Calendar,
+  Phone,
+  Users,
+  Briefcase,
+} from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -12,6 +22,7 @@ import { PointageHistory } from "../PointageHistory";
 import { MonthlyRecap } from "../MonthlyRecap";
 import { PointageCalendar } from "../../pointage/PointageCalendar";
 import { OuvrierActiveToggle } from "../OuvrierActiveToggle";
+import { OuvrierDocuments } from "./OuvrierDocuments";
 import { ResettingForm } from "@/components/ResettingForm";
 import { requireAuth, espaceFilter } from "@/lib/auth-helpers";
 import { updateOuvrier, deleteOuvrier } from "../actions";
@@ -28,6 +39,10 @@ import {
   uploadPointagePhoto,
   removePointagePhoto,
 } from "../../pointage/actions";
+import {
+  ajouterDocumentOuvrier,
+  supprimerDocumentOuvrier,
+} from "../documents-actions";
 import { formatEuro, formatDate } from "@/lib/utils";
 import { Montant } from "@/features/discret";
 
@@ -70,7 +85,8 @@ export default async function OuvrierDetailPage({
           orderBy: { periodeDebut: "desc" },
           take: 5,
         },
-        equipe: { select: { chantierId: true } },
+        equipe: { select: { chantierId: true, nom: true } },
+        documents: { orderBy: { createdAt: "desc" } },
       },
     }),
     db.equipe.findMany({
@@ -129,6 +145,21 @@ export default async function OuvrierDetailPage({
   const fullName = [ouvrier.prenom, ouvrier.nom].filter(Boolean).join(" ");
   const today = new Date().toISOString().slice(0, 10);
 
+  // Carte identité : libellés de contrat et initiales pour l'avatar.
+  const contratLabels: Record<string, string> = {
+    FIXE: "Salarié fixe",
+    MOIS: "Au mois",
+    SEMAINE: "À la semaine",
+    JOUR: "À la journée",
+    FORFAIT: "Forfait",
+  };
+  const initiales =
+    `${ouvrier.prenom?.trim()?.[0] ?? ""}${ouvrier.nom.trim()[0] ?? ""}`.toUpperCase() ||
+    "?";
+  // Documents RH : mêmes yeux que la paie côté pilotage (admin + conducteur),
+  // jamais les chefs ni les clients.
+  const peutVoirDocuments = me.isAdmin || me.isConducteur;
+
   const avancesNonReglees = ouvrier.avances.filter((a) => !a.reglee);
   const outilsNonSoldes = ouvrier.outilsPersonnels.filter((o) => !o.solde);
   const totalAvancesEnCours = avancesNonReglees.reduce(
@@ -170,6 +201,50 @@ export default async function OuvrierDetailPage({
           </div>
         }
       />
+
+      <Card className="mb-5">
+        <CardBody className="flex items-center gap-4">
+          {ouvrier.photo ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={ouvrier.photo}
+              alt={fullName}
+              className="w-16 h-16 shrink-0 rounded-full object-cover border border-slate-200 dark:border-slate-800"
+            />
+          ) : (
+            <div className="w-16 h-16 shrink-0 rounded-full bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 flex items-center justify-center text-lg font-semibold">
+              {initiales}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                {fullName}
+              </h2>
+              {!ouvrier.actif && <Badge color="slate">Inactif</Badge>}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm text-slate-600 dark:text-slate-400">
+              {ouvrier.telephone && (
+                <a
+                  href={`tel:${ouvrier.telephone.replace(/[\s.]/g, "")}`}
+                  className="inline-flex items-center gap-1.5 py-1 hover:text-slate-900 dark:hover:text-slate-100"
+                >
+                  <Phone size={14} /> {ouvrier.telephone}
+                </a>
+              )}
+              {ouvrier.equipe?.nom && (
+                <span className="inline-flex items-center gap-1.5 py-1">
+                  <Users size={14} /> {ouvrier.equipe.nom}
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1.5 py-1">
+                <Briefcase size={14} />{" "}
+                {contratLabels[ouvrier.typeContrat] ?? ouvrier.typeContrat}
+              </span>
+            </div>
+          </div>
+        </CardBody>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-5">
@@ -227,6 +302,31 @@ export default async function OuvrierDetailPage({
               />
             </CardBody>
           </Card>
+
+          {peutVoirDocuments && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Documents</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <OuvrierDocuments
+                  documents={ouvrier.documents.map((d) => ({
+                    id: d.id,
+                    nom: d.nom,
+                    categorie: d.categorie,
+                    fichier: d.fichier,
+                    mimeType: d.mimeType,
+                    taille: d.taille,
+                    note: d.note,
+                    createdAt: d.createdAt,
+                    creePar: d.creePar,
+                  }))}
+                  onAdd={ajouterDocumentOuvrier.bind(null, id)}
+                  onDelete={supprimerDocumentOuvrier}
+                />
+              </CardBody>
+            </Card>
+          )}
 
           {me.isAdmin && (
           <>

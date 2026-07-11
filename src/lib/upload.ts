@@ -249,3 +249,45 @@ export async function saveUploadedPlan(
     originalName: file.name,
   };
 }
+
+/**
+ * Sauvegarde un DOCUMENT (GED) : CV et pièces d'un ouvrier, plans, contrats,
+ * devis d'un chantier... Fichier conservé tel quel (pas de transformation),
+ * extension d'origine gardée pour l'ouverture native (PDF, Office, images).
+ */
+const DOC_EXTS = [
+  "pdf", "png", "jpg", "jpeg", "webp", "heic",
+  "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods",
+  "dwg", "dxf", "txt", "csv", "zip",
+] as const;
+
+export async function saveUploadedDocument(
+  file: File,
+  folder: "docs-ouvriers" | "docs-chantiers"
+): Promise<{ url: string; mimeType: string; size: number; originalName: string }> {
+  if (!file || file.size === 0) throw new Error("Aucun fichier reçu");
+  if (file.size > 25 * 1024 * 1024) {
+    throw new Error("Fichier trop volumineux (max 25 Mo)");
+  }
+  const rawExt = (file.name.split(".").pop() ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  if (!(DOC_EXTS as readonly string[]).includes(rawExt)) {
+    throw new Error(
+      "Format non accepté. Documents : PDF, images, Word, Excel, PowerPoint, DWG/DXF, TXT, CSV, ZIP."
+    );
+  }
+
+  const dir = path.join(UPLOADS_ROOT, folder);
+  await mkdir(dir, { recursive: true });
+
+  const id = randomUUID();
+  const filename = `${id}.${rawExt}`;
+  await writeFile(path.join(dir, filename), Buffer.from(await file.arrayBuffer()));
+  return {
+    url: `/uploads/${folder}/${filename}`,
+    mimeType: file.type || "application/octet-stream",
+    size: file.size,
+    originalName: file.name,
+  };
+}

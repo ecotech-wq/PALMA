@@ -15,6 +15,7 @@ import {
   ClipboardCheck,
   Wallet,
   ChevronRight,
+  FolderOpen,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -57,7 +58,7 @@ export default async function ChantierDetailPage({
   const { onglet: ongletBrut } = await searchParams;
   const me = await requireAuth();
   await requireChantierAccess(me, id);
-  const [chantier, chefs, toutesEquipes, commandes, locations, finance, rapports] = await Promise.all([
+  const [chantier, chefs, toutesEquipes, commandes, locations, finance, rapports, nbDocs, nbDocsASigner] = await Promise.all([
     db.chantier.findUnique({
       where: { id },
       include: {
@@ -93,6 +94,14 @@ export default async function ChantierDetailPage({
       include: { author: { select: { id: true, name: true } } },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       take: 30,
+    }),
+    // GED chantier : compteur pour la carte Documents (le client ne compte
+    // que les pièces qui lui sont ouvertes).
+    db.chantierDocument.count({
+      where: { chantierId: id, ...(me.isClient ? { visibleClient: true } : {}) },
+    }),
+    db.chantierDocument.count({
+      where: { chantierId: id, visibleClient: true, statutSignature: "A_SIGNER" },
     }),
   ]);
   if (!chantier) notFound();
@@ -199,6 +208,27 @@ export default async function ChantierDetailPage({
                 )}
               </CardBody>
             </Card>
+          )}
+
+          {/* GED : accès du client aux documents partagés du chantier */}
+          {me.isClient && nbDocs > 0 && (
+            <Link
+              href={`/chantiers/${id}/documents`}
+              className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-900"
+            >
+              <span className="flex items-center gap-2 font-medium text-slate-800 dark:text-slate-200">
+                <FolderOpen size={16} className="text-slate-400" />
+                Documents ({nbDocs})
+              </span>
+              <span className="flex items-center gap-2">
+                {nbDocsASigner > 0 && (
+                  <Badge color="blue">
+                    {nbDocsASigner} à signer
+                  </Badge>
+                )}
+                <ChevronRight size={16} className="text-slate-400" />
+              </span>
+            </Link>
           )}
           {!me.isClient && onglet === "vue" && <Card className="max-w-2xl">
             <CardHeader>
@@ -328,6 +358,19 @@ export default async function ChantierDetailPage({
               <CardBody className="!p-0">
                 <ul className="divide-y divide-slate-100 dark:divide-slate-800">
                   {[
+                    {
+                      href: `/chantiers/${id}/documents`,
+                      label: "Documents",
+                      sous:
+                        nbDocs === 0
+                          ? "Plans, contrats, devis, factures, PV à faire signer"
+                          : `${nbDocs} document${nbDocs > 1 ? "s" : ""}${
+                              nbDocsASigner > 0
+                                ? ` · ${nbDocsASigner} en attente de signature`
+                                : ""
+                            }`,
+                      Icon: FolderOpen,
+                    },
                     {
                       href: `/chantiers/${id}/journal`,
                       label: "Journal",

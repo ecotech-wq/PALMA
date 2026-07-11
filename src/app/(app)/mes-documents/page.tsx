@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-helpers";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { formatEuro, formatDate } from "@/lib/utils";
 import {
@@ -16,6 +17,8 @@ import {
 } from "../finance/suivi-labels";
 import { SignBoxClient } from "./SignBoxClient";
 import { signerDevisClient, signerSituationClient } from "./actions";
+import { SignerDocumentBox } from "../chantiers/[id]/documents/SignerDocumentBox";
+import { LABEL_CATEGORIE } from "../chantiers/[id]/documents/categories";
 
 // ─── Volet contractuel et financier du client ───────────────────────────────
 // Le client voit et signe SES devis et situations (demandes d'acompte sur
@@ -42,7 +45,7 @@ export default async function MesDocumentsPage() {
   const showFactures = user?.showFactures ?? false;
   const rienOuvert = !showDevis && !showSituations && !showFactures;
 
-  const [devis, situations, factures] = await Promise.all([
+  const [devis, situations, factures, docsChantier] = await Promise.all([
     showDevis && chantierIds.length > 0
       ? db.devis.findMany({
           where: {
@@ -77,11 +80,22 @@ export default async function MesDocumentsPage() {
           orderBy: { dateEmission: "desc" },
         })
       : [],
+    // GED chantier : les documents ouverts au client (visibilité par pièce,
+    // indépendante des drapeaux devis / situations / factures).
+    chantierIds.length > 0
+      ? db.chantierDocument.findMany({
+          where: { chantierId: { in: chantierIds }, visibleClient: true },
+          include: { chantier: { select: { nom: true } } },
+          orderBy: { createdAt: "desc" },
+        })
+      : [],
   ]);
 
   const aSigner =
     devis.filter((d) => !d.signatureClientUrl && (d.statut === "ENVOYE" || d.statut === "RELANCE")).length +
-    situations.filter((s) => !s.signatureClientUrl && (s.statut === "TRANSMISE" || s.statut === "VISEE_MOE")).length;
+    situations.filter((s) => !s.signatureClientUrl && (s.statut === "TRANSMISE" || s.statut === "VISEE_MOE")).length +
+    docsChantier.filter((d) => d.statutSignature === "A_SIGNER").length;
+  const rienAVoir = rienOuvert && docsChantier.length === 0;
 
   return (
     <div className="space-y-4">
@@ -90,13 +104,13 @@ export default async function MesDocumentsPage() {
         description="Vos devis, situations d'avancement et factures. Signez les documents en attente."
       />
 
-      {rienOuvert ? (
+      {rienAVoir ? (
         <Card>
           <CardBody>
             <EmptyState
               icon={FileSignature}
               title="Aucun document partagé"
-              description="Votre interlocuteur ne vous a pas encore ouvert l'accès à vos devis, situations ou factures. Il peut le faire depuis votre compte."
+              description="Votre interlocuteur ne vous a pas encore ouvert l'accès à vos devis, situations, factures ou documents de chantier. Il peut le faire depuis votre compte."
             />
           </CardBody>
         </Card>
@@ -107,6 +121,66 @@ export default async function MesDocumentsPage() {
               <CardBody className="text-sm text-brand-800 dark:text-brand-300">
                 {aSigner} document{aSigner > 1 ? "s" : ""} en attente de votre
                 signature.
+              </CardBody>
+            </Card>
+          )}
+
+          {/* Documents de chantier (GED) : contrats, plans, PV... partagés */}
+          {docsChantier.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Documents de chantier</CardTitle>
+              </CardHeader>
+              <CardBody className="!p-0">
+                <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {docsChantier.map((d) => (
+                    <li key={d.id} className="px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <a
+                            href={d.fichier}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block truncate text-sm font-medium text-slate-900 hover:underline dark:text-slate-100"
+                          >
+                            {d.nom}
+                          </a>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {d.chantier?.nom} · {LABEL_CATEGORIE[d.categorie]} ·
+                            ajouté le {formatDate(d.createdAt)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {d.statutSignature === "A_SIGNER" && (
+                            <Badge color="blue">À signer</Badge>
+                          )}
+                          {d.statutSignature === "SIGNE" && (
+                            <Badge color="green">Signé</Badge>
+                          )}
+                          <a
+                            href={d.fichier}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-brand-600"
+                            aria-label="Ouvrir le document"
+                          >
+                            <ExternalLink size={14} />
+                          </a>
+                        </div>
+                      </div>
+                      {(d.statutSignature === "A_SIGNER" ||
+                        d.statutSignature === "SIGNE") && (
+                        <SignerDocumentBox
+                          documentId={d.id}
+                          fichier={d.fichier}
+                          signeUrl={d.signatureClientUrl}
+                          signeLe={d.signatureClientLe}
+                          signePar={d.signatureClientPar}
+                        />
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </CardBody>
             </Card>
           )}

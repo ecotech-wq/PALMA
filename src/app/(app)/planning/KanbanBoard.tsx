@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Calendar,
@@ -93,9 +93,52 @@ function isLate(t: TacheKanban) {
   return new Date(t.dateFin) < today;
 }
 
+/* Réglages du glisser-déposer par Pointer Events */
+const SEUIL_SOURIS = 6; // px de mouvement avant de démarrer le drag à la souris
+const SEUIL_TACTILE = 8; // px de tolérance pendant l'appui maintenu au doigt
+const DUREE_APPUI = 220; // ms d'appui maintenu avant d'armer le drag tactile
+const MARGE_AUTOSCROLL = 80; // px du bord de l'écran déclenchant le défilement
+const VITESSE_AUTOSCROLL = 14; // px par frame de défilement automatique
+
+/** État interne d'un geste en cours (une seule instance à la fois). */
+type DragState = {
+  taskId: string;
+  nom: string;
+  dragging: boolean;
+  aborted: boolean;
+  startX: number;
+  startY: number;
+  lastX: number;
+  lastY: number;
+  holdTimer: ReturnType<typeof setTimeout> | null;
+  raf: number | null;
+};
+
+function isStatutTache(v: string | undefined): v is StatutTache {
+  return (
+    v === "A_FAIRE" || v === "EN_COURS" || v === "BLOQUEE" || v === "TERMINEE"
+  );
+}
+
+/** Colonne Kanban sous le point (x, y), trouvée via l'attribut [data-col]. */
+function colFromPoint(x: number, y: number): StatutTache | null {
+  const el = document.elementFromPoint(x, y);
+  const zone = el?.closest?.("[data-col]") as HTMLElement | null;
+  const col = zone?.dataset.col;
+  return isStatutTache(col) ? col : null;
+}
+
 /**
  * Vue Kanban : 4 colonnes (À faire / En cours / Bloquée / Terminée).
- * Drag-and-drop natif HTML5 entre colonnes : modifie le statut.
+ * Glisser-déposer par Pointer Events, fonctionnel à la souris ET au tactile
+ * (l'app est utilisée à 99 % sur téléphone). Même motif que CalendarMonth :
+ *  - souris : le drag démarre dès que le mouvement dépasse 6 px ; un clic
+ *    sans mouvement ouvre l'édition ;
+ *  - tactile : appui maintenu d'environ 220 ms sans bouger de plus de 8 px
+ *    pour armer le drag ; avant cela le geste reste un défilement normal
+ *    (touchAction "pan-y" sur la carte, jamais "none"). Un tap court ouvre
+ *    l'édition. Vibration discrète au démarrage du drag si disponible.
+ * La colonne cible est trouvée par elementFromPoint + closest('[data-col]').
  */
 export function KanbanBoard({
   taches,
@@ -104,15 +147,24 @@ export function KanbanBoard({
 }: {
   taches: TacheKanban[];
   canEdit: boolean;
-  /** Click court (sans drag) sur une card : ouvre l'édition. */
+  /** Tap court / clic sans mouvement sur une carte : ouvre l'édition. */
   onClickTask?: (tacheId: string) => void;
 }) {
   const router = useRouter();
   const toast = useToast();
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
+  const dragRef = useRef<DragState | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [hoverCol, setHoverCol] = useState<StatutTache | null>(null);
-  // Override visuel optimiste pour cacher la carte dans la colonne d'origine
+  const [savingId, setSavingId] = useState<string | null>(null);
+  // Petit fantôme qui suit le doigt (ou la souris) pendant le drag.
+  const [ghost, setGhost] = useState<{
+    x: number;
+    y: number;
+    nom: string;
+  } | null>(null);
+  // Override visuel optimiste pour déplacer la carte dans la colonne cible
+  // en attendant la confirmation du serveur.
   const [statutOverride, setStatutOverride] = useState<
     Record<string, StatutTache>
   >({});
@@ -121,63 +173,191 @@ export function KanbanBoard({
     return (statutOverride[t.id] ?? t.statut) as StatutTache;
   }
 
-  function handleDragStart(e: React.DragEvent, id: string) {
-    if (!canEdit) {
-      e.preventDefault();
-      return;
-    }
-    setDraggingId(id);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/tache-id", id);
-  }
-  function handleDragEnd() {
-    setDraggingId(null);
-    setHoverCol(null);
-  }
-  function handleDragOver(e: React.DragEvent, col: StatutTache) {
-    if (!canEdit) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (hoverCol !== col) setHoverCol(col);
-  }
-  function handleDragLeave() {
-    setHoverCol(null);
-  }
-  function handleDrop(e: React.DragEvent, col: StatutTache) {
-    e.preventDefault();
-    setHoverCol(null);
-    const id =
-      e.dataTransfer.getData("text/tache-id") || draggingId || "";
-    if (!id) return;
+  /** Applique le drop : override optimiste puis action serveur. */
+  function dropTask(id: string, col: StatutTache) {
     const t = taches.find((x) => x.id === id);
     if (!t) return;
     if (statutOf(t) === col) return;
 
     setStatutOverride((prev) => ({ ...prev, [id]: col }));
-    setDraggingId(null);
+    setSavingId(id);
 
     startTransition(async () => {
       try {
         await setStatut(id, col);
         toast.success("Statut modifié");
         router.refresh();
-        // Le router.refresh va recharger les props, on nettoie l'override
-        // pour ne pas garder une valeur potentiellement obsolète
-        setStatutOverride((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Erreur");
-        // Annule l'override
+      } finally {
+        // Le router.refresh recharge les props ; on nettoie l'override pour
+        // ne pas garder une valeur potentiellement obsolète.
         setStatutOverride((prev) => {
           const next = { ...prev };
           delete next[id];
           return next;
         });
+        setSavingId(null);
       }
     });
+  }
+
+  function onCardPointerDown(e: React.PointerEvent, tache: TacheKanban) {
+    if (!canEdit) return;
+    // Ignore un second doigt / clic pendant qu'un geste est déjà actif :
+    // sinon dragRef serait écrasé et la mauvaise tâche déplacée.
+    if (dragRef.current) return;
+    // Laisse le bouton "supprimer" (ou tout autre bouton) gérer son clic.
+    if ((e.target as HTMLElement).closest("button")) return;
+    const isTouch = e.pointerType === "touch";
+    if (!isTouch && e.button !== 0) return;
+    // À la souris : bloque le démarrage d'une sélection de texte.
+    if (!isTouch) e.preventDefault();
+    // Capture le pointeur : on continue de recevoir les événements même si
+    // le doigt sort de la carte (fiable au tactile).
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* setPointerCapture indisponible : on continue sans. */
+    }
+    const pointerId = e.pointerId;
+    const st: DragState = {
+      taskId: tache.id,
+      nom: tache.nom,
+      dragging: false,
+      aborted: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      lastX: e.clientX,
+      lastY: e.clientY,
+      holdTimer: null,
+      raf: null,
+    };
+    dragRef.current = st;
+
+    // Pendant un drag tactile, empêche le navigateur de reprendre la main
+    // pour faire défiler la page (touchAction "pan-y" resterait actif).
+    // L'écouteur doit être non passif pour que preventDefault agisse.
+    const blockTouchMove = (tev: TouchEvent) => tev.preventDefault();
+    // Empêche le menu contextuel de l'appui long (Android) pendant le geste.
+    const blockContextMenu = (cev: Event) => cev.preventDefault();
+
+    function startDrag() {
+      st.dragging = true;
+      setDraggingId(st.taskId);
+      setHoverCol(colFromPoint(st.lastX, st.lastY));
+      setGhost({ x: st.lastX, y: st.lastY, nom: st.nom });
+      if (isTouch) {
+        window.addEventListener("touchmove", blockTouchMove, {
+          passive: false,
+        });
+        // Retour haptique discret au démarrage, si le matériel le permet.
+        navigator.vibrate?.(10);
+      }
+      st.raf = requestAnimationFrame(autoScroll);
+    }
+
+    // Défilement automatique quand le pointeur approche du bord de la
+    // fenêtre : indispensable sur mobile, où les 4 colonnes sont empilées
+    // verticalement et ne tiennent pas toutes à l'écran.
+    function autoScroll() {
+      if (!st.dragging || dragRef.current !== st) return;
+      let scrolled = false;
+      if (st.lastY < MARGE_AUTOSCROLL && window.scrollY > 0) {
+        window.scrollBy(0, -VITESSE_AUTOSCROLL);
+        scrolled = true;
+      } else if (st.lastY > window.innerHeight - MARGE_AUTOSCROLL) {
+        window.scrollBy(0, VITESSE_AUTOSCROLL);
+        scrolled = true;
+      }
+      // Le contenu a bougé sous un doigt immobile : on recalcule la cible.
+      if (scrolled) setHoverCol(colFromPoint(st.lastX, st.lastY));
+      st.raf = requestAnimationFrame(autoScroll);
+    }
+
+    function cleanup() {
+      if (st.holdTimer) clearTimeout(st.holdTimer);
+      if (st.raf) cancelAnimationFrame(st.raf);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("touchmove", blockTouchMove);
+      window.removeEventListener("contextmenu", blockContextMenu);
+      dragRef.current = null;
+      setDraggingId(null);
+      setHoverCol(null);
+      setGhost(null);
+    }
+
+    function onMove(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return;
+      st.lastX = ev.clientX;
+      st.lastY = ev.clientY;
+      if (st.aborted) return;
+      if (!st.dragging) {
+        const dist = Math.hypot(
+          ev.clientX - st.startX,
+          ev.clientY - st.startY
+        );
+        if (isTouch) {
+          // Avant la fin de l'appui maintenu, un mouvement franc est un
+          // défilement : on abandonne le drag et on laisse le navigateur
+          // dérouler la page (pan-y).
+          if (dist > SEUIL_TACTILE) {
+            st.aborted = true;
+            if (st.holdTimer) {
+              clearTimeout(st.holdTimer);
+              st.holdTimer = null;
+            }
+          }
+          return;
+        }
+        if (dist <= SEUIL_SOURIS) return;
+        startDrag();
+      }
+      setHoverCol(colFromPoint(ev.clientX, ev.clientY));
+      setGhost({ x: ev.clientX, y: ev.clientY, nom: st.nom });
+    }
+
+    // Interruption (défilement repris par le navigateur, 2e doigt,
+    // notification, geste système...) : on annule proprement, sans rien
+    // modifier ni ouvrir l'édition.
+    function onCancel(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return;
+      cleanup();
+    }
+
+    function onUp(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return;
+      const wasDragging = st.dragging;
+      const wasAborted = st.aborted;
+      const dropX = ev.clientX;
+      const dropY = ev.clientY;
+      cleanup();
+      if (wasAborted) return;
+      // Tap court / clic sans mouvement : ouvre l'édition.
+      if (!wasDragging) {
+        onClickTask?.(st.taskId);
+        return;
+      }
+      const col = colFromPoint(dropX, dropY);
+      if (!col) return;
+      dropTask(st.taskId, col);
+    }
+
+    if (isTouch) {
+      // Appui maintenu : le drag ne s'arme qu'après DUREE_APPUI ms sans
+      // bouger de plus de SEUIL_TACTILE px. Avant cela, le geste reste un
+      // défilement (ou un tap) normal.
+      st.holdTimer = setTimeout(() => {
+        st.holdTimer = null;
+        if (dragRef.current === st && !st.aborted) startDrag();
+      }, DUREE_APPUI);
+      window.addEventListener("contextmenu", blockContextMenu);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
   }
 
   const columns = COLUMNS.map((c) => ({
@@ -190,14 +370,12 @@ export function KanbanBoard({
       {columns.map((col) => (
         <div
           key={col.key}
-          onDragOver={(e) => handleDragOver(e, col.key)}
-          onDragLeave={handleDragLeave}
-          onDrop={(e) => handleDrop(e, col.key)}
+          data-col={col.key}
           className={`rounded-xl border ${col.bg} ${
             hoverCol === col.key
               ? "border-brand-500 ring-2 ring-brand-300/50"
               : "border-slate-200 dark:border-slate-800"
-          } flex flex-col min-h-[200px]`}
+          } flex flex-col min-h-[200px] transition-colors`}
         >
           <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <col.Icon size={14} className="text-slate-500 shrink-0" />
@@ -213,50 +391,65 @@ export function KanbanBoard({
           <div className="flex-1 p-2 space-y-2 min-h-[100px]">
             {col.items.length === 0 ? (
               <div className="text-[11px] text-slate-400 italic text-center py-6">
-                {canEdit
-                  ? "Glissez une tâche ici"
-                  : "Aucune tâche"}
+                {canEdit ? "Glissez une tâche ici" : "Aucune tâche"}
               </div>
             ) : (
               col.items.map((t) => (
                 <KanbanCard
                   key={t.id}
                   tache={t}
-                  draggable={canEdit}
-                  isDragging={draggingId === t.id}
-                  pending={pending && draggingId === t.id}
-                  onDragStart={(e) => handleDragStart(e, t.id)}
-                  onDragEnd={handleDragEnd}
-                  onClick={() => onClickTask?.(t.id)}
                   canEdit={canEdit}
+                  isDragging={draggingId === t.id}
+                  pending={savingId === t.id}
+                  onPointerDown={
+                    canEdit ? (e) => onCardPointerDown(e, t) : undefined
+                  }
+                  onClick={
+                    !canEdit && onClickTask
+                      ? () => onClickTask(t.id)
+                      : undefined
+                  }
                 />
               ))
             )}
           </div>
         </div>
       ))}
+
+      {/* Fantôme suivant le pointeur pendant le drag (au-dessus du doigt) */}
+      {ghost && (
+        <div
+          aria-hidden="true"
+          className="fixed z-50 pointer-events-none px-2.5 py-1.5 rounded-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 shadow-lg text-xs font-medium text-slate-900 dark:text-slate-100 max-w-[220px] truncate"
+          style={{
+            left: ghost.x,
+            top: ghost.y,
+            transform: "translate(-50%, -130%)",
+          }}
+        >
+          {ghost.nom}
+        </div>
+      )}
     </div>
   );
 }
 
 function KanbanCard({
   tache: t,
-  draggable,
+  canEdit,
   isDragging,
   pending,
-  onDragStart,
-  onDragEnd,
+  onPointerDown,
   onClick,
-  canEdit,
 }: {
   tache: TacheKanban;
-  draggable: boolean;
+  canEdit: boolean;
   isDragging: boolean;
   pending: boolean;
-  onDragStart: (e: React.DragEvent) => void;
-  onDragEnd: () => void;
+  /** Démarre le suivi Pointer Events (drag + tap) quand l'édition est permise. */
+  onPointerDown?: (e: React.PointerEvent) => void;
+  /** Clic simple (mode lecture seule uniquement). */
   onClick?: () => void;
-  canEdit: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -277,17 +470,14 @@ function KanbanCard({
 
   return (
     <div
-      draggable={draggable}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onClick={(e) => {
-        // Évite le double-fire au lâcher d'un drag-end
-        if (isDragging) return;
-        onClick?.();
-      }}
+      onPointerDown={onPointerDown}
+      onClick={onClick}
+      // pan-y : le doigt peut toujours faire défiler la page verticalement ;
+      // le drag ne s'arme qu'après l'appui maintenu (jamais touchAction "none").
+      style={canEdit ? { touchAction: "pan-y" } : undefined}
       className={`bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 shadow-sm hover:shadow-md transition group ${
         onClick ? "cursor-pointer" : ""
-      } ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${
+      } ${canEdit ? "cursor-grab active:cursor-grabbing select-none" : ""} ${
         isDragging ? "opacity-30" : ""
       } ${pending ? "animate-pulse" : ""}`}
     >

@@ -65,39 +65,39 @@ model User {
   // via la BDD/disk). `totpEnabled` reste false tant que le user n'a pas
   // vérifié son premier code (anti-enrôlement raté). Backup codes hashés
   // SHA-256, à usage unique : on vérifie le hash et on retire le code.
-  totpEnabled      Boolean  @default(false)
-  totpSecret       String?
-  totpBackupCodes  String[] @default([])
+  totpEnabled     Boolean  @default(false)
+  totpSecret      String?
+  totpBackupCodes String[] @default([])
 
-  chantiersGeres     Chantier[]           @relation("ChefChantier")
-  chantiersClient    Chantier[]           @relation("ChantierClients")
-  tempsPasses      TempsPasse[]
-  espaces            EspaceMembre[]
-  passwordResets     PasswordResetToken[]
-  rapportsCrees      RapportChantier[]
-  incidentsRapportes Incident[]           @relation("IncidentReporter")
-  incidentsResolus   Incident[]           @relation("IncidentResolver")
-  demandesFaites     DemandeMateriel[]    @relation("DemandeRequester")
-  demandesValidees   DemandeMateriel[]    @relation("DemandeApprover")
-  notifications      Notification[]
-  journalMessages    JournalMessage[]
-  plansUploaded      PlanChantier[]
-  readStates         UserReadState[]
-  pushSubscriptions  PushSubscription[]
-  chantierPins       UserChantierPin[]
-  auditEntries       AuditEntry[]
-  messageReactions   MessageReaction[]
-  canauxCrees        Canal[]              @relation("CanalCreateur")
-  messageTags        MessageTag[]         @relation("TagAuteur")
-  chantiersMembre     ChantierMembre[]    @relation("MembreUser")
-  membresAjoutes      ChantierMembre[]    @relation("MembreAjoutePar")
-  canauxMembre        CanalMembre[]       @relation("CanalMembreUser")
-  canalMembresAjoutes CanalMembre[]       @relation("CanalMembreAjoutePar")
+  chantiersGeres      Chantier[]           @relation("ChefChantier")
+  chantiersClient     Chantier[]           @relation("ChantierClients")
+  tempsPasses         TempsPasse[]
+  espaces             EspaceMembre[]
+  passwordResets      PasswordResetToken[]
+  rapportsCrees       RapportChantier[]
+  incidentsRapportes  Incident[]           @relation("IncidentReporter")
+  incidentsResolus    Incident[]           @relation("IncidentResolver")
+  demandesFaites      DemandeMateriel[]    @relation("DemandeRequester")
+  demandesValidees    DemandeMateriel[]    @relation("DemandeApprover")
+  notifications       Notification[]
+  journalMessages     JournalMessage[]
+  plansUploaded       PlanChantier[]
+  readStates          UserReadState[]
+  pushSubscriptions   PushSubscription[]
+  chantierPins        UserChantierPin[]
+  auditEntries        AuditEntry[]
+  messageReactions    MessageReaction[]
+  canauxCrees         Canal[]              @relation("CanalCreateur")
+  messageTags         MessageTag[]         @relation("TagAuteur")
+  chantiersMembre     ChantierMembre[]     @relation("MembreUser")
+  membresAjoutes      ChantierMembre[]     @relation("MembreAjoutePar")
+  canauxMembre        CanalMembre[]        @relation("CanalMembreUser")
+  canalMembresAjoutes CanalMembre[]        @relation("CanalMembreAjoutePar")
   ouvrierLie          Ouvrier?
   // Suivi financier (2026-07-08) : maître d'ouvrage / client rattaché à un doc.
-  marchesClient       Marche[]            @relation("MarcheClient")
-  devisClient         Devis[]             @relation("DevisClient")
-  facturesClient      Facture[]           @relation("FactureClient")
+  marchesClient       Marche[]             @relation("MarcheClient")
+  devisClient         Devis[]              @relation("DevisClient")
+  facturesClient      Facture[]            @relation("FactureClient")
 }
 
 /// v4.3 : une ligne = une personne sur un chantier, quel que soit son
@@ -173,24 +173,24 @@ enum TypeProjet {
 }
 
 model Chantier {
-  id              String         @id @default(cuid())
-  nom             String
-  adresse         String?
-  description     String?
-  dateDebut       DateTime?
-  dateFin         DateTime?
-  statut          StatutChantier @default(PLANIFIE)
-  type            TypeProjet     @default(CHANTIER)
-  espaceId        String
-  espace          Espace         @relation(fields: [espaceId], references: [id], onDelete: Restrict)
-  budgetEspeces   Decimal        @default(0) @db.Decimal(12, 2)
-  budgetVirement  Decimal        @default(0) @db.Decimal(12, 2)
-  chefId          String?
-  chef            User?          @relation("ChefChantier", fields: [chefId], references: [id], onDelete: SetNull)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id             String         @id @default(cuid())
+  nom            String
+  adresse        String?
+  description    String?
+  dateDebut      DateTime?
+  dateFin        DateTime?
+  statut         StatutChantier @default(PLANIFIE)
+  type           TypeProjet     @default(CHANTIER)
+  espaceId       String
+  espace         Espace         @relation(fields: [espaceId], references: [id], onDelete: Restrict)
+  budgetEspeces  Decimal        @default(0) @db.Decimal(12, 2)
+  budgetVirement Decimal        @default(0) @db.Decimal(12, 2)
+  chefId         String?
+  chef           User?          @relation("ChefChantier", fields: [chefId], references: [id], onDelete: SetNull)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
-  archivedAt       DateTime?
+  archivedAt DateTime?
 
   equipes          Equipe[]
   pointages        Pointage[]
@@ -201,7 +201,7 @@ model Chantier {
   rapports         RapportChantier[]
   incidents        Incident[]
   demandesMateriel DemandeMateriel[]
-  clients          User[]            @relation("ChantierClients")
+  clients          User[]             @relation("ChantierClients")
   journalMessages  JournalMessage[]
   plans            PlanChantier[]
   rapportsHebdo    RapportHebdo[]
@@ -219,23 +219,25 @@ model Chantier {
   situations       SituationTravaux[]
   factures         Facture[]
   retenues         RetenueGarantie[]
+  // GED chantier (2026-07-11)
+  documents        ChantierDocument[]
 
   @@index([type])
   @@index([espaceId])
 }
 
 model Equipe {
-  id          String   @id @default(cuid())
-  nom         String
-  chantierId  String?
-  chantier    Chantier? @relation(fields: [chantierId], references: [id], onDelete: SetNull)
+  id         String    @id @default(cuid())
+  nom        String
+  chantierId String?
+  chantier   Chantier? @relation(fields: [chantierId], references: [id], onDelete: SetNull)
   /// Socle espaces : l'annuaire appartient à une entreprise. Nullable en
   /// base (SetNull), mais backfillé et posé à la création : les listes
   /// bornées par espace ne montrent jamais les lignes NULL.
-  espaceId    String?
-  espace      Espace?  @relation(fields: [espaceId], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  espaceId   String?
+  espace     Espace?   @relation(fields: [espaceId], references: [id], onDelete: SetNull)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   ouvriers        Ouvrier[]
   sortiesMateriel SortieMateriel[]
@@ -259,36 +261,107 @@ enum ModePaie {
 }
 
 model Ouvrier {
-  id           String      @id @default(cuid())
-  nom          String
-  prenom       String?
-  telephone    String?
-  photo        String?
-  typeContrat  TypeContrat
-  tarifBase    Decimal     @db.Decimal(10, 2)
-  modePaie     ModePaie    @default(MOIS)
-  actif        Boolean     @default(true)
-  equipeId     String?
-  equipe       Equipe?     @relation(fields: [equipeId], references: [id], onDelete: SetNull)
+  id          String      @id @default(cuid())
+  nom         String
+  prenom      String?
+  telephone   String?
+  photo       String?
+  typeContrat TypeContrat
+  tarifBase   Decimal     @db.Decimal(10, 2)
+  modePaie    ModePaie    @default(MOIS)
+  actif       Boolean     @default(true)
+  equipeId    String?
+  equipe      Equipe?     @relation(fields: [equipeId], references: [id], onDelete: SetNull)
   /// v4.3 : compte OUVRIER lié (pointage QR). Optionnel : un ouvrier
   /// sans smartphone reste un simple enregistrement pointé par le chef.
-  userId       String?     @unique
-  user         User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId      String?     @unique
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
   /// Socle espaces : un ouvrier est salarié d'UNE entreprise (annuaire et
   /// paie bornés par espace). Même régime que Equipe.espaceId.
-  espaceId     String?
-  espace       Espace?     @relation(fields: [espaceId], references: [id], onDelete: SetNull)
-  notes        String?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  espaceId    String?
+  espace      Espace?     @relation(fields: [espaceId], references: [id], onDelete: SetNull)
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   pointages        Pointage[]
   avances          Avance[]
   paiements        Paiement[]
   outilsPersonnels OutilPersonnel[]
   tachesAssignees  TacheOuvrier[]
+  documents        OuvrierDocument[]
 
   @@index([espaceId])
+}
+
+/// GED ouvrier (2026-07-11) : CV, habilitations, contrats, pieces d'identite,
+/// visites medicales... Fichiers servis via /uploads/docs-ouvriers.
+enum CategorieDocOuvrier {
+  CV
+  HABILITATION
+  CONTRAT
+  IDENTITE
+  MEDICAL
+  AUTRE
+}
+
+model OuvrierDocument {
+  id        String              @id @default(cuid())
+  ouvrierId String
+  ouvrier   Ouvrier             @relation(fields: [ouvrierId], references: [id], onDelete: Cascade)
+  nom       String
+  categorie CategorieDocOuvrier @default(AUTRE)
+  fichier   String
+  mimeType  String?
+  taille    Int?
+  note      String?
+  createdAt DateTime            @default(now())
+  creePar   String?
+
+  @@index([ouvrierId])
+}
+
+/// GED chantier (2026-07-11) : plans, contrats, devis, PV... avec circuit de
+/// signature client (reutilise le SignaturePad du PV de reception).
+enum CategorieDocChantier {
+  PLAN
+  CONTRAT
+  DEVIS
+  FACTURE
+  PV
+  RAPPORT
+  AUTRE
+}
+
+enum StatutSignatureDoc {
+  SANS
+  A_SIGNER
+  SIGNE
+}
+
+model ChantierDocument {
+  id                 String               @id @default(cuid())
+  chantierId         String
+  chantier           Chantier             @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  nom                String
+  categorie          CategorieDocChantier @default(AUTRE)
+  fichier            String
+  mimeType           String?
+  taille             Int?
+  note               String?
+  /// Visible par les comptes CLIENT du chantier (fiche + /mes-documents).
+  visibleClient      Boolean              @default(false)
+  statutSignature    StatutSignatureDoc   @default(SANS)
+  signatureClientUrl String?
+  signatureClientLe  DateTime?
+  signatureClientPar String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  creePar            String?
+
+  @@index([chantierId])
+  @@index([chantierId, categorie])
+  @@index([statutSignature])
 }
 
 /// Singleton (id="singleton") qui stocke les préférences de l'app —
@@ -303,16 +376,16 @@ model AppSettings {
 }
 
 model Pointage {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   ouvrierId       String
-  ouvrier         Ouvrier  @relation(fields: [ouvrierId], references: [id], onDelete: Cascade)
-  date            DateTime @db.Date
-  joursTravailles Decimal  @default(1) @db.Decimal(4, 2)
+  ouvrier         Ouvrier   @relation(fields: [ouvrierId], references: [id], onDelete: Cascade)
+  date            DateTime  @db.Date
+  joursTravailles Decimal   @default(1) @db.Decimal(4, 2)
   chantierId      String?
   chantier        Chantier? @relation(fields: [chantierId], references: [id], onDelete: SetNull)
   note            String?
   photo           String?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
 
   @@unique([ouvrierId, date])
   @@index([date])
@@ -567,46 +640,46 @@ enum StatutTache {
 }
 
 model Tache {
-  id          String      @id @default(cuid())
+  id          String         @id @default(cuid())
   chantierId  String
-  chantier    Chantier    @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  chantier    Chantier       @relation(fields: [chantierId], references: [id], onDelete: Cascade)
   equipeId    String?
-  equipe      Equipe?     @relation(fields: [equipeId], references: [id], onDelete: SetNull)
+  equipe      Equipe?        @relation(fields: [equipeId], references: [id], onDelete: SetNull)
   nom         String
   description String?
-  dateDebut   DateTime    @db.Date
-  dateFin     DateTime    @db.Date
-  avancement  Int         @default(0)
-  statut      StatutTache @default(A_FAIRE)
+  dateDebut   DateTime       @db.Date
+  dateFin     DateTime       @db.Date
+  avancement  Int            @default(0)
+  statut      StatutTache    @default(A_FAIRE)
   /// Priorité Todoist-style : 1 = P1 (urgent, rouge), 2 = P2 (haute, orange),
   /// 3 = P3 (moyenne, bleu), 4 = P4 (par défaut, gris).
-  priorite    Int         @default(4)
+  priorite    Int            @default(4)
   /// Sous-tâche : pointe vers la tâche parente. Cascade delete.
   parentId    String?
-  parent      Tache?      @relation("TacheSousTaches", fields: [parentId], references: [id], onDelete: Cascade)
-  enfants     Tache[]     @relation("TacheSousTaches")
+  parent      Tache?         @relation("TacheSousTaches", fields: [parentId], references: [id], onDelete: Cascade)
+  enfants     Tache[]        @relation("TacheSousTaches")
   /// Ordre manuel dans la liste (drag-to-reorder dans l'UI).
-  ordre       Int         @default(0)
+  ordre       Int            @default(0)
   /// Groupe de regroupement façon Todoist (ex: "Gros œuvre", "Finitions").
   /// Par chantier ; SetNull si la section est supprimée.
   sectionId   String?
-  section     Section?    @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-  dependances Tache[]     @relation("TacheDependance")
-  dependants  Tache[]     @relation("TacheDependance")
+  section     Section?       @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  dependances Tache[]        @relation("TacheDependance")
+  dependants  Tache[]        @relation("TacheDependance")
   labels      TacheLabel[]
   ouvriers    TacheOuvrier[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
   // Récurrence (format RFC 5545 RRULE, ex: "FREQ=WEEKLY;BYDAY=MO,FR").
   // Quand la tâche est marquée terminée, une nouvelle occurrence est
   // créée automatiquement à la prochaine date prévue par la règle.
-  recurrence  String?
+  recurrence         String?
   /// Tâche parente de la série récurrente (pour traçage/historique).
   recurrenceParentId String?
 
   // Soft-delete : marqué supprimé mais conservé 30 jours dans la corbeille
-  deletedAt   DateTime?
+  deletedAt DateTime?
 
   @@index([chantierId])
   @@index([dateDebut, dateFin])
@@ -621,8 +694,8 @@ model Tache {
 model TacheOuvrier {
   tacheId   String
   ouvrierId String
-  tache     Tache   @relation(fields: [tacheId], references: [id], onDelete: Cascade)
-  ouvrier   Ouvrier @relation(fields: [ouvrierId], references: [id], onDelete: Cascade)
+  tache     Tache    @relation(fields: [tacheId], references: [id], onDelete: Cascade)
+  ouvrier   Ouvrier  @relation(fields: [ouvrierId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
   @@id([tacheId, ouvrierId])
@@ -636,7 +709,7 @@ model Section {
   chantierId String
   chantier   Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
   nom        String
-  couleur    String?  // hex optionnel pour accent visuel
+  couleur    String? // hex optionnel pour accent visuel
   ordre      Int      @default(0)
   taches     Tache[]
   createdAt  DateTime @default(now())
@@ -648,13 +721,13 @@ model Section {
 /// Étiquette / tag pour catégoriser les tâches (sécurité, urgent, livraison...).
 /// Globale par défaut (chantierId null) ou rattachée à un chantier.
 model Label {
-  id          String       @id @default(cuid())
-  nom         String
-  couleur     String       @default("#3b82f6") // hex
-  chantierId  String?
-  chantier    Chantier?    @relation(fields: [chantierId], references: [id], onDelete: Cascade)
-  taches      TacheLabel[]
-  createdAt   DateTime     @default(now())
+  id         String       @id @default(cuid())
+  nom        String
+  couleur    String       @default("#3b82f6") // hex
+  chantierId String?
+  chantier   Chantier?    @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  taches     TacheLabel[]
+  createdAt  DateTime     @default(now())
 
   @@index([chantierId])
 }
@@ -663,8 +736,8 @@ model Label {
 model TacheLabel {
   tacheId String
   labelId String
-  tache   Tache @relation(fields: [tacheId], references: [id], onDelete: Cascade)
-  label   Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  tache   Tache  @relation(fields: [tacheId], references: [id], onDelete: Cascade)
+  label   Label  @relation(fields: [labelId], references: [id], onDelete: Cascade)
 
   @@id([tacheId, labelId])
   @@index([labelId])
@@ -689,21 +762,21 @@ enum Meteo {
 /// nombre d'ouvriers présents. Permet à l'admin de suivre l'avancement
 /// sans être sur place.
 model RapportChantier {
-  id          String   @id @default(cuid())
-  chantierId  String
-  chantier    Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
-  authorId    String
-  author      User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
-  date        DateTime @db.Date
-  meteo       Meteo?
-  texte       String
-  photos      String[] @default([])
-  nbOuvriers  Int?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  chantierId String
+  chantier   Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  date       DateTime @db.Date
+  meteo      Meteo?
+  texte      String
+  photos     String[] @default([])
+  nbOuvriers Int?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   // Soft-delete : marqué supprimé mais conservé 30 jours dans la corbeille
-  deletedAt   DateTime?
+  deletedAt DateTime?
 
   @@index([chantierId, date(sort: Desc)])
   @@index([authorId])
@@ -814,24 +887,24 @@ enum StatutDemandeMateriel {
 /// (ou refuse), puis la transforme en commande quand elle part chez le
 /// fournisseur. Workflow propre : trace tout, évite les SMS perdus.
 model DemandeMateriel {
-  id           String                 @id @default(cuid())
-  chantierId   String
-  chantier     Chantier               @relation(fields: [chantierId], references: [id], onDelete: Cascade)
-  requesterId  String
-  requester    User                   @relation("DemandeRequester", fields: [requesterId], references: [id], onDelete: Restrict)
-  description  String
-  quantite     Decimal                @default(1) @db.Decimal(10, 2)
-  unite        String?
-  urgence      NiveauGravite          @default(ATTENTION)
-  fournisseur  String?
-  statut       StatutDemandeMateriel  @default(DEMANDEE)
-  reponseNote  String?
-  approverId   String?
-  approver     User?                  @relation("DemandeApprover", fields: [approverId], references: [id], onDelete: SetNull)
-  approuveLe   DateTime?
-  commandeId   String?
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
+  id          String                @id @default(cuid())
+  chantierId  String
+  chantier    Chantier              @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  requesterId String
+  requester   User                  @relation("DemandeRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  description String
+  quantite    Decimal               @default(1) @db.Decimal(10, 2)
+  unite       String?
+  urgence     NiveauGravite         @default(ATTENTION)
+  fournisseur String?
+  statut      StatutDemandeMateriel @default(DEMANDEE)
+  reponseNote String?
+  approverId  String?
+  approver    User?                 @relation("DemandeApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  approuveLe  DateTime?
+  commandeId  String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
 
   @@index([chantierId])
   @@index([statut])
@@ -897,8 +970,8 @@ model Canal {
   archivedAt  DateTime?
   createdAt   DateTime        @default(now())
 
-  messages    JournalMessage[]
-  membres     CanalMembre[]
+  messages JournalMessage[]
+  membres  CanalMembre[]
 
   @@unique([chantierId, nom])
   @@index([chantierId, ordre])
@@ -917,7 +990,7 @@ model MessageTag {
   entityId   String?
   createdAt  DateTime @default(now())
 
-  message    JournalMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message JournalMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   @@id([messageId, tagCode])
   @@index([entity, entityId])
@@ -941,46 +1014,46 @@ model UserReadState {
   resource   String
   lastReadAt DateTime @default(now())
 
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([userId, resource])
   @@index([userId])
 }
 
 model JournalMessage {
-  id           String             @id @default(cuid())
-  chantierId   String
-  chantier     Chantier           @relation(fields: [chantierId], references: [id], onDelete: Cascade)
-  authorId     String?
-  author       User?              @relation(fields: [authorId], references: [id], onDelete: SetNull)
-  date         DateTime           @db.Date
-  type         JournalMessageType @default(NOTE)
-  texte        String?
-  photos       String[]           @default([])
-  videos       String[]           @default([])
+  id               String             @id @default(cuid())
+  chantierId       String
+  chantier         Chantier           @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  authorId         String?
+  author           User?              @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  date             DateTime           @db.Date
+  type             JournalMessageType @default(NOTE)
+  texte            String?
+  photos           String[]           @default([])
+  videos           String[]           @default([])
   // v4.2 : canal du message (null = messages historiques, rattachés au canal Général par la migration)
-  canalId      String?
-  canal        Canal?             @relation(fields: [canalId], references: [id], onDelete: SetNull)
+  canalId          String?
+  canal            Canal?             @relation(fields: [canalId], references: [id], onDelete: SetNull)
   // Liens vers événements existants (pour les messages SYSTEM_*)
-  incidentId   String?
-  demandeId    String?
-  commandeId   String?
-  rapportId    String?
-  sortieId     String?
+  incidentId       String?
+  demandeId        String?
+  commandeId       String?
+  rapportId        String?
+  sortieId         String?
   // v4.2 : liens des fiches créées par tag
-  tacheId      String?
-  reserveId    String?
+  tacheId          String?
+  reserveId        String?
   // Filtrage avant envoi au client (admin coche/décoche)
-  hiddenFromClient Boolean        @default(false)
+  hiddenFromClient Boolean            @default(false)
   // Auteur peut éditer dans les 5 min, admin tout le temps
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  reactions        MessageReaction[]
+  tags             MessageTag[]
 
   @@index([chantierId, date])
   @@index([createdAt(sort: Desc)])
   @@index([canalId])
-  reactions    MessageReaction[]
-  tags         MessageTag[]
 }
 
 /// Réaction emoji sur un message du fil. Un utilisateur peut poser
@@ -1004,18 +1077,18 @@ model MessageReaction {
 // =====================================================
 
 model PlanChantier {
-  id           String   @id @default(cuid())
-  chantierId   String
-  chantier     Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
-  uploaderId   String
-  uploader     User     @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
-  nom          String
-  description  String?
-  fileUrl      String
-  mimeType     String
-  fileSize     Int
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(cuid())
+  chantierId  String
+  chantier    Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  uploaderId  String
+  uploader    User     @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
+  nom         String
+  description String?
+  fileUrl     String
+  mimeType    String
+  fileSize    Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([chantierId])
 }
@@ -1025,24 +1098,24 @@ model PlanChantier {
 // =====================================================
 
 model RapportHebdo {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   chantierId         String
-  chantier           Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
-  semaineDebut       DateTime @db.Date  // lundi de la semaine
+  chantier           Chantier  @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  semaineDebut       DateTime  @db.Date // lundi de la semaine
   texteIntro         String?
   // Liste des messageIds inclus dans le rapport envoyé au client
   // (par défaut, tous les messages NOTE et BILAN_JOURNEE de la semaine
   //  qui ne sont pas hiddenFromClient. L'admin peut surcharger ici.)
-  hiddenMessageIds   String[] @default([])
-  envoyeAuClient     Boolean  @default(false)
+  hiddenMessageIds   String[]  @default([])
+  envoyeAuClient     Boolean   @default(false)
   envoyeLe           DateTime?
   // Signature électronique : data URL de l'image (PNG du canvas).
   // Le client signe via la page rapport-hebdo, on stocke la signature.
   signatureClientUrl String?
   signatureClientLe  DateTime?
-  signatureClientId  String?  // userId qui a signé
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  signatureClientId  String? // userId qui a signé
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@unique([chantierId, semaineDebut])
 }
@@ -1063,23 +1136,23 @@ enum StatutPvReception {
 /// zone). Quand toutes les réserves sont levées, le PV passe en
 /// RESERVES_LEVEES et le chantier peut être archivé proprement.
 model PvReception {
-  id                  String           @id @default(cuid())
-  chantierId          String
-  chantier            Chantier         @relation(fields: [chantierId], references: [id], onDelete: Cascade)
-  dateReception       DateTime         @db.Date
-  texteRecap          String?
-  signatureAdminUrl   String?
-  signatureAdminLe    DateTime?
-  signatureClientUrl  String?
-  signatureClientLe   DateTime?
-  statut              StatutPvReception @default(BROUILLON)
-  reservesLeveeUrl    String?  // signature finale après levée des réserves
-  reservesLeveeLe     DateTime?
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  id                 String            @id @default(cuid())
+  chantierId         String
+  chantier           Chantier          @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  dateReception      DateTime          @db.Date
+  texteRecap         String?
+  signatureAdminUrl  String?
+  signatureAdminLe   DateTime?
+  signatureClientUrl String?
+  signatureClientLe  DateTime?
+  statut             StatutPvReception @default(BROUILLON)
+  reservesLeveeUrl   String? // signature finale après levée des réserves
+  reservesLeveeLe    DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
-  plans               PvPlan[]
-  reserves            PvReserve[]
+  plans    PvPlan[]
+  reserves PvReserve[]
 
   @@unique([chantierId])
 }
@@ -1096,35 +1169,35 @@ model PvPlan {
   ordre     Int         @default(0)
   createdAt DateTime    @default(now())
 
-  reserves  PvReserve[]
+  reserves PvReserve[]
 }
 
 /// Une réserve (élément non-conforme constaté à la réception). Peut être
 /// liée à une position sur un plan (puce numérotée) ou simplement à une
 /// zone textuelle (ex: "Cuisine"). Photos + commentaire pour documenter.
 model PvReserve {
-  id          String      @id @default(cuid())
-  pvId        String
-  pv          PvReception @relation(fields: [pvId], references: [id], onDelete: Cascade)
-  numero      Int         // 1, 2, 3... — affiché sur le plan et dans le rapport
-  texte       String
-  photos      String[]    @default([])
-  zone        String?     // localisation textuelle, ex: "Cuisine", "Chambre 1"
-  lot         String?     // corps de métier, ex: "NIC", "ACC", "SOL", "FER", "Peinture"
-  dateLimite  DateTime?   @db.Date  // "Pour le" — échéance souhaitée pour la levée
+  id         String      @id @default(cuid())
+  pvId       String
+  pv         PvReception @relation(fields: [pvId], references: [id], onDelete: Cascade)
+  numero     Int // 1, 2, 3... — affiché sur le plan et dans le rapport
+  texte      String
+  photos     String[]    @default([])
+  zone       String? // localisation textuelle, ex: "Cuisine", "Chambre 1"
+  lot        String? // corps de métier, ex: "NIC", "ACC", "SOL", "FER", "Peinture"
+  dateLimite DateTime?   @db.Date // "Pour le" — échéance souhaitée pour la levée
 
   // Position sur un plan (optionnelle)
-  planId      String?
-  plan        PvPlan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
-  posX        Float?      // 0..1 (relatif à la largeur du plan)
-  posY        Float?      // 0..1 (relatif à la hauteur du plan)
+  planId String?
+  plan   PvPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  posX   Float? // 0..1 (relatif à la largeur du plan)
+  posY   Float? // 0..1 (relatif à la hauteur du plan)
 
   // Levée individuelle
-  leveLe      DateTime?
-  leveNote    String?
+  leveLe   DateTime?
+  leveNote String?
 
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([pvId, numero])
 }
@@ -1138,17 +1211,17 @@ model PvReserve {
 /// Consultable par les admins via /admin/audit. Append-only (jamais
 /// modifié/supprimé) sauf via purge manuelle.
 model AuditEntry {
-  id         String   @id @default(cuid())
-  createdAt  DateTime @default(now())
-  userId     String?
-  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  userName   String   // snapshot du nom au moment de l'action
-  userRole   String   // snapshot du rôle au moment de l'action
-  action     String   // ex: "PAIEMENT_PAYE", "USER_DELETED", "DEMANDE_APPROUVEE"
-  entity     String   // table/entité touchée : "Paiement", "User", "DemandeMateriel"
-  entityId   String?  // id de l'entité ciblée (peut être null si N/A)
-  summary    String   // description lisible "Paiement 1234.56€ versé à Jean Dupont"
-  metadata   Json?    // payload structuré (avant/après si besoin)
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userName  String // snapshot du nom au moment de l'action
+  userRole  String // snapshot du rôle au moment de l'action
+  action    String // ex: "PAIEMENT_PAYE", "USER_DELETED", "DEMANDE_APPROUVEE"
+  entity    String // table/entité touchée : "Paiement", "User", "DemandeMateriel"
+  entityId  String? // id de l'entité ciblée (peut être null si N/A)
+  summary   String // description lisible "Paiement 1234.56€ versé à Jean Dupont"
+  metadata  Json? // payload structuré (avant/après si besoin)
 
   @@index([createdAt(sort: Desc)])
   @@index([action])
@@ -1160,11 +1233,11 @@ model AuditEntry {
 /// Indexé par URL relative — une entrée par photo. Optionnel : si l'image
 /// ne contient pas d'EXIF GPS, aucune entrée n'est créée.
 model PhotoMetadata {
-  url       String   @id
+  url       String    @id
   gpsLat    Float?
   gpsLng    Float?
   takenAt   DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([gpsLat, gpsLng])
 }
@@ -1221,8 +1294,8 @@ model PhaseEtude {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  tempsPasses  TempsPasse[]
-  situations   SituationTravaux[]
+  tempsPasses TempsPasse[]
+  situations  SituationTravaux[]
 
   @@index([chantierId, ordre])
 }
@@ -1269,17 +1342,17 @@ model Espace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  membres   EspaceMembre[]
-  chantiers Chantier[]
-  ouvriers  Ouvrier[]
-  equipes   Equipe[]
+  membres       EspaceMembre[]
+  chantiers     Chantier[]
+  ouvriers      Ouvrier[]
+  equipes       Equipe[]
   // Suivi financier (2026-07-08)
-  marches      Marche[]
-  devis        Devis[]
-  situations   SituationTravaux[]
-  factures     Facture[]
+  marches       Marche[]
+  devis         Devis[]
+  situations    SituationTravaux[]
+  factures      Facture[]
   encaissements Encaissement[]
-  retenues     RetenueGarantie[]
+  retenues      RetenueGarantie[]
 }
 
 /// Adhésion d un utilisateur à un espace, avec un rôle PROPRE à cet espace
@@ -1427,12 +1500,12 @@ model Marche {
   chantierId String
   chantier   Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
 
-  reference       String
-  natureMarche    NatureMarche    @default(PRIVE)
-  modeFacturation ModeFacturation @default(SITUATION_TRAVAUX)
+  reference        String
+  natureMarche     NatureMarche    @default(PRIVE)
+  modeFacturation  ModeFacturation @default(SITUATION_TRAVAUX)
   // Maître d'ouvrage / client : un User CLIENT LYNX quand il existe, sinon libre.
   clientUserId     String?
-  clientUser       User?   @relation("MarcheClient", fields: [clientUserId], references: [id], onDelete: SetNull)
+  clientUser       User?           @relation("MarcheClient", fields: [clientUserId], references: [id], onDelete: SetNull)
   maitreOuvrageNom String?
 
   montantInitialHT Decimal  @default(0) @db.Decimal(12, 2)
@@ -1562,8 +1635,8 @@ model SituationTravaux {
   autoliquidation          Boolean @default(false)
   netAPayerPeriode         Decimal @db.Decimal(12, 2)
 
-  statut       StatutSituation @default(BROUILLON)
-  dateVisaMOE  DateTime?
+  statut        StatutSituation @default(BROUILLON)
+  dateVisaMOE   DateTime?
   valideurMoeId String?
 
   // Signature du client (acceptation de l'avancement / bon à payer de la
