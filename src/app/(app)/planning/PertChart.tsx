@@ -2,18 +2,25 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Lightbulb, Maximize2, Minus, Plus, X } from "lucide-react";
+import { LayoutGrid, Lightbulb, Maximize2, Minus, Plus, X } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
 import { computePert, type PertTaskInput, type PertResult } from "@/lib/pert";
-import { ajouterDependance, retirerDependance } from "./actions";
+import {
+  ajouterDependance,
+  majPositionPert,
+  reinitialiserPositionsPert,
+  retirerDependance,
+} from "./actions";
 import { creeraitUnCycle } from "./gantt/dependances";
 import {
   calculerPositionsPert,
   ordonnerNiveauxParBarycentre,
   PERT_NODE_H,
   PERT_NODE_W,
+  PERT_PADDING,
 } from "./pert/disposition";
+import { noeudSousPoint, type NoeudPositionne } from "./pert/hittest";
 
 type TachePert = {
   id: string;
@@ -25,7 +32,14 @@ type TachePert = {
   equipe: { nom: string } | null;
   chantier: { id?: string; nom: string };
   dependances: { id: string }[];
+  /** Position manuelle partagée (drag façon drawio). NULL = auto. */
+  pertX?: number | null;
+  pertY?: number | null;
 };
+
+/** Override local de position (drag en cours ou en attente du serveur).
+ *  `enregistre` : envoyé au serveur, retiré quand les props rattrapent. */
+type PositionLocale = { x: number; y: number; enregistre: boolean };
 
 type Vue2D = { k: number; tx: number; ty: number };
 
@@ -85,7 +99,11 @@ function cheminArete(a: { x1: number; y1: number; x2: number; y2: number }) {
  * boutons, double-tap = ajuster), noeuds cliquables (ouvre la modale
  * d'édition partagée), création de dépendance en tirant depuis le port droit
  * d'une carte, suppression au tap sur une flèche (croix + confirmation).
- * Les ajouts/retraits de flèches suivent le motif anti-flash du Gantt.
+ * Les cartes se déplacent au doigt façon drawio (seuil 6 px pour distinguer
+ * du tap) ; la position est enregistrée en base (pertX/pertY) et partagée
+ * par toute l'équipe, « Réorganiser » revient à la disposition automatique.
+ * Les ajouts/retraits de flèches et les positions suivent le motif
+ * anti-flash du Gantt (override local annoté, purgé au rattrapage).
  */
 export function PertChart({
   taches,
@@ -123,6 +141,12 @@ export function PertChart({
     bouge: boolean;
     noeudId: string | null;
     t0: number;
+    /** Position monde du noeud au début du geste (drag de carte). */
+    noeudPos0: { x: number; y: number } | null;
+    /** Override local préexistant, restauré sur pointercancel/échec. */
+    noeudLocalAvant: PositionLocale | null;
+    /** Dernière position monde pendant le drag (sauvée au relâcher). */
+    noeudPosCourante: { x: number; y: number } | null;
   } | null>(null);
   const pinchRef = useRef<{
     d0: number;
@@ -148,6 +172,19 @@ export function PertChart({
     { tacheId: string; depId: string }[]
   >([]);
   const [removedDeps, setRemovedDeps] = useState<string[]>([]);
+
+  // Positions locales des cartes (drag en cours ou en attente serveur),
+  // même motif anti-flash que les flèches. `resetIds` : après un
+  // « Réorganiser », les positions manuelles des props sont ignorées
+  // tâche par tâche, chaque id étant purgé quand les props rafraîchies
+  // l'ont rattrapé (pertX/pertY revenus à NULL). Un drag pendant la
+  // fenêtre d'attente reprend la main sur son id (override local).
+  const [positionsLocales, setPositionsLocales] = useState<
+    Map<string, PositionLocale>
+  >(() => new Map());
+  const positionsLocalesRef = useRef(positionsLocales);
+  positionsLocalesRef.current = positionsLocales;
+  const [resetIds, setResetIds] = useState<Set<string>>(() => new Set());
 
   const tachesParId = useMemo(
     () => new Map(taches.map((t) => [t.id, t])),
@@ -195,6 +232,68 @@ export function PertChart({
     [pert]
   );
 
+  // Positions effectives : disposition automatique, recouverte par les
+  // positions manuelles partagées (props pertX/pertY), elles-mêmes
+  // recouvertes par les overrides locaux (drag en cours ou pas encore
+  // rattrapé). Après « Réorganiser », tout revient à l'automatique.
+  const positionsEffectives = useMemo(() => {
+    const m = new Map(positions);
+    for (const t of taches) {
+      if (resetIds.has(t.id)) continue; // « Réorganiser » en attente
+      if (t.pertX != null && t.pertY != null && m.has(t.id)) {
+        m.set(t.id, { x: t.pertX, y: t.pertY });
+      }
+    }
+    for (const [id, p] of positionsLocales) {
+      if (m.has(id)) m.set(id, { x: p.x, y: p.y });
+    }
+    return m;
+  }, [positions, taches, positionsLocales, resetIds]);
+  // Miroirs refs : les closures de gestes (listeners window) liraient
+  // sinon la valeur du rendu où le geste a commencé.
+  const positionsEffectivesRef = useRef(positionsEffectives);
+  positionsEffectivesRef.current = positionsEffectives;
+
+  // Noeuds dans l'ordre de RENDU (pert.taches) pour le hit-test : en cas
+  // de chevauchement, le dernier rendu est visuellement au-dessus et doit
+  // gagner.
+  const noeudsOrdonnes = useMemo<NoeudPositionne[]>(
+    () =>
+      (pert?.taches ?? []).flatMap((p) => {
+        const pos = positionsEffectives.get(p.id);
+        return pos ? [{ id: p.id, x: pos.x, y: pos.y }] : [];
+      }),
+    [pert, positionsEffectives]
+  );
+  const noeudsOrdonnesRef = useRef(noeudsOrdonnes);
+  noeudsOrdonnesRef.current = noeudsOrdonnes;
+
+  // Boîte englobante monde (les positions manuelles peuvent être
+  // négatives ou déborder du monde automatique) : sert au fit.
+  const bornes = useMemo(() => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const p of positionsEffectives.values()) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x + PERT_NODE_W);
+      maxY = Math.max(maxY, p.y + PERT_NODE_H);
+    }
+    if (!Number.isFinite(minX)) {
+      return { x: 0, y: 0, w: largeur, h: hauteur };
+    }
+    return {
+      x: minX - PERT_PADDING,
+      y: minY - PERT_PADDING,
+      w: maxX - minX + PERT_PADDING * 2,
+      h: maxY - minY + PERT_PADDING * 2,
+    };
+  }, [positionsEffectives, largeur, hauteur]);
+  const bornesRef = useRef(bornes);
+  bornesRef.current = bornes;
+
   /** Ajuste le zoom pour voir tout le réseau (fit). */
   const ajuster = useCallback(() => {
     const el = conteneurRef.current;
@@ -202,19 +301,16 @@ export function PertChart({
     const rect = el.getBoundingClientRect();
     if (rect.width < 10 || rect.height < 10) return;
     const marge = 12;
+    const b = bornesRef.current;
     const k = clampK(
-      Math.min(
-        (rect.width - marge * 2) / largeur,
-        (rect.height - marge * 2) / hauteur,
-        1.2
-      )
+      Math.min((rect.width - marge * 2) / b.w, (rect.height - marge * 2) / b.h, 1.2)
     );
     appliquerVue({
       k,
-      tx: (rect.width - largeur * k) / 2,
-      ty: (rect.height - hauteur * k) / 2,
+      tx: (rect.width - b.w * k) / 2 - b.x * k,
+      ty: (rect.height - b.h * k) / 2 - b.y * k,
     });
-  }, [largeur, hauteur, appliquerVue]);
+  }, [appliquerVue]);
 
   // Ajustement initial (une seule fois, pour ne pas perdre le cadrage de
   // l'utilisateur à chaque router.refresh).
@@ -282,9 +378,66 @@ export function PertChart({
       });
       return next.length === prev.length ? prev : next;
     });
+    // Positions : un override enregistré est purgé quand les props
+    // rafraîchies portent (à epsilon près) la position sauvée.
+    setPositionsLocales((prev) => {
+      let modifie = false;
+      const next = new Map(prev);
+      for (const [id, p] of prev) {
+        if (!p.enregistre) continue;
+        const t = taches.find((x) => x.id === id);
+        if (!t) {
+          next.delete(id);
+          modifie = true;
+          continue;
+        }
+        if (
+          t.pertX != null &&
+          t.pertY != null &&
+          Math.abs(t.pertX - p.x) < 0.5 &&
+          Math.abs(t.pertY - p.y) < 0.5
+        ) {
+          next.delete(id);
+          modifie = true;
+        }
+      }
+      return modifie ? next : prev;
+    });
+    // « Réorganiser » : un id est purgé quand les props rafraîchies ont
+    // rattrapé la remise à zéro (pertX/pertY à NULL) ou que la tâche a
+    // disparu de la sélection.
+    setResetIds((prev) => {
+      if (prev.size === 0) return prev;
+      let modifie = false;
+      const next = new Set(prev);
+      for (const id of prev) {
+        const t = taches.find((x) => x.id === id);
+        if (!t || (t.pertX == null && t.pertY == null)) {
+          next.delete(id);
+          modifie = true;
+        }
+      }
+      return modifie ? next : prev;
+    });
   }, [taches]);
 
   /* ---------------- Gestes pan / pinch / tap sur la surface ---------------- */
+
+  /** Annule un drag de carte : retour à la position d'avant le geste
+   *  (override local préexistant restauré, sinon retiré). */
+  const annulerDragNoeud = useCallback(
+    (pan: { noeudId: string | null; noeudLocalAvant: PositionLocale | null }) => {
+      const id = pan.noeudId;
+      if (!id) return;
+      setPositionsLocales((prev) => {
+        const next = new Map(prev);
+        if (pan.noeudLocalAvant) next.set(id, pan.noeudLocalAvant);
+        else next.delete(id);
+        return next;
+      });
+    },
+    []
+  );
 
   function surFondPointerDown(e: React.PointerEvent<SVGSVGElement>) {
     const cibleEl = e.target as Element | null;
@@ -306,7 +459,17 @@ export function PertChart({
     pointeurs.set(e.pointerId, p);
 
     if (pointeurs.size === 1) {
-      const noeud = cibleEl?.closest?.("[data-pert-noeud]");
+      // Noeud visé résolu par hit-test MONDE (dernier rendu = dessus),
+      // pas par closest("[data-pert-noeud]") : le disque d'accroche
+      // invisible du port d'une carte voisine peut peindre AU-DESSUS de
+      // la carte visée (positions posées à la main) ; closest remonterait
+      // alors à la voisine, pas à la carte que l'utilisateur voit.
+      const v = vueRef.current;
+      const noeudId = noeudSousPoint(
+        noeudsOrdonnesRef.current,
+        (p.x - v.tx) / v.k,
+        (p.y - v.ty) / v.k
+      );
       panRef.current = {
         pointerId: e.pointerId,
         x0: p.x,
@@ -314,12 +477,26 @@ export function PertChart({
         tx0: vueRef.current.tx,
         ty0: vueRef.current.ty,
         bouge: false,
-        noeudId: noeud?.getAttribute("data-pert-noeud") ?? null,
+        noeudId,
         t0: Date.now(),
+        noeudPos0: noeudId
+          ? positionsEffectivesRef.current.get(noeudId) ?? null
+          : null,
+        noeudLocalAvant: noeudId
+          ? positionsLocalesRef.current.get(noeudId) ?? null
+          : null,
+        noeudPosCourante: null,
       };
     } else {
-      // Deux doigts : pincement. Le clic en attente est annulé.
-      if (panRef.current) panRef.current.bouge = true;
+      // Deux doigts : pincement. Le clic en attente est annulé, et un
+      // drag de carte déjà entamé revient à sa position d'avant.
+      if (panRef.current) {
+        if (canEdit && panRef.current.noeudId && panRef.current.bouge) {
+          annulerDragNoeud(panRef.current);
+        }
+        panRef.current.bouge = true;
+        panRef.current.noeudId = null;
+      }
       const [a, b] = [...pointeurs.values()];
       const v = vueRef.current;
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -357,8 +534,27 @@ export function PertChart({
     if (pan && pan.pointerId === e.pointerId) {
       const dx = p.x - pan.x0;
       const dy = p.y - pan.y0;
+      // Seuil 6 px : en deçà, le geste reste un tap (ouvre la modale).
       if (!pan.bouge && Math.hypot(dx, dy) > 6) pan.bouge = true;
-      if (pan.bouge) {
+      if (!pan.bouge) return;
+      if (canEdit && pan.noeudId && pan.noeudPos0) {
+        // Drag d'une carte : déplacement en coordonnées MONDE (le delta
+        // écran est divisé par le zoom k). Aperçu optimiste immédiat.
+        const k = vueRef.current.k;
+        const pos = {
+          x: pan.noeudPos0.x + dx / k,
+          y: pan.noeudPos0.y + dy / k,
+        };
+        pan.noeudPosCourante = pos;
+        const id = pan.noeudId;
+        setPositionsLocales((prev) => {
+          const next = new Map(prev);
+          next.set(id, { x: pos.x, y: pos.y, enregistre: false });
+          return next;
+        });
+      } else {
+        // Pan du fond : uniquement quand le geste n'a pas commencé sur
+        // une carte (ou en lecture seule, où les cartes ne bougent pas).
         appliquerVue({
           k: vueRef.current.k,
           tx: pan.tx0 + dx,
@@ -391,6 +587,9 @@ export function PertChart({
           bouge: true,
           noeudId: null,
           t0: 0,
+          noeudPos0: null,
+          noeudLocalAvant: null,
+          noeudPosCourante: null,
         };
       } else {
         panRef.current = null;
@@ -401,9 +600,47 @@ export function PertChart({
     const pan = panRef.current;
     if (pan && pan.pointerId === e.pointerId) {
       panRef.current = null;
-      if (annule) return;
+      if (annule) {
+        // pointercancel pendant un drag de carte : position d'avant.
+        if (canEdit && pan.noeudId && pan.bouge) annulerDragNoeud(pan);
+        return;
+      }
       const estTap = !pan.bouge && Date.now() - pan.t0 < 600;
-      if (!estTap) return;
+      if (!estTap) {
+        // Relâcher après un drag de carte : la position est enregistrée
+        // pour toute l'équipe. Anti-flash : l'override local (annoté
+        // enregistre) reste affiché jusqu'au rattrapage par les props.
+        if (canEdit && pan.noeudId && pan.bouge && pan.noeudPosCourante) {
+          const id = pan.noeudId;
+          const { x, y } = pan.noeudPosCourante;
+          setPositionsLocales((prev) => {
+            const next = new Map(prev);
+            next.set(id, { x, y, enregistre: true });
+            return next;
+          });
+          // L'utilisateur re-pose ce noeud : une éventuelle remise à
+          // zéro en attente ne le concerne plus.
+          setResetIds((prev) => {
+            if (!prev.has(id)) return prev;
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+          majPositionPert(id, x, y)
+            .then(() => {
+              router.refresh();
+            })
+            .catch((err: unknown) => {
+              annulerDragNoeud(pan);
+              toast.error(
+                err instanceof Error
+                  ? err.message
+                  : "Erreur lors de l'enregistrement de la position"
+              );
+            });
+        }
+        return;
+      }
       if (pan.noeudId) {
         if (onClickTask) onClickTask(pan.noeudId);
         return;
@@ -430,6 +667,24 @@ export function PertChart({
     if (!canEdit) return;
     if (lienActifRef.current) return;
     if (pointeursRef.current.size > 0) return; // pan ou pinch déjà en cours
+    // Le disque d'accroche du port (invisible, rayon constant à l'écran)
+    // peut peindre AU-DESSUS d'une carte voisine posée à la main : si le
+    // noeud au sommet sous le doigt (hit-test monde, dernier rendu gagne)
+    // n'est pas la source, l'utilisateur vise cette autre carte. On ne
+    // démarre pas de lien et on laisse l'événement remonter au fond, où
+    // surFondPointerDown résout le noeud par le même hit-test (drag/tap
+    // de la carte visée). Point dans AUCUN rectangle = zone libre du
+    // port : le tirage reste légitime.
+    const rectGarde = conteneurRef.current?.getBoundingClientRect();
+    if (rectGarde) {
+      const v = vueRef.current;
+      const idSous = noeudSousPoint(
+        noeudsOrdonnesRef.current,
+        (e.clientX - rectGarde.left - v.tx) / v.k,
+        (e.clientY - rectGarde.top - v.ty) / v.k
+      );
+      if (idSous !== null && idSous !== source.id) return;
+    }
     lienActifRef.current = true;
     e.preventDefault();
     e.stopPropagation();
@@ -439,7 +694,7 @@ export function PertChart({
       /* indisponible : on continue sans */
     }
     const pointerId = e.pointerId;
-    const pos = positions.get(source.id);
+    const pos = positionsEffectivesRef.current.get(source.id);
     if (!pos) {
       lienActifRef.current = false;
       return;
@@ -465,12 +720,14 @@ export function PertChart({
 
     function surMove(ev: PointerEvent) {
       if (ev.pointerId !== pointerId) return;
-      // Carte sous le doigt (même motif que le Gantt : elementFromPoint
-      // + closest sur un data-attribute).
-      const el = document.elementFromPoint(ev.clientX, ev.clientY);
-      const g = el?.closest?.("[data-pert-noeud]");
-      const id = g?.getAttribute("data-pert-noeud") ?? null;
-      if (id && id !== source.id) {
+      const p = versMonde(ev);
+      // Cible = le noeud dont le RECTANGLE (repère monde) contient le
+      // pointeur, hors source. Pas de repli à distance : hors de toute
+      // carte, pas de cible. L'ancien elementFromPoint retenait la
+      // mauvaise carte à faible zoom (les grands ports invisibles des
+      // voisines passaient au-dessus de la carte visée).
+      const id = noeudSousPoint(noeudsOrdonnesRef.current, p.x, p.y, source.id);
+      if (id) {
         const t = tachesParId.get(id);
         cibleId = t ? id : null;
         cibleInvalide =
@@ -479,7 +736,6 @@ export function PertChart({
         cibleId = null;
         cibleInvalide = false;
       }
-      const p = versMonde(ev);
       setLien({
         sourceId: source.id,
         x0,
@@ -584,6 +840,63 @@ export function PertChart({
       });
   }
 
+  /** Bouton « Réorganiser » : efface les positions manuelles (partagées)
+   *  et revient à la disposition automatique par niveaux. Portée : les
+   *  chantiers RÉELLEMENT affichés dans la vue (jamais tout le périmètre
+   *  accessible), revalidés côté serveur contre l'espace. La remise à
+   *  zéro couvre toutes les tâches de ces chantiers, y compris celles
+   *  masquées par un filtre équipe/ouvrier : la confirmation l'annonce. */
+  function reorganiser() {
+    if (!canEdit || resetIds.size > 0) return;
+    const chantierIds = [
+      ...new Set(
+        taches.flatMap((t) => (t.chantier.id ? [t.chantier.id] : []))
+      ),
+    ];
+    if (chantierIds.length === 0) {
+      toast.error(
+        "Impossible d'identifier les chantiers affichés : réorganisation annulée."
+      );
+      return;
+    }
+    const perimetre =
+      chantierIds.length === 1
+        ? "toutes les tâches du chantier affiché"
+        : `toutes les tâches des ${chantierIds.length} chantiers affichés`;
+    if (
+      !window.confirm(
+        `Réorganiser automatiquement le réseau ? Les positions posées à la main de ${perimetre} (y compris les tâches masquées par les filtres) seront effacées pour toute l'équipe.`
+      )
+    ) {
+      return;
+    }
+    // Anti-flash : chaque carte passe tout de suite en automatique, son
+    // id restant annoté jusqu'au rattrapage par les props (pertX à NULL).
+    // Seules les tâches d'un chantier identifié sont annotées : les
+    // autres ne seront pas remises à zéro par le serveur, leur annotation
+    // ne serait jamais purgée (bouton bloqué).
+    const idsAffiches = taches
+      .filter((t) => t.chantier.id != null)
+      .map((t) => t.id);
+    setResetIds(new Set(idsAffiches));
+    setPositionsLocales(new Map());
+    reinitialiserPositionsPert(chantierIds)
+      .then(() => {
+        toast.success("Disposition automatique restaurée.");
+        router.refresh();
+      })
+      .catch((err: unknown) => {
+        setResetIds(new Set());
+        toast.error(
+          err instanceof Error
+            ? err.message
+            : "Erreur lors de la réorganisation"
+        );
+      });
+    // Recadre sur la disposition automatique dès qu'elle est affichée.
+    requestAnimationFrame(() => ajuster());
+  }
+
   /* ------------------------------- Rendu ------------------------------- */
 
   if (taches.length === 0) {
@@ -614,8 +927,8 @@ export function PertChart({
   // optimistes pas encore rattrapés par les props.
   const aretes: Arete[] = [];
   const pousserArete = (tacheId: string, depId: string, optimiste: boolean) => {
-    const de = positions.get(depId);
-    const vers = positions.get(tacheId);
+    const de = positionsEffectives.get(depId);
+    const vers = positionsEffectives.get(tacheId);
     if (!de || !vers) return;
     const pDep = pertParId.get(depId);
     const pT = pertParId.get(tacheId);
@@ -661,8 +974,11 @@ export function PertChart({
     : null;
 
   // Rayon d'accroche des ports : constant à l'écran (>= 44 px de diamètre)
-  // quel que soit le zoom, puisqu'il vit dans le repère monde.
-  const rayonPort = 26 / vue.k;
+  // tant que le zoom le permet, MAIS plafonné en unités monde. Sans
+  // plafond, à faible zoom le disque invisible d'une carte débordait sur
+  // les cartes voisines et volait leur pointerdown : le tirage partait
+  // alors d'une autre carte que celle visée (moitié du bug de connexion).
+  const rayonPort = Math.min(45, 26 / vue.k);
 
   return (
     <div className="space-y-3">
@@ -824,7 +1140,7 @@ export function PertChart({
 
               {/* Cartes */}
               {pert.taches.map((p) => {
-                const pos = positions.get(p.id);
+                const pos = positionsEffectives.get(p.id);
                 if (!pos) return null;
                 const meta = tachesParId.get(p.id);
                 const estCritique = p.critical;
@@ -834,7 +1150,13 @@ export function PertChart({
                     key={p.id}
                     transform={`translate(${pos.x}, ${pos.y})`}
                     data-pert-noeud={p.id}
-                    style={{ cursor: onClickTask ? "pointer" : "grab" }}
+                    style={{
+                      cursor: canEdit
+                        ? "grab"
+                        : onClickTask
+                          ? "pointer"
+                          : "grab",
+                    }}
                   >
                     <title>
                       {p.nom}
@@ -1073,6 +1395,18 @@ export function PertChart({
             >
               <Maximize2 size={16} />
             </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={reorganiser}
+                disabled={resetIds.size > 0}
+                aria-label="Réorganiser le réseau (disposition automatique)"
+                title="Réorganiser : efface les positions posées à la main"
+                className="w-11 h-11 flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-300 shadow-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+              >
+                <LayoutGrid size={16} />
+              </button>
+            )}
           </div>
 
           {/* Croix flottante : supprime la flèche sélectionnée */}
@@ -1119,7 +1453,7 @@ export function PertChart({
           fin du projet. Glisser le fond pour se déplacer, molette ou pincement
           à deux doigts pour zoomer, double-tap pour recadrer.
           {canEdit &&
-            " Un tap sur une carte ouvre la fiche de la tâche. Tirer depuis le rond à droite d'une carte vers une autre crée une dépendance ; toucher une flèche puis la croix la supprime."}
+            " Un tap sur une carte ouvre la fiche de la tâche ; glisser une carte la pose où tu veux (position partagée avec l'équipe, bouton Réorganiser pour revenir à la disposition automatique). Tirer depuis le rond à droite d'une carte vers une autre crée une dépendance ; toucher une flèche puis la croix la supprime."}
         </div>
       </div>
     </div>

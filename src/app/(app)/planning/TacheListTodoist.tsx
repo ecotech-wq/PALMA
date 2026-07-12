@@ -182,18 +182,27 @@ export function TacheListTodoist({
   }
 
   return (
-    <div className="space-y-3">
-      {groups.map((g, i) => (
-        <SectionGroup
-          key={g.section?.id ?? `__none__-${i}`}
-          section={g.section}
-          taches={g.taches}
-          onEdit={onEdit}
-        />
-      ))}
-      {defaultChantierId && (
-        <AddSectionInline chantierId={defaultChantierId} />
-      )}
+    // Cadre de la liste (même confort que le Gantt) : hauteur bornée à
+    // 72vh, défilement interne. Chaque en-tête de section reste sticky en
+    // haut du cadre pendant qu'on défile ses tâches, puis se fait pousser
+    // par l'en-tête de la section suivante.
+    <div
+      className="overflow-auto overscroll-contain"
+      style={{ WebkitOverflowScrolling: "touch", maxHeight: "72vh" }}
+    >
+      <div className="space-y-3">
+        {groups.map((g, i) => (
+          <SectionGroup
+            key={g.section?.id ?? `__none__-${i}`}
+            section={g.section}
+            taches={g.taches}
+            onEdit={onEdit}
+          />
+        ))}
+        {defaultChantierId && (
+          <AddSectionInline chantierId={defaultChantierId} />
+        )}
+      </div>
     </div>
   );
 }
@@ -254,7 +263,10 @@ function SectionGroup({
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    // Pas d'overflow-hidden ici : il ferait de cette carte le conteneur de
+    // défilement de référence du sticky, et l'en-tête de section ne
+    // collerait plus au cadre 72vh. Les coins bas sont arrondis sur le ul.
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
       <SectionHeader
         section={section}
         total={total}
@@ -263,7 +275,7 @@ function SectionGroup({
         onToggle={() => setExpanded((v) => !v)}
       />
       {expanded && (
-        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+        <ul className="divide-y divide-slate-100 dark:divide-slate-800 rounded-b-xl overflow-hidden">
           {visible.length === 0 ? (
             <li className="px-3 py-3 text-xs text-slate-400 italic text-center">
               Aucune tâche dans cette section.
@@ -371,7 +383,9 @@ function SectionHeader({
     // `group` : les actions renommer/supprimer se révèlent au survol de
     // TOUTE la ligne d'en-tête (avant, aucun ancêtre ne portait la classe
     // et les boutons restaient invisibles sur desktop).
-    <div className="group flex items-center gap-2 px-3 py-2 bg-slate-50/80 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800">
+    // Sticky : colle en haut du cadre 72vh pendant le défilement de la
+    // section (fond opaque, les lignes passent dessous).
+    <div className="group sticky top-0 z-10 rounded-t-xl flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
       <button
         type="button"
         onClick={onToggle}

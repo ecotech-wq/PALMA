@@ -16,6 +16,9 @@ type Vue = "gantt" | "liste" | "kanban" | "calendrier" | "pert";
 type FullTache = TacheForEdit & {
   equipe: { id: string; nom: string } | null;
   chantier: { id: string; nom: string };
+  /** Position manuelle partagée du noeud PERT (NULL = automatique). */
+  pertX: number | null;
+  pertY: number | null;
 };
 
 type Chantier = { id: string; nom: string };
@@ -208,6 +211,8 @@ export function PlanningViews({
             equipe: t.equipe,
             chantier: t.chantier,
             dependances: t.dependances,
+            pertX: t.pertX,
+            pertY: t.pertY,
           }))}
         />
       )}

@@ -391,6 +391,8 @@ export default async function PlanningPage({
                 prenom: o.ouvrier.prenom,
               })),
               recurrence: t.recurrence,
+              pertX: t.pertX,
+              pertY: t.pertY,
             }))}
             events={events}
             sections={sections}

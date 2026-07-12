@@ -37,6 +37,8 @@ const COLUMNS: {
   label: string;
   Icon: typeof Clock;
   bg: string;
+  /** Fond OPAQUE de l'en-tête sticky : les cartes défilent dessous. */
+  headerBg: string;
   badgeBg: string;
   badgeText: string;
 }[] = [
@@ -45,6 +47,7 @@ const COLUMNS: {
     label: "À faire",
     Icon: Clock,
     bg: "bg-slate-50 dark:bg-slate-900/40",
+    headerBg: "bg-slate-50 dark:bg-slate-900",
     badgeBg: "bg-slate-200 dark:bg-slate-800",
     badgeText: "text-slate-700 dark:text-slate-300",
   },
@@ -53,6 +56,7 @@ const COLUMNS: {
     label: "En cours",
     Icon: AlertCircle,
     bg: "bg-blue-50 dark:bg-blue-950/20",
+    headerBg: "bg-blue-50 dark:bg-blue-950",
     badgeBg: "bg-blue-200 dark:bg-blue-900/60",
     badgeText: "text-blue-800 dark:text-blue-300",
   },
@@ -61,6 +65,7 @@ const COLUMNS: {
     label: "Bloquée",
     Icon: Ban,
     bg: "bg-red-50 dark:bg-red-950/20",
+    headerBg: "bg-red-50 dark:bg-red-950",
     badgeBg: "bg-red-200 dark:bg-red-900/60",
     badgeText: "text-red-800 dark:text-red-300",
   },
@@ -69,6 +74,7 @@ const COLUMNS: {
     label: "Terminée",
     Icon: CheckCircle2,
     bg: "bg-green-50 dark:bg-green-950/20",
+    headerBg: "bg-green-50 dark:bg-green-950",
     badgeBg: "bg-green-200 dark:bg-green-900/60",
     badgeText: "text-green-800 dark:text-green-300",
   },
@@ -97,7 +103,7 @@ function isLate(t: TacheKanban) {
 const SEUIL_SOURIS = 6; // px de mouvement avant de démarrer le drag à la souris
 const SEUIL_TACTILE = 8; // px de tolérance pendant l'appui maintenu au doigt
 const DUREE_APPUI = 220; // ms d'appui maintenu avant d'armer le drag tactile
-const MARGE_AUTOSCROLL = 80; // px du bord de l'écran déclenchant le défilement
+const MARGE_AUTOSCROLL = 80; // px du bord (cadre ou écran) déclenchant le défilement
 const VITESSE_AUTOSCROLL = 14; // px par frame de défilement automatique
 
 /** État interne d'un geste en cours (une seule instance à la fois). */
@@ -153,6 +159,9 @@ export function KanbanBoard({
   const router = useRouter();
   const toast = useToast();
   const [, startTransition] = useTransition();
+  // Cadre défilant du plateau (72vh) : c'est LUI que l'auto-défilement du
+  // drag fait défiler en priorité, la fenêtre ne servant que de secours.
+  const boardRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [hoverCol, setHoverCol] = useState<StatutTache | null>(null);
@@ -276,18 +285,53 @@ export function KanbanBoard({
       st.raf = requestAnimationFrame(autoScroll);
     }
 
-    // Défilement automatique quand le pointeur approche du bord de la
-    // fenêtre : indispensable sur mobile, où les 4 colonnes sont empilées
-    // verticalement et ne tiennent pas toutes à l'écran.
+    // Défilement automatique quand le pointeur approche d'un bord :
+    // indispensable sur mobile, où les 4 colonnes empilées ne tiennent pas
+    // toutes dans le cadre. Depuis que le plateau vit dans un cadre 72vh,
+    // c'est le CADRE qu'on fait défiler (vertical au 375px, horizontal sur
+    // desktop étroit) ; la fenêtre ne sert que de secours quand le cadre
+    // est déjà en butée (page plus longue que l'écran).
     function autoScroll() {
       if (!st.dragging || dragRef.current !== st) return;
       let scrolled = false;
-      if (st.lastY < MARGE_AUTOSCROLL && window.scrollY > 0) {
-        window.scrollBy(0, -VITESSE_AUTOSCROLL);
-        scrolled = true;
-      } else if (st.lastY > window.innerHeight - MARGE_AUTOSCROLL) {
-        window.scrollBy(0, VITESSE_AUTOSCROLL);
-        scrolled = true;
+      const sc = boardRef.current;
+      if (sc) {
+        const rect = sc.getBoundingClientRect();
+        // Bords visibles du cadre (bornés à la fenêtre si le cadre déborde).
+        const haut = Math.max(rect.top, 0);
+        const bas = Math.min(rect.bottom, window.innerHeight);
+        const gauche = Math.max(rect.left, 0);
+        const droite = Math.min(rect.right, window.innerWidth);
+        if (st.lastY < haut + MARGE_AUTOSCROLL && sc.scrollTop > 0) {
+          sc.scrollTop -= VITESSE_AUTOSCROLL;
+          scrolled = true;
+        } else if (
+          st.lastY > bas - MARGE_AUTOSCROLL &&
+          sc.scrollTop + sc.clientHeight < sc.scrollHeight - 1
+        ) {
+          sc.scrollTop += VITESSE_AUTOSCROLL;
+          scrolled = true;
+        }
+        if (st.lastX < gauche + MARGE_AUTOSCROLL && sc.scrollLeft > 0) {
+          sc.scrollLeft -= VITESSE_AUTOSCROLL;
+          scrolled = true;
+        } else if (
+          st.lastX > droite - MARGE_AUTOSCROLL &&
+          sc.scrollLeft + sc.clientWidth < sc.scrollWidth - 1
+        ) {
+          sc.scrollLeft += VITESSE_AUTOSCROLL;
+          scrolled = true;
+        }
+      }
+      // Secours : le cadre est en butée (ou absent), on défile la page.
+      if (!scrolled) {
+        if (st.lastY < MARGE_AUTOSCROLL && window.scrollY > 0) {
+          window.scrollBy(0, -VITESSE_AUTOSCROLL);
+          scrolled = true;
+        } else if (st.lastY > window.innerHeight - MARGE_AUTOSCROLL) {
+          window.scrollBy(0, VITESSE_AUTOSCROLL);
+          scrolled = true;
+        }
       }
       // Le contenu a bougé sous un doigt immobile : on recalcule la cible.
       if (scrolled) setHoverCol(colFromPoint(st.lastX, st.lastY));
@@ -385,55 +429,70 @@ export function KanbanBoard({
   }));
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      {columns.map((col) => (
-        <div
-          key={col.key}
-          data-col={col.key}
-          className={`rounded-xl border ${col.bg} ${
-            hoverCol === col.key
-              ? "border-brand-500 ring-2 ring-brand-300/50"
-              : "border-slate-200 dark:border-slate-800"
-          } flex flex-col min-h-[200px] transition-colors`}
-        >
-          <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
-            <col.Icon size={14} className="text-slate-500 shrink-0" />
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex-1">
-              {col.label}
-            </h3>
-            <span
-              className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full ${col.badgeBg} ${col.badgeText} tabular-nums`}
+    // Cadre du plateau (même confort que le Gantt) : hauteur bornée à 72vh,
+    // défilement interne vertical (mobile : colonnes empilées) ET horizontal
+    // (desktop : 4 colonnes en ligne qui ne rétrécissent pas sous 240px).
+    // Les en-têtes de colonne restent sticky en haut du cadre.
+    <div
+      ref={boardRef}
+      className="overflow-auto overscroll-contain"
+      style={{ WebkitOverflowScrolling: "touch", maxHeight: "72vh" }}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row">
+        {columns.map((col) => (
+          <div
+            key={col.key}
+            data-col={col.key}
+            className={`rounded-xl border ${col.bg} ${
+              hoverCol === col.key
+                ? "border-brand-500 ring-2 ring-brand-300/50"
+                : "border-slate-200 dark:border-slate-800"
+            } flex flex-col min-h-[200px] transition-colors sm:flex-1 sm:min-w-[240px]`}
+          >
+            {/* En-tête sticky : reste visible en haut du cadre pendant le
+                défilement des cartes (fond opaque, les cartes passent
+                dessous). */}
+            <div
+              className={`sticky top-0 z-10 rounded-t-xl ${col.headerBg} px-3 py-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2`}
             >
-              {col.items.length}
-            </span>
+              <col.Icon size={14} className="text-slate-500 shrink-0" />
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex-1">
+                {col.label}
+              </h3>
+              <span
+                className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full ${col.badgeBg} ${col.badgeText} tabular-nums`}
+              >
+                {col.items.length}
+              </span>
+            </div>
+            <div className="flex-1 p-2 space-y-2 min-h-[100px]">
+              {col.items.length === 0 ? (
+                <div className="text-[11px] text-slate-400 italic text-center py-6">
+                  {canEdit ? "Glissez une tâche ici" : "Aucune tâche"}
+                </div>
+              ) : (
+                col.items.map((t) => (
+                  <KanbanCard
+                    key={t.id}
+                    tache={t}
+                    canEdit={canEdit}
+                    isDragging={draggingId === t.id}
+                    pending={savingId === t.id}
+                    onPointerDown={
+                      canEdit ? (e) => onCardPointerDown(e, t) : undefined
+                    }
+                    onClick={
+                      !canEdit && onClickTask
+                        ? () => onClickTask(t.id)
+                        : undefined
+                    }
+                  />
+                ))
+              )}
+            </div>
           </div>
-          <div className="flex-1 p-2 space-y-2 min-h-[100px]">
-            {col.items.length === 0 ? (
-              <div className="text-[11px] text-slate-400 italic text-center py-6">
-                {canEdit ? "Glissez une tâche ici" : "Aucune tâche"}
-              </div>
-            ) : (
-              col.items.map((t) => (
-                <KanbanCard
-                  key={t.id}
-                  tache={t}
-                  canEdit={canEdit}
-                  isDragging={draggingId === t.id}
-                  pending={savingId === t.id}
-                  onPointerDown={
-                    canEdit ? (e) => onCardPointerDown(e, t) : undefined
-                  }
-                  onClick={
-                    !canEdit && onClickTask
-                      ? () => onClickTask(t.id)
-                      : undefined
-                  }
-                />
-              ))
-            )}
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
 
       {/* Fantôme suivant le pointeur pendant le drag (au-dessus du doigt) */}
       {ghost && (

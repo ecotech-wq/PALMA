@@ -110,6 +110,74 @@ const GEO = {
   semaine: { header: 26, lane: 30, pill: 26, lanesMax: Infinity, pied: 8 },
 } as const;
 
+/* Réglages du défilement de bord pendant un geste (motif KanbanBoard). */
+const MARGE_AUTOSCROLL = 80; // px du bord (cadre ou écran) déclenchant le défilement
+const VITESSE_AUTOSCROLL = 14; // px par frame de défilement automatique
+
+/**
+ * Défilement automatique de bord pendant un drag ou un étirement : le
+ * pointeur est capturé et touchAction vaut "none", le cadre 72vh ne peut
+ * donc plus être défilé au doigt ; sans ceci, impossible de déposer sur
+ * une semaine hors de la zone visible (mois à 6 semaines sur petit
+ * écran). Motif repris du KanbanBoard : le CADRE défile en priorité
+ * quand le pointeur approche de ses bords visibles, la fenêtre en
+ * secours quand le cadre est en butée. `point` est muté par le geste ;
+ * `surDefilement` recalcule la cible sous un doigt immobile (le contenu
+ * a bougé sous lui). Retourne la fonction d'arrêt (cleanup du geste).
+ */
+function demarrerAutoScrollBords(
+  cadre: HTMLElement | null,
+  point: { x: number; y: number },
+  surDefilement: () => void
+): () => void {
+  let raf = 0;
+  const tick = () => {
+    let scrolled = false;
+    if (cadre) {
+      const rect = cadre.getBoundingClientRect();
+      // Bords visibles du cadre (bornés à la fenêtre si le cadre déborde).
+      const haut = Math.max(rect.top, 0);
+      const bas = Math.min(rect.bottom, window.innerHeight);
+      const gauche = Math.max(rect.left, 0);
+      const droite = Math.min(rect.right, window.innerWidth);
+      if (point.y < haut + MARGE_AUTOSCROLL && cadre.scrollTop > 0) {
+        cadre.scrollTop -= VITESSE_AUTOSCROLL;
+        scrolled = true;
+      } else if (
+        point.y > bas - MARGE_AUTOSCROLL &&
+        cadre.scrollTop + cadre.clientHeight < cadre.scrollHeight - 1
+      ) {
+        cadre.scrollTop += VITESSE_AUTOSCROLL;
+        scrolled = true;
+      }
+      if (point.x < gauche + MARGE_AUTOSCROLL && cadre.scrollLeft > 0) {
+        cadre.scrollLeft -= VITESSE_AUTOSCROLL;
+        scrolled = true;
+      } else if (
+        point.x > droite - MARGE_AUTOSCROLL &&
+        cadre.scrollLeft + cadre.clientWidth < cadre.scrollWidth - 1
+      ) {
+        cadre.scrollLeft += VITESSE_AUTOSCROLL;
+        scrolled = true;
+      }
+    }
+    // Secours : le cadre est en butée (ou absent), on défile la page.
+    if (!scrolled) {
+      if (point.y < MARGE_AUTOSCROLL && window.scrollY > 0) {
+        window.scrollBy(0, -VITESSE_AUTOSCROLL);
+        scrolled = true;
+      } else if (point.y > window.innerHeight - MARGE_AUTOSCROLL) {
+        window.scrollBy(0, VITESSE_AUTOSCROLL);
+        scrolled = true;
+      }
+    }
+    if (scrolled) surDefilement();
+    raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
+  return () => cancelAnimationFrame(raf);
+}
+
 export function CalendarMonth({
   taches,
   events,
@@ -161,6 +229,9 @@ export function CalendarMonth({
   }, []);
 
   // ---- Gestes (déplacement, étirement, création) --------------------------
+  // Cadre défilant de la grille (72vh) : c'est LUI que l'auto-défilement
+  // de bord fait défiler pendant un drag/étirement de pilule.
+  const cadreRef = useRef<HTMLDivElement | null>(null);
   // Garde multi-geste : un seul geste à la fois. Un second doigt (ou un
   // second bouton) est ignoré tant que le premier geste est actif.
   const gesteRef = useRef(false);
@@ -308,8 +379,15 @@ export function CalendarMonth({
       startX: e.clientX,
       startY: e.clientY,
     };
+    // Dernière position du pointeur (mutée par onMove) : lue par
+    // l'auto-défilement de bord pour recalculer la cible sous un doigt
+    // immobile pendant que le cadre défile.
+    const dernier = { x: e.clientX, y: e.clientY };
+    let stopAutoScroll: (() => void) | null = null;
 
     function cleanup() {
+      stopAutoScroll?.();
+      stopAutoScroll = null;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
@@ -323,10 +401,18 @@ export function CalendarMonth({
       if (ev.pointerId !== pointerId) return;
       const st = dragRef.current;
       if (!st) return;
+      dernier.x = ev.clientX;
+      dernier.y = ev.clientY;
       const dist = Math.hypot(ev.clientX - st.startX, ev.clientY - st.startY);
       if (!st.moved && dist > 6) {
         st.moved = true;
         setDraggingId(st.taskId);
+        // Le pointeur est capturé et touchAction "none" : le cadre 72vh
+        // ne défile plus au doigt, l'auto-défilement de bord prend le
+        // relais pour atteindre les semaines hors de la zone visible.
+        stopAutoScroll = demarrerAutoScrollBords(cadreRef.current, dernier, () =>
+          setOverKey(dayKeyFromPoint(dernier.x, dernier.y))
+        );
       }
       if (!st.moved) return;
       setOverKey(dayKeyFromPoint(ev.clientX, ev.clientY));
@@ -415,6 +501,14 @@ export function CalendarMonth({
     const overrideAvant = overridesRef.current[tache.id];
     const etat = { debutKey: init.debutKey, finKey: init.finKey };
     setResizingId(tache.id);
+    // Auto-défilement de bord pendant l'étirement (pointeur capturé,
+    // touchAction "none") : sans lui, impossible d'étirer une pilule
+    // jusqu'à une semaine hors de la zone visible du cadre. Armé après
+    // 6 px de mouvement seulement : un simple appui sur une poignée
+    // proche du bord ne doit pas faire défiler (et donc étirer) tout seul.
+    const dernier = { x: e.clientX, y: e.clientY };
+    const depart = { x: e.clientX, y: e.clientY };
+    let stopAutoScroll: (() => void) | null = null;
 
     // Retour à l'état d'avant le geste : override précédent restauré
     // s'il existait, supprimé sinon (les props font alors foi).
@@ -445,6 +539,8 @@ export function CalendarMonth({
     }
 
     function cleanup() {
+      stopAutoScroll?.();
+      stopAutoScroll = null;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
@@ -454,6 +550,21 @@ export function CalendarMonth({
 
     function onMove(ev: PointerEvent) {
       if (ev.pointerId !== pointerId) return;
+      dernier.x = ev.clientX;
+      dernier.y = ev.clientY;
+      if (
+        !stopAutoScroll &&
+        Math.hypot(ev.clientX - depart.x, ev.clientY - depart.y) > 6
+      ) {
+        stopAutoScroll = demarrerAutoScrollBords(
+          cadreRef.current,
+          dernier,
+          () => {
+            const k = dayKeyFromPoint(dernier.x, dernier.y);
+            if (k) appliquer(k);
+          }
+        );
+      }
       const k = dayKeyFromPoint(ev.clientX, ev.clientY);
       if (k) appliquer(k);
     }
@@ -707,10 +818,15 @@ export function CalendarMonth({
         </div>
       </div>
 
-      {/* Grille (la vue semaine défile horizontalement sur petit écran
-          pour garder 7 colonnes larges) */}
+      {/* Cadre de la grille (même confort que le Gantt) : hauteur bornée à
+          72vh, défilement interne vertical ET horizontal (la vue semaine
+          garde ses 7 colonnes larges via min-w-[640px]). La barre de
+          navigation ci-dessus reste hors du cadre, donc toujours visible ;
+          la ligne des jours est sticky en haut du cadre. */}
       <div
-        className={mode === "semaine" ? "overflow-x-auto" : undefined}
+        ref={cadreRef}
+        className="overflow-auto overscroll-contain"
+        style={{ WebkitOverflowScrolling: "touch", maxHeight: "72vh" }}
         onPointerDown={(e) => {
           // Désélection : un appui hors pilule replie les poignées
           // tactiles (les pilules stoppent la propagation).
@@ -719,8 +835,10 @@ export function CalendarMonth({
         }}
       >
         <div className={mode === "semaine" ? "min-w-[640px]" : undefined}>
-          {/* En-têtes jours semaine */}
-          <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+          {/* En-têtes jours semaine : sticky en haut du cadre pendant le
+              défilement vertical (fond opaque, au-dessus des pilules z-[2]
+              et des poignées z-[3]). */}
+          <div className="sticky top-0 z-10 grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
             {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((d) => (
               <div
                 key={d}

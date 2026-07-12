@@ -677,6 +677,11 @@ model Tache {
   recurrence         String?
   /// Tâche parente de la série récurrente (pour traçage/historique).
   recurrenceParentId String?
+  /// Position manuelle du noeud dans le reseau PERT (2026-07-11) : posee par
+  /// glisser-deposer, partagee par toute l'equipe. NULL = disposition
+  /// automatique par niveaux (barycentre).
+  pertX              Float?
+  pertY              Float?
 
   // Soft-delete : marqué supprimé mais conservé 30 jours dans la corbeille
   deletedAt DateTime?

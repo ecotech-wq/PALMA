@@ -3,7 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireAuth, verifierEspaceDuChantier } from "@/lib/auth-helpers";
+import {
+  requireAuth,
+  verifierEspaceDuChantier,
+} from "@/lib/auth-helpers";
 import { parseQuickAdd, fuzzyMatch } from "@/lib/quick-add-parser";
 
 const tacheSchema = z.object({
@@ -832,6 +835,73 @@ export async function ajouterDependance(tacheId: string, depId: string) {
   });
   revalidatePath("/planning");
   revalidatePath(`/chantiers/${tache.chantierId}`);
+}
+
+/* -------------------- Positions PERT (noeuds déplaçables) -------------------- */
+
+const positionPertSchema = z.object({
+  tacheId: z.string().min(1),
+  // Bornes larges mais finies : un monde PERT n'a aucune raison de
+  // dépasser quelques milliers d'unités, +-100000 absorbe tout usage réel
+  // et bloque NaN/Infinity et les valeurs aberrantes.
+  x: z.number().finite().min(-100000).max(100000),
+  y: z.number().finite().min(-100000).max(100000),
+});
+
+/**
+ * Pose un noeud PERT à une position choisie à la main (drag façon drawio).
+ * La position est PARTAGÉE : stockée en base (Tache.pertX/pertY), elle
+ * s'applique pour toute l'équipe. NULL = disposition automatique.
+ */
+export async function majPositionPert(tacheId: string, x: number, y: number) {
+  const me = await requireEditionPlanning();
+  const data = positionPertSchema.parse({ tacheId, x, y });
+  // Frontière d'espace : bornée par le chantier de la tâche.
+  const t = await db.tache.findUnique({
+    where: { id: data.tacheId },
+    select: { chantierId: true, deletedAt: true },
+  });
+  if (!t || t.deletedAt) throw new Error("Tâche introuvable");
+  await verifierEspaceDuChantier(me, t.chantierId);
+  await db.tache.update({
+    where: { id: data.tacheId },
+    data: { pertX: data.x, pertY: data.y },
+  });
+  revalidatePath("/planning");
+  revalidatePath(`/chantiers/${t.chantierId}`);
+}
+
+/**
+ * Bouton « Réorganiser » : efface les positions manuelles (pertX/pertY à
+ * NULL) pour revenir à la disposition automatique par niveaux. Portée
+ * EXPLICITE : la liste des chantiers réellement affichés dans la vue,
+ * chacun revalidé contre l'espace de l'utilisateur. Jamais de remise à
+ * zéro « tout le périmètre accessible » : sans borne, un admin en régime
+ * hérité effacerait les positions de toute la base.
+ */
+export async function reinitialiserPositionsPert(chantierIds: string[]) {
+  const me = await requireEditionPlanning();
+  const data = z
+    .object({
+      // Une vue planning n'affiche qu'une poignée de chantiers : 200 est
+      // une borne large qui bloque les listes aberrantes.
+      chantierIds: z.array(z.string().min(1)).min(1).max(200),
+    })
+    .parse({ chantierIds });
+  const ids = [...new Set(data.chantierIds)];
+  // Frontière d'espace : CHAQUE chantier visé est vérifié ; un seul
+  // chantier hors espace fait échouer toute l'opération (rien n'est écrit).
+  for (const id of ids) {
+    await verifierEspaceDuChantier(me, id);
+  }
+  await db.tache.updateMany({
+    where: { chantierId: { in: ids } },
+    data: { pertX: null, pertY: null },
+  });
+  for (const id of ids) {
+    revalidatePath(`/chantiers/${id}`);
+  }
+  revalidatePath("/planning");
 }
 
 /** Retire la dépendance « tacheId dépend de depId » (flèche du Gantt). */
