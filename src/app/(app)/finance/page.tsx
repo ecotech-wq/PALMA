@@ -18,6 +18,8 @@ import {
   STATUT_DEVIS,
   STATUT_RETENUE,
 } from "./suivi-labels";
+import { getConstatsRelances, getDerniersRelanceLogs } from "./relances-data";
+import { RelancesCard } from "./RelancesCard";
 
 // ─── Cockpit trésorerie (transverse à l'espace) ─────────────────────────────
 // Tout est DÉRIVÉ (reste à encaisser, retard, DSO, balance âgée) : rien n'est
@@ -34,6 +36,13 @@ export default async function FinancePage() {
     ...(bornChantier ? { chantierId: { in: bornChantier } } : {}),
   };
   const cockpit = await getCockpitEspace(me.espaceIds, bornChantier);
+
+  // Constats de relance dérivés EN DIRECT (mêmes fonctions de classification
+  // que le moteur) ; RelanceLog ne sert qu'au mini historique d'envoi.
+  const [constatsRelances, historiqueRelances] = await Promise.all([
+    getConstatsRelances({ espaceIds: me.espaceIds, chantierIds: bornChantier }),
+    getDerniersRelanceLogs(me.espaceIds, bornChantier),
+  ]);
 
   const [facturesRetard, devisSuivre, retenues, projets] = await Promise.all([
     db.facture.findMany({
@@ -131,6 +140,12 @@ export default async function FinancePage() {
           note="Délai moyen d'encaissement"
         />
       </div>
+
+      {/* Relances : constats ouverts, analyse à la demande, historique */}
+      <RelancesCard
+        constats={constatsRelances}
+        historique={historiqueRelances}
+      />
 
       {/* Balance âgée */}
       <Card className="mt-4">

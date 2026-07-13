@@ -857,6 +857,7 @@ enum NotificationType {
   DEMANDE_COMMANDEE
   PAIEMENT_GENERE
   USER_PENDING
+  RELANCE
   AUTRE
 }
 
@@ -1768,4 +1769,39 @@ model RetenueGarantie {
   @@index([espaceId])
   @@index([chantierId])
   @@index([statut])
+}
+
+/// Moteur de relances financieres (2026-07-13). Chaque constat notifie
+/// s'inscrit ici : un objet n'est relance qu'UNE fois par palier
+/// (idempotence du balayage quotidien) et le journal reste consultable.
+enum TypeObjetRelance {
+  FACTURE
+  DEVIS
+  SITUATION
+  RETENUE
+}
+
+enum PalierRelance {
+  PREAVIS_ECHEANCE
+  RELANCE_1
+  RELANCE_2
+  RELANCE_3
+  MISE_EN_DEMEURE
+  DEVIS_SANS_REPONSE
+  SITUATION_A_FACTURER
+  RETENUE_LIBERABLE
+}
+
+model RelanceLog {
+  id         String           @id @default(cuid())
+  espaceId   String
+  chantierId String?
+  objetType  TypeObjetRelance
+  objetId    String
+  palier     PalierRelance
+  resume     String
+  envoyeLe   DateTime         @default(now())
+
+  @@unique([objetType, objetId, palier])
+  @@index([espaceId, envoyeLe])
 }

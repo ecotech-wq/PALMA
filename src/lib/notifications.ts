@@ -12,6 +12,7 @@ type NotifType =
   | "DEMANDE_COMMANDEE"
   | "PAIEMENT_GENERE"
   | "USER_PENDING"
+  | "RELANCE"
   | "AUTRE";
 
 /**

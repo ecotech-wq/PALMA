@@ -299,13 +299,30 @@ export async function majStatutDevis(
   if (s === "RELANCE") {
     data.nbRelances = dv.nbRelances + 1;
     data.dateDerniereRelance = now;
+    // Reprogramme la surveillance : le moteur de relances (lib/relances) se
+    // taira 14 jours, puis resignalera le devis s'il reste sans réponse.
+    data.prochaineRelance = new Date(now.getTime() + 14 * 24 * 3600 * 1000);
   }
-  if (s === "ACCEPTE") data.dateAcceptation = now;
+  if (s === "ACCEPTE") {
+    data.dateAcceptation = now;
+    data.prochaineRelance = null;
+  }
   if (s === "REFUSE") {
     data.dateRefus = now;
     data.motifRefus = (motifRefus ?? "").slice(0, 300) || null;
+    data.prochaineRelance = null;
   }
+  if (s === "EXPIRE") data.prochaineRelance = null;
   await db.devis.update({ where: { id }, data });
+  if (s === "RELANCE") {
+    // Réarme le cycle de surveillance : l'idempotence de RelanceLog
+    // (@@unique objetType/objetId/palier) bloquerait sinon toute nouvelle
+    // notification au prochain passage dû (P2002 compté « déjà traité »).
+    // Le devis n'ayant qu'un seul palier, on purge sa ligne de journal.
+    await db.relanceLog.deleteMany({
+      where: { objetType: "DEVIS", objetId: id, palier: "DEVIS_SANS_REPONSE" },
+    });
+  }
   revalFinance(dv.chantierId);
 }
 

@@ -24,6 +24,8 @@ import {
   SOURCE_DOC,
 } from "../suivi-labels";
 import { ChangerStatut } from "../ChangerStatut";
+import { getConstatsRelances } from "../relances-data";
+import { RelancesProjetCard } from "../RelancesCard";
 import {
   creerMarche,
   majStatutMarche,
@@ -64,6 +66,12 @@ export default async function FinanceChantierPage({
   });
   if (!chantier) notFound();
   const estEtude = chantier.type === "ETUDE";
+
+  // Constats de relance bornés à CE projet (mêmes dérivations que le cockpit).
+  const constatsRelances = await getConstatsRelances({
+    espaceIds: me.espaceIds,
+    chantierId,
+  });
 
   const [marche, suivi, devis, situations, factures, retenue, phases, clients] =
     await Promise.all([
@@ -141,6 +149,9 @@ export default async function FinanceChantierPage({
           ton={suivi.retenueEnCours > 0 ? "alerte" : "neutre"}
         />
       </div>
+
+      {/* Relances du projet : rendu seulement s'il y a au moins un constat */}
+      <RelancesProjetCard constats={constatsRelances} />
 
       {/* ── Marché ──────────────────────────────────────────────────────── */}
       <Card>
