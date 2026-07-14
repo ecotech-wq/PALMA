@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { X, Flag, Loader2, Save, Trash2 } from "lucide-react";
+import { X, Flag, Loader2, Save, Trash2, User } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Textarea } from "@/components/ui/Input";
@@ -14,7 +14,10 @@ export type TacheForEdit = {
   id: string;
   nom: string;
   description: string | null;
-  chantierId: string;
+  /** null = tâche PERSO : sans chantier, rattachée à son propriétaire.
+   *  La modale verrouille alors le rattachement et masque les champs de
+   *  chantier (équipe, section, ouvriers, parent, dépendances). */
+  chantierId: string | null;
   equipeId: string | null;
   sectionId: string | null;
   parentId: string | null;
@@ -45,7 +48,7 @@ const RECURRENCE_PRESETS: { value: string; label: string }[] = [
 type Chantier = { id: string; nom: string };
 type Equipe = { id: string; nom: string; chantierId: string | null };
 type SectionItem = { id: string; nom: string; chantierId: string };
-type TacheCand = { id: string; nom: string; chantierId: string };
+type TacheCand = { id: string; nom: string; chantierId: string | null };
 type OuvrierRef = {
   id: string;
   nom: string;
@@ -106,7 +109,9 @@ export function TacheEditModal({
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
   const [deleting, startDelete] = useTransition();
-  const [chantierId, setChantierId] = useState(tache.chantierId);
+  // Tâche perso : rattachement verrouillé, champs de chantier masqués.
+  const estPerso = tache.chantierId === null;
+  const [chantierId, setChantierId] = useState(tache.chantierId ?? "");
   const [priorite, setPriorite] = useState<1 | 2 | 3 | 4>(
     (tache.priorite as 1 | 2 | 3 | 4) || 4
   );
@@ -149,9 +154,12 @@ export function TacheEditModal({
   const sectionsFiltered = sections.filter(
     (s) => s.chantierId === chantierId
   );
-  const tachesCandidates = taches.filter(
-    (t) => t.chantierId === chantierId && t.id !== tache.id
-  );
+  // Parent et dépendances sont des outils de chantier : aucune candidate
+  // pour une tâche perso (sinon le filtre null === null relierait les
+  // tâches perso entre elles depuis la modale).
+  const tachesCandidates = estPerso
+    ? []
+    : taches.filter((t) => t.chantierId === chantierId && t.id !== tache.id);
   const visibleLabels = allLabels;
 
   function toggleLabel(id: string) {
@@ -363,52 +371,86 @@ export function TacheEditModal({
               />
             </div>
 
-            {/* Chantier (caché si single chantier mode) */}
-            <Field label="Chantier">
-              <Select
-                name="chantierId"
-                value={chantierId}
-                onChange={(e) => setChantierId(e.target.value)}
-                required
-              >
-                {chantiers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nom}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-
-            {/* Équipe + Section */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Équipe (optionnel)">
+            {/* Chantier : sélecteur pour une tâche de chantier, mention
+                « Perso » verrouillée pour une tâche perso (le serveur
+                refuse de toute façon la bascule perso -> chantier). */}
+            {estPerso ? (
+              <Field label="Rattachement">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-sm text-slate-600 dark:text-slate-300">
+                  <User size={14} className="shrink-0 text-slate-500" />
+                  <span className="min-w-0">
+                    <span className="block font-medium">
+                      Tâche perso (sans chantier)
+                    </span>
+                    <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                      Visible de vous seul, non transférable à un chantier.
+                    </span>
+                  </span>
+                </div>
+              </Field>
+            ) : (
+              <Field label="Chantier">
                 <Select
-                  name="equipeId"
-                  value={equipeId}
-                  onChange={(e) => setEquipeId(e.target.value)}
+                  name="chantierId"
+                  value={chantierId}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setChantierId(next);
+                    // Les dépendances sont un outil intra-chantier : en
+                    // changeant de chantier, on écarte celles qui n'y
+                    // appartiennent pas (le serveur les refuse désormais,
+                    // mêmes gardes qu'ajouterDependance).
+                    setDeps((prev) =>
+                      prev.filter((depId) =>
+                        taches.some(
+                          (t) => t.id === depId && t.chantierId === next
+                        )
+                      )
+                    );
+                  }}
+                  required
                 >
-                  <option value="">—</option>
-                  {equipesFiltered.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.nom}
+                  {chantiers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nom}
                     </option>
                   ))}
                 </Select>
               </Field>
-              <Field label="Section (optionnel)">
-                <Select name="sectionId" defaultValue={tache.sectionId ?? ""}>
-                  <option value="">—</option>
-                  {sectionsFiltered.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.nom}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
+            )}
 
-            {/* Ouvriers affectés (m2m) */}
-            {allOuvriers.length > 0 && (
+            {/* Équipe + Section (outils de chantier : masqués en perso) */}
+            {!estPerso && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Équipe (optionnel)">
+                  <Select
+                    name="equipeId"
+                    value={equipeId}
+                    onChange={(e) => setEquipeId(e.target.value)}
+                  >
+                    <option value="">—</option>
+                    {equipesFiltered.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.nom}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Section (optionnel)">
+                  <Select name="sectionId" defaultValue={tache.sectionId ?? ""}>
+                    <option value="">—</option>
+                    {sectionsFiltered.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.nom}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+            )}
+
+            {/* Ouvriers affectés (m2m ; outil de chantier, masqué en perso) */}
+            {!estPerso && allOuvriers.length > 0 && (
               <Field label="Ouvriers affectés (optionnel)">
                 <div className="flex flex-wrap gap-1.5">
                   {ouvriersFiltered.length === 0 && ouvriersHorsEquipe.length === 0 ? (

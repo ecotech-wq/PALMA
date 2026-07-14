@@ -6,6 +6,7 @@ import {
   Calendar,
   Flag,
   Users,
+  User,
   Loader2,
   CheckCircle2,
   Clock,
@@ -28,7 +29,8 @@ export type TacheKanban = {
   priorite: number;
   parentId: string | null;
   equipe: { nom: string } | null;
-  chantier: { nom: string };
+  /** null = tâche PERSO (sans chantier, visible de son seul propriétaire). */
+  chantier: { nom: string } | null;
   labels: { label: { id: string; nom: string; couleur: string } }[];
 };
 
@@ -577,9 +579,19 @@ function KanbanCard({
             {t.parentId && <span className="text-slate-400 mr-1">↳</span>}
             {t.nom}
           </p>
-          <p className="text-[10px] text-brand-700 dark:text-brand-400 truncate mt-0.5">
-            {t.chantier.nom}
-          </p>
+          {t.chantier ? (
+            <p className="text-[10px] text-brand-700 dark:text-brand-400 truncate mt-0.5">
+              {t.chantier.nom}
+            </p>
+          ) : (
+            // Tâche perso : étiquette sobre à la place du nom de chantier.
+            <p className="mt-0.5">
+              <span className="inline-flex items-center gap-0.5 px-1 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-medium text-slate-600 dark:text-slate-300">
+                <User size={10} className="shrink-0" />
+                Perso
+              </span>
+            </p>
+          )}
           <div className="text-[10px] text-slate-500 mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
             {t.equipe && (
               <span className="inline-flex items-center gap-0.5">

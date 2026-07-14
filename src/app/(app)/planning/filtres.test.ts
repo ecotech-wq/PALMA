@@ -20,15 +20,17 @@ describe("validerChantier", () => {
 });
 
 describe("construireWhereTaches", () => {
-  it("sans aucun filtre ni bornage : seulement deletedAt", () => {
+  it("sans aucun filtre ni bornage : deletedAt et exclusion des perso d'autrui", () => {
     expect(construireWhereTaches({ accessibleIds: null })).toEqual({
       deletedAt: null,
+      chantierId: { not: null },
     });
   });
 
-  it("bornage seul : chantierId in", () => {
+  it("bornage seul : chantierId in (et jamais les tâches perso)", () => {
     expect(construireWhereTaches({ accessibleIds: ["c1", "c2"] })).toEqual({
       deletedAt: null,
+      chantierId: { not: null },
       AND: [{ chantierId: { in: ["c1", "c2"] } }],
     });
   });
@@ -63,5 +65,64 @@ describe("construireWhereTaches", () => {
       { equipeId: "e1" },
       { chantier: { espaceId: "s1" } },
     ]);
+  });
+
+  it("perso : sans filtre, les tâches du propriétaire s'ajoutent en OR", () => {
+    expect(
+      construireWhereTaches({ accessibleIds: ["c1"], persoUserId: "u1" })
+    ).toEqual({
+      deletedAt: null,
+      OR: [
+        {
+          chantierId: { not: null },
+          AND: [{ chantierId: { in: ["c1"] } }],
+        },
+        { proprietaireId: "u1" },
+      ],
+    });
+  });
+
+  it("perso : sans filtre ni bornage, périmètre chantier + ses perso", () => {
+    expect(
+      construireWhereTaches({ accessibleIds: null, persoUserId: "u1" })
+    ).toEqual({
+      deletedAt: null,
+      OR: [{ chantierId: { not: null } }, { proprietaireId: "u1" }],
+    });
+  });
+
+  it("perso : un filtre chantier actif les écarte (vue projet pure)", () => {
+    const where = construireWhereTaches({
+      accessibleIds: ["c1"],
+      chantierId: "c1",
+      persoUserId: "u1",
+    });
+    expect(where.OR).toBeUndefined();
+    expect(where).toEqual({
+      deletedAt: null,
+      chantierId: { not: null },
+      AND: [{ chantierId: { in: ["c1"] } }, { chantierId: "c1" }],
+    });
+  });
+
+  it("perso : filtre équipe, ouvrier ou entreprise actif = pareil, écartées", () => {
+    for (const extra of [
+      { equipeId: "e1" },
+      { ouvrierId: "o1" },
+      { espaceId: "s1" },
+    ]) {
+      const where = construireWhereTaches({
+        accessibleIds: null,
+        persoUserId: "u1",
+        ...extra,
+      });
+      expect(where.OR).toBeUndefined();
+    }
+  });
+
+  it("perso : jamais celles des autres (pas de persoUserId = pas de perso)", () => {
+    const where = construireWhereTaches({ accessibleIds: null });
+    expect(where.OR).toBeUndefined();
+    expect(where.chantierId).toEqual({ not: null });
   });
 });

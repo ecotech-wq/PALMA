@@ -9,6 +9,7 @@ import {
   Link2,
   Package,
   Truck,
+  User,
   X,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
@@ -40,6 +41,7 @@ import {
   type FlecheDep,
   type LienElastique,
 } from "./gantt/CoucheDependances";
+import { ancresFleche, rectBarre, ROW_H } from "./gantt/geometrie";
 
 type Tache = {
   id: string;
@@ -51,7 +53,8 @@ type Tache = {
   priorite: number;
   parentId: string | null;
   equipe: { nom: string } | null;
-  chantier: { id?: string; nom: string };
+  /** null = tâche PERSO (sans chantier, visible de son seul propriétaire). */
+  chantier: { id?: string; nom: string } | null;
   /** IDs des prédécesseurs (la tâche dépend d'eux). */
   dependances?: { id: string }[];
 };
@@ -87,8 +90,12 @@ const PRIO_FLAG: Record<number, string> = {
   4: "fill-transparent stroke-slate-400 text-slate-400",
 };
 
-// Hauteur d'une ligne Gantt (doit matcher le style height: 44 des cellules)
-const ROW_H = 44;
+// Hauteur d'une ligne Gantt : ROW_H vit dans gantt/geometrie.ts (source
+// unique partagée avec le calcul des flèches). La ligne rendue reçoit
+// height: ROW_H (border-box, border-b comprise) : avant cela, la cellule
+// libellé (2 lignes de texte + padding) poussait la ligne réelle à 52 px
+// et chaque flèche, ancrée à index * 44, dérivait de 8 px par ligne
+// jusqu'à pointer dans des cellules vides (bug du 2026-07-14).
 
 // Largeur de la zone tactile d'une poignée EXTERNE (barres étroites).
 // Le grip visible ne fait que ~3 px, mais la zone de prise s'étend sur
@@ -109,9 +116,12 @@ const EXT_HANDLE_W = 24;
 // Persistance locale du réglage « Entraîner les successeurs »
 const LS_ENTRAINER = "lynx.gantt.entrainerSuccesseurs";
 
-/** Clé de comparaison chantier (id si présent, sinon nom). */
-function chantierKey(c: { id?: string; nom: string }): string {
-  return c.id ?? c.nom;
+/** Clé de comparaison chantier (id si présent, sinon nom). Les tâches
+ *  perso (chantier null) partagent une clé dédiée : deux tâches perso
+ *  peuvent se lier entre elles, jamais à une tâche de chantier (le
+ *  serveur revérifie et impose en plus le même propriétaire). */
+function chantierKey(c: { id?: string; nom: string } | null): string {
+  return c ? c.id ?? c.nom : "__perso__";
 }
 
 /**
@@ -141,8 +151,9 @@ export function GanttChartV2({
   /** Click court sur une barre (sans drag) : ouvre l'édition. */
   onClickTask?: (tacheId: string) => void;
   /** Click sur une case vide d'une ligne tâche : crée une nouvelle
-   *  tâche à cette date dans le même chantier. */
-  onEmptyCellClick?: (date: Date, chantierNom: string) => void;
+   *  tâche à cette date dans le même chantier (null sur la ligne d'une
+   *  tâche perso : nouvelle tâche perso). */
+  onEmptyCellClick?: (date: Date, chantierNom: string | null) => void;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -694,8 +705,11 @@ export function GanttChartV2({
       /* indisponible : on continue sans */
     }
     const pointerId = e.pointerId;
-    const barLeft = offsetFor(source) * dayWidth;
-    const barWidth = Math.max(8, durationFor(source) * dayWidth - 4);
+    const { left: barLeft, width: barWidth } = rectBarre(
+      offsetFor(source),
+      durationFor(source),
+      dayWidth
+    );
     const x0 = side === "droite" ? barLeft + barWidth : barLeft;
     const y0 = rowIndex * ROW_H + ROW_H / 2;
     // Cible courante suivie en closure (l'état ne sert qu'au rendu).
@@ -873,10 +887,17 @@ export function GanttChartV2({
     fleches.push({
       tacheId,
       depId,
-      fromX: (offsetFor(d) + durationFor(d)) * dayWidth - 2,
-      fromY: di * ROW_H + ROW_H / 2,
-      toX: offsetFor(t) * dayWidth,
-      toY: ti * ROW_H + ROW_H / 2,
+      // Géométrie pure partagée avec le rendu des barres (rectBarre) :
+      // départ au bord droit de la barre du prédécesseur sur SA ligne,
+      // arrivée au bord gauche de la barre du dépendant sur SA ligne.
+      ...ancresFleche({
+        depRow: di,
+        depOffset: offsetFor(d),
+        depDuration: durationFor(d),
+        tacheRow: ti,
+        tacheOffset: offsetFor(t),
+        dayWidth,
+      }),
       bloquante,
       optimiste,
     });
@@ -1207,10 +1228,10 @@ export function GanttChartV2({
             {taches.map((t, ti) => {
               const offset = offsetFor(t);
               const duration = durationFor(t);
-              const left = offset * dayWidth;
-              // Largeur mini 8 px : à l'échelle « mois » (4 px/jour) une tâche
-              // d'un jour devenait invisible (0 px).
-              const width = Math.max(8, duration * dayWidth - 4);
+              // Rectangle de barre : même module pur que les flèches
+              // (gantt/geometrie.ts), pour que départ et arrivée des
+              // flèches collent aux bords des barres par construction.
+              const { left, width } = rectBarre(offset, duration, dayWidth);
               const done = t.statut === "TERMINEE";
               const isSubtask = !!t.parentId;
               // Poignées INTERNES seulement si la barre est assez large pour
@@ -1231,7 +1252,7 @@ export function GanttChartV2({
                 1,
                 daysBetween(new Date(t.dateDebut), new Date(t.dateFin)) + 1
               );
-              const widthProps = Math.max(8, durProps * dayWidth - 4);
+              const widthProps = rectBarre(0, durProps, dayWidth).width;
               const showHandles = canEdit && widthProps >= 44;
               const showExtHandles = canEdit && widthProps < 44;
               // Ports de dépendance décalés au-delà des poignées externes
@@ -1251,14 +1272,22 @@ export function GanttChartV2({
               const portsVisibles =
                 portsPinnedId === t.id || linkSourceId === t.id;
               const cibleDeLien = linkTargetId === t.id;
+              // Hauteur de ligne VERROUILLÉE à ROW_H (border-box : le
+              // border-b est compris). Sans elle, la cellule libellé
+              // (2 lignes de texte + padding) poussait la ligne réelle à
+              // ~52 px et les flèches (ancrées à index * ROW_H) dérivaient
+              // jusqu'à pointer dans des cellules vides. La cellule
+              // libellé passe en centrage vertical + overflow-hidden pour
+              // absorber tout dépassement sans casser la grille.
               return (
                 <div
                   key={t.id}
+                  style={{ height: ROW_H }}
                   className="group flex border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/40 dark:hover:bg-slate-800/30 transition"
                 >
                   <div
                     onClick={() => onClickTask?.(t.id)}
-                    className={`shrink-0 px-3 py-2 border-r border-slate-200 dark:border-slate-800 min-w-0 flex items-start gap-1.5 sticky left-0 z-[6] bg-white dark:bg-slate-900 ${
+                    className={`shrink-0 px-3 border-r border-slate-200 dark:border-slate-800 min-w-0 flex items-center gap-1.5 overflow-hidden sticky left-0 z-[6] bg-white dark:bg-slate-900 ${
                       onClickTask ? "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800" : ""
                     }`}
                     style={{ width: labelWidth }}
@@ -1267,7 +1296,7 @@ export function GanttChartV2({
                     {t.priorite < 4 && (
                       <Flag
                         size={12}
-                        className={`shrink-0 mt-0.5 ${PRIO_FLAG[t.priorite]}`}
+                        className={`shrink-0 ${PRIO_FLAG[t.priorite]}`}
                       />
                     )}
                     <div className={isSubtask ? "pl-3 min-w-0" : "min-w-0"}>
@@ -1278,15 +1307,27 @@ export function GanttChartV2({
                         {t.nom}
                       </div>
                       <div className="text-[10px] text-slate-500 truncate">
-                        {t.chantier.nom}
+                        {t.chantier ? (
+                          t.chantier.nom
+                        ) : (
+                          // Tâche perso : étiquette sobre à la place du
+                          // nom de chantier.
+                          <span className="inline-flex items-center gap-0.5 px-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium">
+                            <User size={10} className="shrink-0" />
+                            Perso
+                          </span>
+                        )}
                         {t.equipe && ` · ${t.equipe.nom}`}
                       </div>
                     </div>
                   </div>
+                  {/* Pas de height explicite : la cellule s'étire sur la
+                      hauteur intérieure de la ligne (ROW_H moins le
+                      border-b), un height: ROW_H déborderait de 1 px. */}
                   <div
                     data-lienrow={t.id}
                     className="relative flex-1"
-                    style={{ height: ROW_H, width: totalDays * dayWidth }}
+                    style={{ width: totalDays * dayWidth }}
                     onClick={(e) => {
                       // Click sur empty cell : crée une tâche à la date cliquée.
                       // On ne déclenche que si le clic est direct sur ce
@@ -1300,7 +1341,7 @@ export function GanttChartV2({
                       if (dayIndex < 0 || dayIndex >= totalDays) return;
                       onEmptyCellClick(
                         addDays(minDate, dayIndex),
-                        t.chantier.nom
+                        t.chantier?.nom ?? null
                       );
                     }}
                   >

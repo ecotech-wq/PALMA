@@ -11,6 +11,7 @@ import {
   Trash2,
   Calendar,
   Users,
+  User,
   Loader2,
   FolderPlus,
   Folder,
@@ -29,6 +30,7 @@ import {
   deleteSection,
   reordonnerTaches,
 } from "./actions";
+import { groupBySections } from "./liste-groupes";
 
 export type TacheTodo = {
   id: string;
@@ -42,7 +44,8 @@ export type TacheTodo = {
   parentId: string | null;
   sectionId: string | null;
   equipe: { id: string; nom: string } | null;
-  chantier: { id: string; nom: string };
+  /** null = tâche PERSO (sans chantier, visible de son seul propriétaire). */
+  chantier: { id: string; nom: string } | null;
   labels: { label: { id: string; nom: string; couleur: string } }[];
   ouvriers?: { id: string; nom: string; prenom: string | null }[];
   recurrence?: string | null;
@@ -125,31 +128,6 @@ function buildTree(taches: TacheTodo[]): TacheTodo[] {
  *  - Sous-tâches indentées (collapse/expand)
  *  - "+ Sous-tâche" à la fin de chaque tâche racine
  */
-/**
- * Regroupe les tâches racines par section.
- * Ordre :
- *   1. "Sans section" en tête (si non vide)
- *   2. Puis chaque section dans l'ordre `ordre`
- *   3. Sections vides incluses (pour permettre de drag dedans)
- */
-function groupBySections(
-  rootTaches: TacheTodo[],
-  sections: SectionItem[]
-): { section: SectionItem | null; taches: TacheTodo[] }[] {
-  const sansSection = rootTaches.filter((t) => !t.sectionId);
-  const groups: { section: SectionItem | null; taches: TacheTodo[] }[] = [];
-  if (sansSection.length > 0 || sections.length === 0) {
-    groups.push({ section: null, taches: sansSection });
-  }
-  for (const s of sections) {
-    groups.push({
-      section: s,
-      taches: rootTaches.filter((t) => t.sectionId === s.id),
-    });
-  }
-  return groups;
-}
-
 export function TacheListTodoist({
   taches,
   sections = [],
@@ -195,6 +173,7 @@ export function TacheListTodoist({
           <SectionGroup
             key={g.section?.id ?? `__none__-${i}`}
             section={g.section}
+            titre={g.titre}
             taches={g.taches}
             onEdit={onEdit}
           />
@@ -209,10 +188,14 @@ export function TacheListTodoist({
 
 function SectionGroup({
   section,
+  titre,
   taches,
   onEdit,
 }: {
   section: SectionItem | null;
+  /** Titre de remplacement quand `section` est null (bloc « Sans
+   *  section » éclaté par rattachement : chantier ou perso). */
+  titre?: string | null;
   taches: TacheTodo[];
   onEdit?: (id: string) => void;
 }) {
@@ -269,6 +252,7 @@ function SectionGroup({
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
       <SectionHeader
         section={section}
+        titre={titre}
         total={total}
         done={done}
         expanded={expanded}
@@ -324,12 +308,14 @@ function SectionGroup({
 
 function SectionHeader({
   section,
+  titre,
   total,
   done,
   expanded,
   onToggle,
 }: {
   section: SectionItem | null;
+  titre?: string | null;
   total: number;
   done: number;
   expanded: boolean;
@@ -428,7 +414,7 @@ function SectionHeader({
         </>
       ) : (
         <h3 className="flex-1 text-sm font-semibold text-slate-500 dark:text-slate-400 truncate">
-          Sans section
+          {titre ?? "Sans section"}
         </h3>
       )}
       <span className="shrink-0 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
@@ -713,9 +699,17 @@ function TacheRow({
             )}
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
-            <span className="text-brand-700 dark:text-brand-400 font-medium">
-              {t.chantier.nom}
-            </span>
+            {t.chantier ? (
+              <span className="text-brand-700 dark:text-brand-400 font-medium">
+                {t.chantier.nom}
+              </span>
+            ) : (
+              // Tâche perso : étiquette sobre à la place du nom de chantier.
+              <span className="inline-flex items-center gap-0.5 px-1 rounded bg-slate-100 dark:bg-slate-800 font-medium text-slate-600 dark:text-slate-300">
+                <User size={10} className="shrink-0" />
+                Perso
+              </span>
+            )}
             {t.equipe && (
               <span className="inline-flex items-center gap-1">
                 <Users size={10} />

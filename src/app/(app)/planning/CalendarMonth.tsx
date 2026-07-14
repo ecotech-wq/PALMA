@@ -9,6 +9,7 @@ import {
   Flag,
   Package,
   Truck,
+  User,
   X,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
@@ -67,7 +68,8 @@ type Tache = {
   statut: string;
   priorite: number;
   equipe: { id: string; nom: string } | null;
-  chantier: { id: string; nom: string };
+  /** null = tâche PERSO (sans chantier, visible de son seul propriétaire). */
+  chantier: { id: string; nom: string } | null;
 };
 
 type Event = {
@@ -197,11 +199,12 @@ export function CalendarMonth({
   canEdit: boolean;
   onClickTask?: (id: string) => void;
   /** Création sur les cases vides : tap = un jour (debut = fin),
-   *  cliquer-glisser (souris) = la plage sélectionnée. */
+   *  cliquer-glisser (souris) = la plage sélectionnée. `chantierNom`
+   *  null = « Tâche perso (sans chantier) ». */
   onEmptyRangeClick?: (
     dateDebut: Date,
     dateFin: Date,
-    chantierNom: string
+    chantierNom: string | null
   ) => void | Promise<void>;
   defaultChantierId?: string;
   chantiers: { id: string; nom: string }[];
@@ -625,20 +628,14 @@ export function CalendarMonth({
   }
 
   // ---- Geste 3 : créer sur les cases vides (tap = un jour, glisser = plage)
-  /** Déclenche la création sur [dKey, fKey] : directe quand un chantier
-   *  est filtré (flux existant), sinon petite feuille de choix du
-   *  chantier (bas d'écran mobile, popover desktop près du pointeur). */
+  /** Déclenche la création sur [dKey, fKey] : petite feuille de choix
+   *  (bas d'écran mobile, popover desktop près du pointeur). La feuille
+   *  apparaît DÉSORMAIS TOUJOURS, même quand un chantier est filtré ou
+   *  qu'il n'en existe qu'un : la « Tâche perso (sans chantier) » doit
+   *  rester accessible. Un tap de plus, mais un comportement prévisible
+   *  (le chantier filtré est proposé en premier choix, la perso ensuite). */
   function lancerCreation(dKey: string, fKey: string, x: number, y: number) {
     if (!onEmptyRangeClick) return;
-    if (defaultChantierId && chantierNom) {
-      onEmptyRangeClick(parseKey(dKey), parseKey(fKey), chantierNom);
-      return;
-    }
-    if (chantiers.length === 1) {
-      // Un seul chantier possible : inutile de demander.
-      onEmptyRangeClick(parseKey(dKey), parseKey(fKey), chantiers[0].nom);
-      return;
-    }
     const desktop = window.matchMedia("(min-width: 640px)").matches;
     setCreation({
       debutKey: dKey,
@@ -820,8 +817,10 @@ export function CalendarMonth({
     return map;
   }, [events]);
 
-  const chantierNom =
-    chantiers.find((c) => c.id === defaultChantierId)?.nom ?? "";
+  // Chantier filtré (le cas échéant) : proposé en PREMIER choix dans la
+  // feuille de création, la « Tâche perso » en second.
+  const chantierFiltre =
+    chantiers.find((c) => c.id === defaultChantierId) ?? null;
 
   // Plage surlignée : pendant le glisser, puis tant que la feuille de
   // choix du chantier est ouverte (le contexte visuel reste sous les yeux).
@@ -1125,9 +1124,9 @@ export function CalendarMonth({
                         data-pill="1"
                         onPointerDown={(e) => onPillPointerDown(e, t)}
                         style={canEdit ? { touchAction: "none" } : undefined}
-                        title={`${t.nom} : ${t.chantier.nom}${
-                          t.equipe ? ` · ${t.equipe.nom}` : ""
-                        }${
+                        title={`${t.nom} : ${
+                          t.chantier ? t.chantier.nom : "Tâche perso"
+                        }${t.equipe ? ` · ${t.equipe.nom}` : ""}${
                           canEdit
                             ? " · glisser pour reprogrammer, tirer une extrémité pour étirer"
                             : ""
@@ -1255,17 +1254,23 @@ export function CalendarMonth({
         </span>
       </div>
 
-      {/* Choix du chantier avant création (aucun filtre chantier actif) */}
+      {/* Choix du rattachement avant création : chantier(s) + tâche perso */}
       {creation && (
         <ChoixChantierCreation
           debutKey={creation.debutKey}
           finKey={creation.finKey}
           anchor={creation.anchor}
-          chantiers={chantiers}
+          chantiers={chantierFiltre ? [chantierFiltre] : chantiers}
+          persoEnTete={!chantierFiltre}
           onChoisir={(c) => {
             const { debutKey, finKey } = creation;
             setCreation(null);
             onEmptyRangeClick?.(parseKey(debutKey), parseKey(finKey), c.nom);
+          }}
+          onChoisirPerso={() => {
+            const { debutKey, finKey } = creation;
+            setCreation(null);
+            onEmptyRangeClick?.(parseKey(debutKey), parseKey(finKey), null);
           }}
           onClose={() => setCreation(null)}
         />
@@ -1292,24 +1297,31 @@ const plageCreationFmt = new Intl.DateTimeFormat("fr-FR", {
 });
 
 /**
- * Petite feuille de choix du chantier avant création d'une tâche sur une
- * plage de jours vides : feuille en bas d'écran sur mobile (anchor null),
- * popover positionné près du pointeur sur desktop. Fermeture au clic en
- * dehors, à la touche Échap, ou via la croix.
+ * Petite feuille de choix du rattachement avant création d'une tâche sur
+ * une plage de jours vides : feuille en bas d'écran sur mobile (anchor
+ * null), popover positionné près du pointeur sur desktop. Fermeture au
+ * clic en dehors, à la touche Échap, ou via la croix.
+ * En plus des chantiers, une option « Tâche perso (sans chantier) » :
+ * en tête quand aucun chantier n'est filtré (persoEnTete), en second
+ * choix derrière le chantier filtré sinon.
  */
 function ChoixChantierCreation({
   debutKey,
   finKey,
   anchor,
   chantiers,
+  persoEnTete,
   onChoisir,
+  onChoisirPerso,
   onClose,
 }: {
   debutKey: string;
   finKey: string;
   anchor: { left: number; top: number } | null;
   chantiers: { id: string; nom: string }[];
+  persoEnTete: boolean;
   onChoisir: (chantier: { id: string; nom: string }) => void;
+  onChoisirPerso: () => void;
   onClose: () => void;
 }) {
   // Échap ferme la feuille sans créer.
@@ -1369,6 +1381,7 @@ function ChoixChantierCreation({
           </button>
         </div>
         <div className="overflow-y-auto p-2 space-y-0.5">
+          {persoEnTete && <OptionTachePerso onClick={onChoisirPerso} />}
           {chantiers.map((c) => (
             <button
               key={c.id}
@@ -1379,14 +1392,44 @@ function ChoixChantierCreation({
               {c.nom}
             </button>
           ))}
+          {!persoEnTete && <OptionTachePerso onClick={onChoisirPerso} />}
           {chantiers.length === 0 && (
-            <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-6">
-              Aucun chantier actif : créez d&apos;abord un chantier.
+            <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-3">
+              Aucun chantier actif : seule une tâche perso est possible ici.
             </p>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+/** Option « Tâche perso » de la feuille de choix : sobre, icône User. */
+function OptionTachePerso({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full min-h-[44px] text-left px-3 py-2.5 rounded-md text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
+    >
+      <User size={14} className="shrink-0 text-slate-500 dark:text-slate-400" />
+      <span className="min-w-0">
+        <span className="block">Tâche perso (sans chantier)</span>
+        <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+          Visible de vous seul
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/** Étiquette « Perso » : remplace le nom de chantier d'une tâche perso. */
+function BadgePerso() {
+  return (
+    <span className="inline-flex items-center gap-0.5 px-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium">
+      <User size={10} className="shrink-0" />
+      Perso
+    </span>
   );
 }
 
@@ -1454,7 +1497,7 @@ function DayDetail({
                   {t.nom}
                 </span>
                 <span className="block truncate text-[11px] text-slate-500 dark:text-slate-400">
-                  {t.chantier.nom}
+                  {t.chantier ? t.chantier.nom : <BadgePerso />}
                   {t.equipe ? ` · ${t.equipe.nom}` : ""}
                 </span>
               </span>

@@ -6,78 +6,29 @@ import { db } from "@/lib/db";
 import {
   requireAuth,
   verifierEspaceDuChantier,
+  type CurrentUser,
 } from "@/lib/auth-helpers";
 import { parseQuickAdd, fuzzyMatch } from "@/lib/quick-add-parser";
-
-const tacheSchema = z.object({
-  chantierId: z.string().min(1),
-  nom: z.string().min(1),
-  description: z.string().optional().or(z.literal("")),
-  equipeId: z.string().optional().or(z.literal("")),
-  dateDebut: z.string().min(1),
-  dateFin: z.string().min(1),
-  avancement: z.coerce.number().int().min(0).max(100).default(0),
-  statut: z.enum(["A_FAIRE", "EN_COURS", "TERMINEE", "BLOQUEE"]),
-  priorite: z.coerce.number().int().min(1).max(4).default(4),
-  parentId: z.string().optional().or(z.literal("")),
-  sectionId: z.string().optional().or(z.literal("")),
-  recurrence: z.string().optional().or(z.literal("")),
-});
-
-function parseTache(formData: FormData) {
-  const data = tacheSchema.parse({
-    chantierId: formData.get("chantierId"),
-    nom: formData.get("nom"),
-    description: formData.get("description"),
-    equipeId: formData.get("equipeId"),
-    dateDebut: formData.get("dateDebut"),
-    dateFin: formData.get("dateFin"),
-    avancement: formData.get("avancement") || 0,
-    statut: formData.get("statut") || "A_FAIRE",
-    priorite: formData.get("priorite") || 4,
-    parentId: formData.get("parentId") || "",
-    sectionId: formData.get("sectionId") || "",
-    recurrence: formData.get("recurrence") || "",
-  });
-
-  return {
-    chantierId: data.chantierId,
-    nom: data.nom,
-    description: data.description || null,
-    equipeId: data.equipeId || null,
-    dateDebut: new Date(data.dateDebut),
-    dateFin: new Date(data.dateFin),
-    avancement: data.avancement,
-    statut: data.statut,
-    priorite: data.priorite,
-    parentId: data.parentId || null,
-    sectionId: data.sectionId || null,
-    recurrence: data.recurrence ? data.recurrence : null,
-  };
-}
-
-function extractDependances(formData: FormData): string[] {
-  const ids = formData.getAll("dependances");
-  return ids.map(String).filter(Boolean);
-}
-
-function extractLabelIds(formData: FormData): string[] {
-  return formData
-    .getAll("labelIds")
-    .map(String)
-    .filter(Boolean);
-}
+import {
+  parseTache,
+  extractDependances,
+  extractLabelIds,
+} from "./parse-tache";
 
 export async function createTache(formData: FormData) {
   const data = parseTache(formData);
   const dependances = extractDependances(formData);
   const labelIds = extractLabelIds(formData);
+  // Le formulaire complet crée toujours une tâche DE CHANTIER (les
+  // tâches perso passent par creerTachePerso / quickCreateAt).
+  if (!data.chantierId) throw new Error("Chantier requis");
   if (data.dateFin < data.dateDebut) {
     throw new Error("La date de fin doit être après la date de début");
   }
   await db.tache.create({
     data: {
       ...data,
+      chantierId: data.chantierId,
       ...(dependances.length > 0 && {
         dependances: { connect: dependances.map((id) => ({ id })) },
       }),
@@ -93,21 +44,94 @@ export async function createTache(formData: FormData) {
 }
 
 export async function updateTache(id: string, formData: FormData) {
+  const me = await requireEditionPlanning();
   const data = parseTache(formData);
   const dependances = extractDependances(formData);
   const labelIds = extractLabelIds(formData);
   if (data.dateFin < data.dateDebut) {
     throw new Error("La date de fin doit être après la date de début");
   }
-  const filteredDeps = dependances.filter((depId) => depId !== id);
+
+  const existing = await db.tache.findUnique({ where: { id } });
+  if (!existing || existing.deletedAt) throw new Error("Tâche introuvable");
+  await verifierAccesTache(me, existing);
+
+  // Tâche PERSO : périmètre réduit. Pas de chantier, d'équipe, de
+  // section ni d'ouvriers (la modale n'envoie pas ces champs ; on les
+  // force à null ici pour préserver l'invariant « SOIT chantierId, SOIT
+  // proprietaireId » même face à un client bricolé). Le parent et les
+  // dépendances ne sont volontairement PAS touchés : les liens
+  // perso-perso créés depuis le Gantt (ajouterDependance) et les
+  // sous-tâches perso (ajouterSousTache) doivent survivre à une édition
+  // par la modale, qui ne rend pas ces champs ; une valeur forgée par un
+  // client bricolé est simplement ignorée.
+  if (existing.proprietaireId) {
+    await db.tache.update({
+      where: { id },
+      data: {
+        nom: data.nom,
+        description: data.description,
+        dateDebut: data.dateDebut,
+        dateFin: data.dateFin,
+        avancement: data.avancement,
+        statut: data.statut,
+        priorite: data.priorite,
+        recurrence: data.recurrence,
+        chantierId: null,
+        equipeId: null,
+        sectionId: null,
+        labels: {
+          deleteMany: {},
+          create: labelIds.map((labelId) => ({ labelId })),
+        },
+      },
+    });
+    revalidatePath("/planning");
+    return;
+  }
+
+  // Tâche de chantier : le chantier reste obligatoire (pas de bascule
+  // chantier -> perso par édition).
+  if (!data.chantierId) throw new Error("Chantier requis");
+  await verifierEspaceDuChantier(me, data.chantierId);
+  const filteredDeps = [...new Set(dependances)].filter(
+    (depId) => depId !== id
+  );
   // Empêche de mettre la tâche comme parent d'elle-même
   const safeParentId = data.parentId === id ? null : data.parentId;
 
-  const existing = await db.tache.findUnique({ where: { id } });
+  // Mêmes gardes qu'ajouterDependance, sinon un client forgé les
+  // contournait toutes en passant par la modale : dépendances et tâche
+  // parente doivent être des tâches vivantes du MÊME chantier que la
+  // tâche éditée (jamais une tâche perso ni un autre chantier), et le
+  // nouvel ensemble de dépendances ne doit fermer aucun cycle.
+  const refIds = [
+    ...new Set([...filteredDeps, ...(safeParentId ? [safeParentId] : [])]),
+  ];
+  if (refIds.length > 0) {
+    const refs = await db.tache.findMany({
+      where: { id: { in: refIds } },
+      select: { id: true, chantierId: true, deletedAt: true },
+    });
+    const refParId = new Map(refs.map((r) => [r.id, r]));
+    for (const refId of refIds) {
+      const ref = refParId.get(refId);
+      if (!ref || ref.deletedAt || ref.chantierId !== data.chantierId) {
+        throw new Error(
+          "Dépendances et tâche parente doivent appartenir au même chantier que la tâche"
+        );
+      }
+    }
+  }
+  if (filteredDeps.length > 0) {
+    await verifierAbsenceCycle(id, filteredDeps);
+  }
+
   await db.tache.update({
     where: { id },
     data: {
       ...data,
+      chantierId: data.chantierId,
       parentId: safeParentId,
       dependances: {
         set: filteredDeps.map((depId) => ({ id: depId })),
@@ -120,23 +144,35 @@ export async function updateTache(id: string, formData: FormData) {
   });
   revalidatePath("/planning");
   revalidatePath(`/chantiers/${data.chantierId}`);
-  if (existing && existing.chantierId !== data.chantierId) {
+  if (existing.chantierId && existing.chantierId !== data.chantierId) {
     revalidatePath(`/chantiers/${existing.chantierId}`);
   }
 }
 
 export async function deleteTache(id: string) {
+  const me = await requireEditionPlanning();
   const existing = await db.tache.findUnique({ where: { id } });
+  if (!existing) throw new Error("Tâche introuvable");
+  await verifierAccesTache(me, existing);
   // Soft-delete : marqué supprimé, conservé 30 jours dans la corbeille
   await db.tache.update({
     where: { id },
     data: { deletedAt: new Date() },
   });
   revalidatePath("/planning");
-  if (existing) revalidatePath(`/chantiers/${existing.chantierId}`);
+  if (existing.chantierId) {
+    revalidatePath(`/chantiers/${existing.chantierId}`);
+  }
 }
 
 export async function setAvancement(id: string, avancement: number) {
+  const me = await requireEditionPlanning();
+  const existing = await db.tache.findUnique({
+    where: { id },
+    select: { chantierId: true, proprietaireId: true },
+  });
+  if (!existing) throw new Error("Tâche introuvable");
+  await verifierAccesTache(me, existing);
   const t = await db.tache.update({
     where: { id },
     data: {
@@ -150,7 +186,7 @@ export async function setAvancement(id: string, avancement: number) {
     },
   });
   revalidatePath("/planning");
-  revalidatePath(`/chantiers/${t.chantierId}`);
+  if (t.chantierId) revalidatePath(`/chantiers/${t.chantierId}`);
 }
 
 /** Toggle complete : passe à 100% (terminée) si pas, sinon 0%.
@@ -158,11 +194,13 @@ export async function setAvancement(id: string, avancement: number) {
  *  prochaine date prévue par la règle RRule.
  */
 export async function toggleComplete(id: string) {
+  const me = await requireEditionPlanning();
   const t = await db.tache.findUnique({
     where: { id },
     include: { labels: true, ouvriers: true },
   });
   if (!t) return;
+  await verifierAccesTache(me, t);
   const isDone = t.statut === "TERMINEE" || t.avancement === 100;
   await db.tache.update({
     where: { id },
@@ -203,7 +241,10 @@ export async function toggleComplete(id: string) {
         const nextFin = new Date(next.getTime() + duration);
         const created = await db.tache.create({
           data: {
+            // Invariant perso/chantier : la prochaine occurrence garde
+            // exactement le rattachement de la tâche source.
             chantierId: t.chantierId,
+            proprietaireId: t.proprietaireId,
             equipeId: t.equipeId,
             sectionId: t.sectionId,
             parentId: t.parentId,
@@ -245,17 +286,24 @@ export async function toggleComplete(id: string) {
   }
 
   revalidatePath("/planning");
-  revalidatePath(`/chantiers/${t.chantierId}`);
+  if (t.chantierId) revalidatePath(`/chantiers/${t.chantierId}`);
 }
 
 /** Met à jour la priorité (1..4) sans toucher au reste. */
 export async function setPriorite(id: string, priorite: 1 | 2 | 3 | 4) {
+  const me = await requireEditionPlanning();
+  const existing = await db.tache.findUnique({
+    where: { id },
+    select: { chantierId: true, proprietaireId: true },
+  });
+  if (!existing) throw new Error("Tâche introuvable");
+  await verifierAccesTache(me, existing);
   const t = await db.tache.update({
     where: { id },
     data: { priorite },
   });
   revalidatePath("/planning");
-  revalidatePath(`/chantiers/${t.chantierId}`);
+  if (t.chantierId) revalidatePath(`/chantiers/${t.chantierId}`);
 }
 
 /**
@@ -336,19 +384,20 @@ export async function deplacerTache(
   if (dEnd < dStart) {
     throw new Error("Date de fin avant date de début");
   }
-  // Frontière d'espace : bornée par le chantier de la tâche.
+  // Frontière : espace du chantier pour une tâche de chantier,
+  // propriétaire pour une tâche perso.
   const existante = await db.tache.findUnique({
     where: { id },
-    select: { chantierId: true },
+    select: { chantierId: true, proprietaireId: true },
   });
   if (!existante) throw new Error("Tâche introuvable");
-  await verifierEspaceDuChantier(me, existante.chantierId);
+  await verifierAccesTache(me, existante);
   const t = await db.tache.update({
     where: { id },
     data: { dateDebut: dStart, dateFin: dEnd },
   });
   revalidatePath("/planning");
-  revalidatePath(`/chantiers/${t.chantierId}`);
+  if (t.chantierId) revalidatePath(`/chantiers/${t.chantierId}`);
 }
 
 /**
@@ -469,9 +518,12 @@ export async function quickAddTache(input: string, defaultChantierId?: string) {
 }
 
 /**
- * Création rapide à une date donnée et pour un chantier donné (clic
- * sur case vide du Gantt, cliquer-glisser sur le calendrier). Retourne
- * l'ID pour ouvrir directement la modale d'édition.
+ * Création rapide à une date donnée (clic sur case vide du Gantt,
+ * cliquer-glisser sur le calendrier). Retourne l'ID pour ouvrir
+ * directement la modale d'édition.
+ * `chantierId` null = tâche PERSO : sans chantier, rattachée à son
+ * propriétaire (proprietaireId = utilisateur courant), visible de lui
+ * seul. Invariant : SOIT chantierId, SOIT proprietaireId.
  * `dateFin` optionnelle : absente, la tâche dure 3 jours (comportement
  * historique du Gantt) ; fournie, la tâche couvre exactement la plage.
  */
@@ -481,15 +533,17 @@ export async function quickCreateAt({
   dateFin,
   nom = "Nouvelle tâche",
 }: {
-  chantierId: string;
+  chantierId: string | null;
   date: Date | string;
   dateFin?: Date | string;
   nom?: string;
 }): Promise<{ id: string }> {
   const me = await requireEditionPlanning();
   // Frontière d'espace : le chantier cible doit appartenir à un espace
-  // de l'utilisateur (un chantierId arbitraire est refusé).
-  await verifierEspaceDuChantier(me, chantierId);
+  // de l'utilisateur (un chantierId arbitraire est refusé). Une tâche
+  // perso n'a pas de chantier : rien à vérifier, elle n'appartient
+  // qu'à son créateur.
+  if (chantierId) await verifierEspaceDuChantier(me, chantierId);
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   let fin: Date;
@@ -510,6 +564,7 @@ export async function quickCreateAt({
   const t = await db.tache.create({
     data: {
       chantierId,
+      proprietaireId: chantierId ? null : me.id,
       nom,
       dateDebut: d,
       dateFin: fin,
@@ -518,7 +573,54 @@ export async function quickCreateAt({
     },
   });
   revalidatePath("/planning");
-  revalidatePath(`/chantiers/${chantierId}`);
+  if (chantierId) revalidatePath(`/chantiers/${chantierId}`);
+  return { id: t.id };
+}
+
+const tachePersoSchema = z.object({
+  nom: z.string().min(1),
+  dateDebut: z.coerce.date(),
+  dateFin: z.coerce.date(),
+  description: z.string().optional(),
+});
+
+/**
+ * Crée une TÂCHE PERSO depuis le calendrier : sans chantier, rattachée
+ * à son propriétaire (proprietaireId) et visible de lui seul, même par
+ * un admin d'espace. Ouverte à TOUT utilisateur non client (un chef ou
+ * un ouvrier a aussi ses rappels personnels) : même règle d'accès que
+ * le reste de l'édition du planning. Invariant applicatif : une tâche
+ * a SOIT un chantierId, SOIT un proprietaireId, jamais les deux ni
+ * aucun des deux.
+ */
+export async function creerTachePerso(input: {
+  nom: string;
+  dateDebut: Date | string;
+  dateFin: Date | string;
+  description?: string;
+}): Promise<{ id: string }> {
+  const me = await requireEditionPlanning();
+  const data = tachePersoSchema.parse(input);
+  const debut = new Date(data.dateDebut);
+  const fin = new Date(data.dateFin);
+  debut.setHours(0, 0, 0, 0);
+  fin.setHours(0, 0, 0, 0);
+  if (fin < debut) {
+    throw new Error("La date de fin doit être après la date de début");
+  }
+  const t = await db.tache.create({
+    data: {
+      chantierId: null,
+      proprietaireId: me.id,
+      nom: data.nom.trim(),
+      description: data.description?.trim() || null,
+      dateDebut: debut,
+      dateFin: fin,
+      priorite: 4,
+      statut: "A_FAIRE",
+    },
+  });
+  revalidatePath("/planning");
   return { id: t.id };
 }
 
@@ -529,20 +631,27 @@ export async function ajouterSousTache(
   priorite: 1 | 2 | 3 | 4 = 4
 ) {
   if (!nom.trim()) throw new Error("Nom requis");
+  const me = await requireEditionPlanning();
   const parent = await db.tache.findUnique({
     where: { id: parentId },
     select: {
       chantierId: true,
+      proprietaireId: true,
       equipeId: true,
       dateDebut: true,
       dateFin: true,
     },
   });
   if (!parent) throw new Error("Tâche parente introuvable");
+  await verifierAccesTache(me, parent);
 
   await db.tache.create({
     data: {
+      // La sous-tâche hérite du rattachement du parent : chantier pour
+      // une tâche de chantier, propriétaire pour une tâche perso
+      // (invariant SOIT chantierId, SOIT proprietaireId préservé).
       chantierId: parent.chantierId,
+      proprietaireId: parent.proprietaireId,
       equipeId: parent.equipeId,
       nom: nom.trim(),
       priorite,
@@ -552,7 +661,7 @@ export async function ajouterSousTache(
     },
   });
   revalidatePath("/planning");
-  revalidatePath(`/chantiers/${parent.chantierId}`);
+  if (parent.chantierId) revalidatePath(`/chantiers/${parent.chantierId}`);
 }
 
 /* -------------------- Sections (Todoist-like) -------------------- */
@@ -604,12 +713,23 @@ export async function deplacerVersSection(
   tacheId: string,
   sectionId: string | null
 ) {
+  const me = await requireEditionPlanning();
+  const existing = await db.tache.findUnique({
+    where: { id: tacheId },
+    select: { chantierId: true, proprietaireId: true },
+  });
+  if (!existing) throw new Error("Tâche introuvable");
+  await verifierAccesTache(me, existing);
+  // Les sections appartiennent à un chantier : une tâche perso n'en a pas.
+  if (existing.proprietaireId && sectionId) {
+    throw new Error("Une tâche perso n'a pas de section");
+  }
   const t = await db.tache.update({
     where: { id: tacheId },
     data: { sectionId },
   });
   revalidatePath("/planning");
-  revalidatePath(`/chantiers/${t.chantierId}`);
+  if (t.chantierId) revalidatePath(`/chantiers/${t.chantierId}`);
 }
 
 /** Réordonne les sections d'un chantier (drag-and-drop futur). */
@@ -637,12 +757,18 @@ export async function setTacheOuvriers(
   tacheId: string,
   ouvrierIds: string[]
 ) {
-  // Vérifie l'existence + accès chantier
+  const me = await requireEditionPlanning();
+  // Vérifie l'existence + accès (chantier ou propriétaire)
   const t = await db.tache.findUnique({
     where: { id: tacheId },
-    select: { chantierId: true },
+    select: { chantierId: true, proprietaireId: true },
   });
   if (!t) throw new Error("Tâche introuvable");
+  await verifierAccesTache(me, t);
+  // Une tâche perso n'a pas d'ouvriers affectés (outil de chantier).
+  if (t.proprietaireId && ouvrierIds.length > 0) {
+    throw new Error("Une tâche perso n'a pas d'ouvriers affectés");
+  }
   await db.$transaction([
     db.tacheOuvrier.deleteMany({ where: { tacheId } }),
     ...(ouvrierIds.length > 0
@@ -655,35 +781,65 @@ export async function setTacheOuvriers(
       : []),
   ]);
   revalidatePath("/planning");
-  revalidatePath(`/chantiers/${t.chantierId}`);
+  if (t.chantierId) revalidatePath(`/chantiers/${t.chantierId}`);
 }
 
 /**
  * Réordonne un lot de tâches en assignant `ordre` selon la position
  * dans le tableau reçu. Permet le drag-and-drop dans la liste.
- * Toutes les tâches doivent appartenir à un même chantier (sécurité :
- * pas de réordonnancement cross-chantier en un appel).
+ * Gardes : édition du planning requise (jamais un compte client), lot
+ * homogène (un seul rattachement : un chantier OU un propriétaire de
+ * tâches perso, jamais mélangés), et frontière d'accès vérifiée comme
+ * pour toute mutation (espace du chantier commun, ou propriétaire /
+ * admin global pour un lot perso).
  */
 export async function reordonnerTaches(orderedIds: string[]) {
   if (!Array.isArray(orderedIds) || orderedIds.length === 0) return;
+  const me = await requireEditionPlanning();
+  const uniques = [...new Set(orderedIds)];
   const taches = await db.tache.findMany({
-    where: { id: { in: orderedIds } },
-    select: { id: true, chantierId: true },
+    where: { id: { in: uniques } },
+    select: { id: true, chantierId: true, proprietaireId: true },
   });
+  // Tout id inconnu fait échouer l'appel : sans cela, un id hors lot
+  // vérifié recevrait un `ordre` sans passer par les gardes.
+  if (taches.length !== uniques.length) {
+    throw new Error("Tâche introuvable dans le lot à réordonner");
+  }
+  // Les tâches perso (chantierId null) forment leur propre groupe : on
+  // peut les réordonner entre elles, jamais mélangées à un chantier.
   const chantierIds = new Set(taches.map((t) => t.chantierId));
   if (chantierIds.size !== 1) {
     throw new Error(
       "Toutes les tâches doivent appartenir au même chantier"
     );
   }
+  const chantierId = [...chantierIds][0];
+  if (chantierId) {
+    // Chantier commun : une seule vérification d'espace suffit.
+    await verifierAccesTache(me, { chantierId, proprietaireId: null });
+  } else {
+    // Lot perso : un seul propriétaire (les perso de TOUS les
+    // utilisateurs partagent chantierId null, la taille du Set ne les
+    // distingue pas), puis même règle d'accès que toute tâche perso.
+    const proprietaires = new Set(taches.map((t) => t.proprietaireId));
+    if (proprietaires.size !== 1) {
+      throw new Error(
+        "Toutes les tâches perso doivent appartenir au même propriétaire"
+      );
+    }
+    await verifierAccesTache(me, {
+      chantierId: null,
+      proprietaireId: [...proprietaires][0],
+    });
+  }
   await db.$transaction(
     orderedIds.map((id, ordre) =>
       db.tache.update({ where: { id }, data: { ordre } })
     )
   );
-  const chantierId = [...chantierIds][0];
   revalidatePath("/planning");
-  revalidatePath(`/chantiers/${chantierId}`);
+  if (chantierId) revalidatePath(`/chantiers/${chantierId}`);
 }
 
 /* -------------------- Statut (drag Kanban) -------------------- */
@@ -698,8 +854,10 @@ type StatutTache = (typeof STATUTS)[number];
  */
 export async function setStatut(id: string, statut: StatutTache) {
   if (!STATUTS.includes(statut)) throw new Error("Statut invalide");
+  const me = await requireEditionPlanning();
   const existing = await db.tache.findUnique({ where: { id } });
   if (!existing) return;
+  await verifierAccesTache(me, existing);
 
   let avancement = existing.avancement;
   if (statut === "TERMINEE") avancement = 100;
@@ -711,7 +869,7 @@ export async function setStatut(id: string, statut: StatutTache) {
     data: { statut, avancement },
   });
   revalidatePath("/planning");
-  revalidatePath(`/chantiers/${t.chantierId}`);
+  if (t.chantierId) revalidatePath(`/chantiers/${t.chantierId}`);
 }
 
 /* -------------------- Labels (CRUD) -------------------- */
@@ -749,6 +907,33 @@ async function requireEditionPlanning() {
   return me;
 }
 
+/**
+ * Garde d'accès à UNE tâche pour les mutations. Invariant applicatif :
+ * une tâche a SOIT un chantierId, SOIT un proprietaireId (tâche perso),
+ * jamais les deux ni aucun des deux.
+ * - Tâche de chantier : frontière d'espace du chantier
+ *   (verifierEspaceDuChantier), comme partout ailleurs.
+ * - Tâche PERSO : seul son propriétaire, ou un admin global, peut la
+ *   modifier. Un admin d'espace n'y a aucun droit.
+ */
+async function verifierAccesTache(
+  me: CurrentUser,
+  tache: { chantierId: string | null; proprietaireId: string | null }
+): Promise<void> {
+  if (tache.chantierId) {
+    await verifierEspaceDuChantier(me, tache.chantierId);
+    return;
+  }
+  if (tache.proprietaireId) {
+    if (tache.proprietaireId !== me.id && !me.isGlobalAdmin) {
+      throw new Error("Cette tâche personnelle ne vous appartient pas");
+    }
+    return;
+  }
+  // Ni chantier ni propriétaire : invariant brisé, on refuse d'y toucher.
+  throw new Error("Tâche invalide : ni chantier ni propriétaire");
+}
+
 const dependanceSchema = z.object({
   tacheId: z.string().min(1),
   depId: z.string().min(1),
@@ -758,49 +943,18 @@ const dependanceSchema = z.object({
 const PROFONDEUR_MAX_DEPS = 100;
 
 /**
- * Crée une dépendance : `tacheId` dépendra de `depId` (depId devient un
- * prédécesseur). Refuse l'auto-dépendance, le cross-chantier et tout
- * cycle : on remonte les prédécesseurs de depId en largeur (une requête
- * par niveau, ensemble visité en garde anti-boucle) ; si tacheId est
- * atteint, la liaison fermerait un cycle.
+ * Vérifie qu'ajouter les arêtes « tacheId dépend de chacune de depIds »
+ * ne fermerait aucun cycle : parcours en largeur des prédécesseurs de
+ * depIds (une requête par niveau, ensemble visité en garde anti-boucle,
+ * profondeur bornée). Partagée entre ajouterDependance (une arête) et
+ * updateTache (qui remplace l'ensemble des dépendances d'un coup).
  */
-export async function ajouterDependance(tacheId: string, depId: string) {
-  await requireEditionPlanning();
-  const ids = dependanceSchema.parse({ tacheId, depId });
-  if (ids.tacheId === ids.depId) {
-    throw new Error("Une tâche ne peut pas dépendre d'elle-même");
-  }
-
-  const [tache, dep] = await Promise.all([
-    db.tache.findUnique({
-      where: { id: ids.tacheId },
-      select: {
-        id: true,
-        nom: true,
-        chantierId: true,
-        deletedAt: true,
-        dependances: { where: { id: ids.depId }, select: { id: true } },
-      },
-    }),
-    db.tache.findUnique({
-      where: { id: ids.depId },
-      select: { id: true, nom: true, chantierId: true, deletedAt: true },
-    }),
-  ]);
-  if (!tache || tache.deletedAt) throw new Error("Tâche introuvable");
-  if (!dep || dep.deletedAt) {
-    throw new Error("Tâche prédécesseur introuvable");
-  }
-  if (tache.chantierId !== dep.chantierId) {
-    throw new Error(
-      "Impossible : les deux tâches doivent appartenir au même chantier"
-    );
-  }
-  // Idempotent : la dépendance existe déjà, rien à faire.
-  if (tache.dependances.length > 0) return;
-
-  // Détection de cycle : parcours des prédécesseurs de depId.
-  let frontiere: string[] = [ids.depId];
+async function verifierAbsenceCycle(
+  tacheId: string,
+  depIds: string[],
+  messageCycle?: string
+): Promise<void> {
+  let frontiere = depIds.filter((d) => d !== tacheId);
   const visites = new Set<string>(frontiere);
   for (let prof = 0; frontiere.length > 0; prof++) {
     if (prof >= PROFONDEUR_MAX_DEPS) {
@@ -816,9 +970,10 @@ export async function ajouterDependance(tacheId: string, depId: string) {
     });
     const suivante: string[] = [];
     for (const r of rows) {
-      if (r.id === ids.tacheId) {
+      if (r.id === tacheId) {
         throw new Error(
-          `Impossible : « ${dep.nom} » dépend déjà, directement ou non, de « ${tache.nom} » (cela créerait un cycle)`
+          messageCycle ??
+            "Impossible : cette dépendance créerait un cycle"
         );
       }
       if (!visites.has(r.id)) {
@@ -828,13 +983,75 @@ export async function ajouterDependance(tacheId: string, depId: string) {
     }
     frontiere = suivante;
   }
+}
+
+/**
+ * Crée une dépendance : `tacheId` dépendra de `depId` (depId devient un
+ * prédécesseur). Refuse l'auto-dépendance, le cross-chantier et tout
+ * cycle : on remonte les prédécesseurs de depId en largeur (une requête
+ * par niveau, ensemble visité en garde anti-boucle) ; si tacheId est
+ * atteint, la liaison fermerait un cycle.
+ */
+export async function ajouterDependance(tacheId: string, depId: string) {
+  const me = await requireEditionPlanning();
+  const ids = dependanceSchema.parse({ tacheId, depId });
+  if (ids.tacheId === ids.depId) {
+    throw new Error("Une tâche ne peut pas dépendre d'elle-même");
+  }
+
+  const [tache, dep] = await Promise.all([
+    db.tache.findUnique({
+      where: { id: ids.tacheId },
+      select: {
+        id: true,
+        nom: true,
+        chantierId: true,
+        proprietaireId: true,
+        deletedAt: true,
+        dependances: { where: { id: ids.depId }, select: { id: true } },
+      },
+    }),
+    db.tache.findUnique({
+      where: { id: ids.depId },
+      select: {
+        id: true,
+        nom: true,
+        chantierId: true,
+        proprietaireId: true,
+        deletedAt: true,
+      },
+    }),
+  ]);
+  if (!tache || tache.deletedAt) throw new Error("Tâche introuvable");
+  if (!dep || dep.deletedAt) {
+    throw new Error("Tâche prédécesseur introuvable");
+  }
+  if (tache.chantierId !== dep.chantierId) {
+    throw new Error(
+      "Impossible : les deux tâches doivent appartenir au même chantier"
+    );
+  }
+  // Deux tâches perso ont le même chantierId (null) : la garde ci-dessous
+  // impose en plus qu'elles appartiennent à l'utilisateur (pas de lien
+  // vers la tâche perso d'un autre), et borne l'espace côté chantier.
+  await verifierAccesTache(me, tache);
+  await verifierAccesTache(me, dep);
+  // Idempotent : la dépendance existe déjà, rien à faire.
+  if (tache.dependances.length > 0) return;
+
+  // Détection de cycle : parcours des prédécesseurs de depId.
+  await verifierAbsenceCycle(
+    ids.tacheId,
+    [ids.depId],
+    `Impossible : « ${dep.nom} » dépend déjà, directement ou non, de « ${tache.nom} » (cela créerait un cycle)`
+  );
 
   await db.tache.update({
     where: { id: ids.tacheId },
     data: { dependances: { connect: { id: ids.depId } } },
   });
   revalidatePath("/planning");
-  revalidatePath(`/chantiers/${tache.chantierId}`);
+  if (tache.chantierId) revalidatePath(`/chantiers/${tache.chantierId}`);
 }
 
 /* -------------------- Positions PERT (noeuds déplaçables) -------------------- */
@@ -856,12 +1073,16 @@ const positionPertSchema = z.object({
 export async function majPositionPert(tacheId: string, x: number, y: number) {
   const me = await requireEditionPlanning();
   const data = positionPertSchema.parse({ tacheId, x, y });
-  // Frontière d'espace : bornée par le chantier de la tâche.
+  // Frontière d'espace : bornée par le chantier de la tâche. Les tâches
+  // perso sont EXCLUES du PERT (outil de projet) : jamais de position.
   const t = await db.tache.findUnique({
     where: { id: data.tacheId },
     select: { chantierId: true, deletedAt: true },
   });
   if (!t || t.deletedAt) throw new Error("Tâche introuvable");
+  if (!t.chantierId) {
+    throw new Error("Les tâches perso ne participent pas au PERT");
+  }
   await verifierEspaceDuChantier(me, t.chantierId);
   await db.tache.update({
     where: { id: data.tacheId },
@@ -906,19 +1127,20 @@ export async function reinitialiserPositionsPert(chantierIds: string[]) {
 
 /** Retire la dépendance « tacheId dépend de depId » (flèche du Gantt). */
 export async function retirerDependance(tacheId: string, depId: string) {
-  await requireEditionPlanning();
+  const me = await requireEditionPlanning();
   const ids = dependanceSchema.parse({ tacheId, depId });
   const tache = await db.tache.findUnique({
     where: { id: ids.tacheId },
-    select: { chantierId: true },
+    select: { chantierId: true, proprietaireId: true },
   });
   if (!tache) throw new Error("Tâche introuvable");
+  await verifierAccesTache(me, tache);
   await db.tache.update({
     where: { id: ids.tacheId },
     data: { dependances: { disconnect: { id: ids.depId } } },
   });
   revalidatePath("/planning");
-  revalidatePath(`/chantiers/${tache.chantierId}`);
+  if (tache.chantierId) revalidatePath(`/chantiers/${tache.chantierId}`);
 }
 
 /**
@@ -934,7 +1156,7 @@ export async function decalerTacheAvecSuccesseurs(
   nouvelleDateFin: Date | string,
   decalerSuccesseurs: boolean
 ) {
-  await requireEditionPlanning();
+  const me = await requireEditionPlanning();
   z.object({ id: z.string().min(1), decalerSuccesseurs: z.boolean() }).parse({
     id,
     decalerSuccesseurs,
@@ -952,9 +1174,16 @@ export async function decalerTacheAvecSuccesseurs(
 
   const tache = await db.tache.findUnique({
     where: { id },
-    select: { id: true, chantierId: true, dateDebut: true, deletedAt: true },
+    select: {
+      id: true,
+      chantierId: true,
+      proprietaireId: true,
+      dateDebut: true,
+      deletedAt: true,
+    },
   });
   if (!tache || tache.deletedAt) throw new Error("Tâche introuvable");
+  await verifierAccesTache(me, tache);
 
   const UN_JOUR = 24 * 60 * 60 * 1000;
   // Arrondi : absorbe l'écart fuseau local / minuit UTC des colonnes Date.
@@ -962,7 +1191,10 @@ export async function decalerTacheAvecSuccesseurs(
     (dStart.getTime() - new Date(tache.dateDebut).getTime()) / UN_JOUR
   );
 
-  const chantiersTouches = new Set<string>([tache.chantierId]);
+  // Chantiers dont la page détail doit être revalidée (les tâches perso,
+  // sans chantier, n'y contribuent pas).
+  const chantiersTouches = new Set<string>();
+  if (tache.chantierId) chantiersTouches.add(tache.chantierId);
   const updates = [
     db.tache.update({
       where: { id },
@@ -977,7 +1209,7 @@ export async function decalerTacheAvecSuccesseurs(
       id: string;
       dateDebut: Date;
       dateFin: Date;
-      chantierId: string;
+      chantierId: string | null;
     }[] = [];
     for (let prof = 0; frontiere.length > 0; prof++) {
       if (prof >= PROFONDEUR_MAX_DEPS) {
@@ -1018,7 +1250,7 @@ export async function decalerTacheAvecSuccesseurs(
           },
         })
       );
-      chantiersTouches.add(s.chantierId);
+      if (s.chantierId) chantiersTouches.add(s.chantierId);
     }
   }
 

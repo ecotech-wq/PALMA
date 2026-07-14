@@ -9,13 +9,14 @@ import { TacheListTodoist, type SectionItem } from "./TacheListTodoist";
 import { TacheEditModal, type TacheForEdit } from "./TacheEditModal";
 import { CalendarMonth } from "./CalendarMonth";
 import { PertChart } from "./PertChart";
-import { quickCreateAt } from "./actions";
+import { creerTachePerso, quickCreateAt } from "./actions";
 
 type Vue = "gantt" | "liste" | "kanban" | "calendrier" | "pert";
 
 type FullTache = TacheForEdit & {
   equipe: { id: string; nom: string } | null;
-  chantier: { id: string; nom: string };
+  /** null = tâche PERSO (sans chantier, visible de son seul propriétaire). */
+  chantier: { id: string; nom: string } | null;
   /** Position manuelle partagée du noeud PERT (NULL = automatique). */
   pertX: number | null;
   pertY: number | null;
@@ -86,7 +87,26 @@ export function PlanningViews({
     return m;
   }, [chantiers]);
 
-  async function handleEmptyCellClick(date: Date, chantierNom: string) {
+  /** Création depuis une case vide du Gantt. `chantierNom` null = ligne
+   *  d'une tâche PERSO : on crée une nouvelle tâche perso à cette date
+   *  (3 jours, comme le défaut historique du Gantt). */
+  async function handleEmptyCellClick(date: Date, chantierNom: string | null) {
+    if (chantierNom === null) {
+      const fin = new Date(date);
+      fin.setDate(fin.getDate() + 2);
+      try {
+        const { id } = await creerTachePerso({
+          nom: "Nouvelle tâche",
+          dateDebut: date,
+          dateFin: fin,
+        });
+        router.refresh();
+        setTimeout(() => setEditingId(id), 350);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Erreur");
+      }
+      return;
+    }
     const chantierId = chantierByNom.get(chantierNom);
     if (!chantierId) {
       toast.error("Chantier introuvable");
@@ -107,12 +127,28 @@ export function PlanningViews({
 
   /** Création depuis les cases vides du calendrier (tap = un seul jour,
    *  cliquer-glisser = plage) : crée une tâche couvrant exactement la
-   *  plage, puis ouvre la modale d'édition. */
+   *  plage, puis ouvre la modale d'édition. `chantierNom` null = option
+   *  « Tâche perso » de la feuille de choix : creerTachePerso, puis la
+   *  même modale. */
   async function handleEmptyRangeClick(
     dateDebut: Date,
     dateFin: Date,
-    chantierNom: string
+    chantierNom: string | null
   ) {
+    if (chantierNom === null) {
+      try {
+        const { id } = await creerTachePerso({
+          nom: "Nouvelle tâche",
+          dateDebut,
+          dateFin,
+        });
+        router.refresh();
+        setTimeout(() => setEditingId(id), 350);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Erreur");
+      }
+      return;
+    }
     const chantierId = chantierByNom.get(chantierNom);
     if (!chantierId) {
       toast.error("Chantier introuvable");
@@ -201,19 +237,30 @@ export function PlanningViews({
         <PertChart
           canEdit={canEdit}
           onClickTask={canEdit ? (id) => setEditingId(id) : undefined}
-          taches={taches.map((t) => ({
-            id: t.id,
-            nom: t.nom,
-            dateDebut: t.dateDebut,
-            dateFin: t.dateFin,
-            avancement: t.avancement,
-            statut: t.statut,
-            equipe: t.equipe,
-            chantier: t.chantier,
-            dependances: t.dependances,
-            pertX: t.pertX,
-            pertY: t.pertY,
-          }))}
+          taches={taches
+            // Le PERT est un outil de PROJET (dépendances, chemin
+            // critique par chantier) : les tâches perso, sans chantier,
+            // en sont exclues. Même règle côté serveur (majPositionPert
+            // les refuse).
+            .filter(
+              (
+                t
+              ): t is FullTache & { chantier: { id: string; nom: string } } =>
+                t.chantier !== null
+            )
+            .map((t) => ({
+              id: t.id,
+              nom: t.nom,
+              dateDebut: t.dateDebut,
+              dateFin: t.dateFin,
+              avancement: t.avancement,
+              statut: t.statut,
+              equipe: t.equipe,
+              chantier: t.chantier,
+              dependances: t.dependances,
+              pertX: t.pertX,
+              pertY: t.pertY,
+            }))}
         />
       )}
 

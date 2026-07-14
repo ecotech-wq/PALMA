@@ -98,6 +98,7 @@ model User {
   marchesClient       Marche[]             @relation("MarcheClient")
   devisClient         Devis[]              @relation("DevisClient")
   facturesClient      Facture[]            @relation("FactureClient")
+  tachesPerso         Tache[]              @relation("TachesPerso")
 }
 
 /// v4.3 : une ligne = une personne sur un chantier, quel que soit son
@@ -641,36 +642,41 @@ enum StatutTache {
 }
 
 model Tache {
-  id          String         @id @default(cuid())
-  chantierId  String
-  chantier    Chantier       @relation(fields: [chantierId], references: [id], onDelete: Cascade)
-  equipeId    String?
-  equipe      Equipe?        @relation(fields: [equipeId], references: [id], onDelete: SetNull)
-  nom         String
-  description String?
-  dateDebut   DateTime       @db.Date
-  dateFin     DateTime       @db.Date
-  avancement  Int            @default(0)
-  statut      StatutTache    @default(A_FAIRE)
+  id             String         @id @default(cuid())
+  /// Nullable depuis 2026-07-14 : une tache PERSO n'a pas de chantier, elle
+  /// appartient a son proprietaire (proprietaireId) et n'est visible que
+  /// de lui. Invariant applicatif : chantierId OU proprietaireId renseigne.
+  chantierId     String?
+  chantier       Chantier?      @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  proprietaireId String?
+  proprietaire   User?          @relation("TachesPerso", fields: [proprietaireId], references: [id], onDelete: Cascade)
+  equipeId       String?
+  equipe         Equipe?        @relation(fields: [equipeId], references: [id], onDelete: SetNull)
+  nom            String
+  description    String?
+  dateDebut      DateTime       @db.Date
+  dateFin        DateTime       @db.Date
+  avancement     Int            @default(0)
+  statut         StatutTache    @default(A_FAIRE)
   /// Priorité Todoist-style : 1 = P1 (urgent, rouge), 2 = P2 (haute, orange),
   /// 3 = P3 (moyenne, bleu), 4 = P4 (par défaut, gris).
-  priorite    Int            @default(4)
+  priorite       Int            @default(4)
   /// Sous-tâche : pointe vers la tâche parente. Cascade delete.
-  parentId    String?
-  parent      Tache?         @relation("TacheSousTaches", fields: [parentId], references: [id], onDelete: Cascade)
-  enfants     Tache[]        @relation("TacheSousTaches")
+  parentId       String?
+  parent         Tache?         @relation("TacheSousTaches", fields: [parentId], references: [id], onDelete: Cascade)
+  enfants        Tache[]        @relation("TacheSousTaches")
   /// Ordre manuel dans la liste (drag-to-reorder dans l'UI).
-  ordre       Int            @default(0)
+  ordre          Int            @default(0)
   /// Groupe de regroupement façon Todoist (ex: "Gros œuvre", "Finitions").
   /// Par chantier ; SetNull si la section est supprimée.
-  sectionId   String?
-  section     Section?       @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-  dependances Tache[]        @relation("TacheDependance")
-  dependants  Tache[]        @relation("TacheDependance")
-  labels      TacheLabel[]
-  ouvriers    TacheOuvrier[]
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  sectionId      String?
+  section        Section?       @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  dependances    Tache[]        @relation("TacheDependance")
+  dependants     Tache[]        @relation("TacheDependance")
+  labels         TacheLabel[]
+  ouvriers       TacheOuvrier[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   // Récurrence (format RFC 5545 RRULE, ex: "FREQ=WEEKLY;BYDAY=MO,FR").
   // Quand la tâche est marquée terminée, une nouvelle occurrence est

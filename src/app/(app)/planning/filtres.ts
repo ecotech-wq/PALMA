@@ -36,6 +36,12 @@ export type FiltresTaches = {
   /** Entreprise (espace), DÉJÀ validée par la page : admin global en
    *  mode « toutes les entreprises » uniquement. */
   espaceId?: string;
+  /** Utilisateur courant : ses tâches PERSO (proprietaireId) s'ajoutent
+   *  au périmètre chantier. Elles ne sont JAMAIS montrées à quelqu'un
+   *  d'autre (même admin d'espace), et seulement quand AUCUN filtre
+   *  chantier/équipe/ouvrier/entreprise n'est actif (choix simple et
+   *  prévisible : un filtre = vue projet pure). */
+  persoUserId?: string;
 };
 
 /**
@@ -43,6 +49,12 @@ export type FiltresTaches = {
  * filtre chantier sont combinés en AND (et non écrasés l'un par l'autre :
  * l'ancien spread `{ chantierId: chantier, ...borne }` faisait gagner le
  * bornage et le filtre chantier était perdu).
+ *
+ * Depuis les tâches perso (2026-07-14), le périmètre chantier exclut
+ * explicitement chantierId null : sans cette clause, le régime hérité
+ * (accessibleIds null, aucun filtre) montrerait les tâches perso de
+ * TOUS les utilisateurs. Les tâches perso de l'utilisateur reviennent
+ * par la branche OR dédiée, hors filtre uniquement.
  */
 export function construireWhereTaches(
   f: FiltresTaches
@@ -55,5 +67,20 @@ export function construireWhereTaches(
   if (f.ouvrierId) et.push({ ouvriers: { some: { ouvrierId: f.ouvrierId } } });
   if (f.equipeId) et.push({ equipeId: f.equipeId });
   if (f.espaceId) et.push({ chantier: { espaceId: f.espaceId } });
-  return et.length > 0 ? { deletedAt: null, AND: et } : { deletedAt: null };
+
+  const perimetre: Prisma.TacheWhereInput =
+    et.length > 0
+      ? { chantierId: { not: null }, AND: et }
+      : { chantierId: { not: null } };
+
+  const filtreActif = Boolean(
+    f.chantierId || f.ouvrierId || f.equipeId || f.espaceId
+  );
+  if (f.persoUserId && !filtreActif) {
+    return {
+      deletedAt: null,
+      OR: [perimetre, { proprietaireId: f.persoUserId }],
+    };
+  }
+  return { deletedAt: null, ...perimetre };
 }

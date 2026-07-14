@@ -77,12 +77,16 @@ export default async function PlanningPage({
   const [taches, chantiers, equipes, commandes, locations, sections, ouvriers] =
     await Promise.all([
     db.tache.findMany({
+      // Périmètre chantier + les tâches PERSO de l'utilisateur courant
+      // (jamais celles des autres). Dès qu'un filtre est actif, les
+      // perso s'effacent : vue projet pure (voir construireWhereTaches).
       where: construireWhereTaches({
         accessibleIds,
         chantierId: chantier,
         ouvrierId: ouvrierSel,
         equipeId: equipeSel,
         espaceId: espaceSel,
+        persoUserId: me.id,
       }),
       include: {
         chantier: { select: { id: true, nom: true } },
@@ -233,11 +237,11 @@ export default async function PlanningPage({
     })),
   ];
 
-  const tachesCandidates = taches.map((t) => ({
-    id: t.id,
-    nom: t.nom,
-    chantierId: t.chantierId,
-  }));
+  // Candidates du formulaire complet (dépendances) : tâches de chantier
+  // uniquement, les perso n'ont pas de dépendances de chantier.
+  const tachesCandidates = taches.flatMap((t) =>
+    t.chantierId ? [{ id: t.id, nom: t.nom, chantierId: t.chantierId }] : []
+  );
 
   return (
     <div>
@@ -405,8 +409,17 @@ export default async function PlanningPage({
                 Édition avancée (formulaire complet)
               </summary>
               <div className="mt-3">
+                {/* Édition avancée = formulaire de chantier (sélecteur de
+                    chantier obligatoire) : les tâches perso s'éditent via
+                    la modale, elles sont écartées ici. */}
                 <TacheList
-                  taches={taches}
+                  taches={taches.filter(
+                    (
+                      t
+                    ): t is (typeof taches)[number] & {
+                      chantier: { id: string; nom: string };
+                    } => t.chantier !== null
+                  )}
                   equipes={equipes}
                   onSetAvancement={setAvancement}
                   onDelete={deleteTache}
