@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
+import { AideContextuelle } from "./AideContextuelle";
 import { deplacerTache } from "./actions";
 import {
   buildMonthGrid,
@@ -44,9 +45,13 @@ import {
  *    tactile, capture + pointercancel + garde multi-touch).
  *  - Tirer une extrémité (poignées au survol desktop, toujours visibles
  *    au tactile sur la pilule sélectionnée) = changer dateDebut/dateFin.
- *  - Cliquer-glisser sur des cases vides (souris) = créer une tâche
- *    couvrant la plage (onEmptyRangeClick). Au tactile, le doigt reste
- *    dédié au défilement : le bouton « + ajouter » crée sur un jour.
+ *  - Création façon Google Calendar : un TAP simple sur une case vide
+ *    (souris ou doigt) crée une tâche sur CE jour ; un cliquer-glisser
+ *    (souris/stylet) crée sur la plage sélectionnée. Si aucun chantier
+ *    n'est filtré, une petite feuille (bas d'écran mobile, popover
+ *    desktop) demande d'abord le chantier, puis le flux existant
+ *    (onEmptyRangeClick) crée la tâche et ouvre la modale. Au tactile,
+ *    le doigt reste dédié au défilement : tout déplacement annule le tap.
  *  - Anti-flash (motif GanttChartV2) : après un dépôt ou un étirement,
  *    les dates affichées restent sur la valeur envoyée au serveur
  *    (cible) jusqu'à ce que les props rafraîchies l'aient rattrapée.
@@ -183,7 +188,6 @@ export function CalendarMonth({
   events,
   canEdit,
   onClickTask,
-  onEmptyCellClick,
   onEmptyRangeClick,
   defaultChantierId,
   chantiers,
@@ -192,8 +196,8 @@ export function CalendarMonth({
   events: Event[];
   canEdit: boolean;
   onClickTask?: (id: string) => void;
-  onEmptyCellClick?: (date: Date, chantierNom: string) => void | Promise<void>;
-  /** Cliquer-glisser sur des cases vides : créer une tâche sur la plage. */
+  /** Création sur les cases vides : tap = un jour (debut = fin),
+   *  cliquer-glisser (souris) = la plage sélectionnée. */
   onEmptyRangeClick?: (
     dateDebut: Date,
     dateFin: Date,
@@ -254,6 +258,14 @@ export function CalendarMonth({
   const [plageCreation, setPlageCreation] = useState<{
     a: string;
     b: string;
+  } | null>(null);
+  // Création en attente du choix d'un chantier (aucun filtre chantier
+  // actif au relâcher) : plage retenue + point d'ancrage du popover
+  // desktop (null = feuille en bas d'écran mobile).
+  const [creation, setCreation] = useState<{
+    debutKey: string;
+    finKey: string;
+    anchor: { left: number; top: number } | null;
   } | null>(null);
 
   // Anti-flash (motif GanttChartV2) : dates affichées localement pendant
@@ -612,25 +624,88 @@ export function CalendarMonth({
     window.addEventListener("pointercancel", onCancel);
   }
 
-  // ---- Geste 3 : cliquer-glisser sur les cases vides = créer une plage ----
-  function onCellPointerDown(e: React.PointerEvent, key: string) {
-    if (!canEdit || !onEmptyRangeClick || !defaultChantierId || !chantierNom)
+  // ---- Geste 3 : créer sur les cases vides (tap = un jour, glisser = plage)
+  /** Déclenche la création sur [dKey, fKey] : directe quand un chantier
+   *  est filtré (flux existant), sinon petite feuille de choix du
+   *  chantier (bas d'écran mobile, popover desktop près du pointeur). */
+  function lancerCreation(dKey: string, fKey: string, x: number, y: number) {
+    if (!onEmptyRangeClick) return;
+    if (defaultChantierId && chantierNom) {
+      onEmptyRangeClick(parseKey(dKey), parseKey(fKey), chantierNom);
       return;
-    // Au tactile, le doigt sert au défilement de la page : la création
-    // par glisser reste un geste souris/stylet (le bouton « + ajouter »
-    // couvre le tactile pour un jour, puis on étire la pilule).
-    if (e.pointerType === "touch") return;
+    }
+    if (chantiers.length === 1) {
+      // Un seul chantier possible : inutile de demander.
+      onEmptyRangeClick(parseKey(dKey), parseKey(fKey), chantiers[0].nom);
+      return;
+    }
+    const desktop = window.matchMedia("(min-width: 640px)").matches;
+    setCreation({
+      debutKey: dKey,
+      finKey: fKey,
+      anchor: desktop
+        ? {
+            left: Math.max(8, Math.min(x, window.innerWidth - 296)),
+            top: Math.max(8, Math.min(y + 8, window.innerHeight - 320)),
+          }
+        : null,
+    });
+  }
+
+  function onCellPointerDown(e: React.PointerEvent, key: string) {
+    if (!canEdit || !onEmptyRangeClick) return;
     const target = e.target as Element | null;
-    if (target?.closest?.("button")) return; // « + ajouter », « +N autres »
+    if (target?.closest?.("button")) return; // « +N autres »
+    if (target?.closest?.("[data-evt]")) return; // icônes livraison/location
     if (gesteRef.current) return;
-    gesteRef.current = true;
+    const pointerId = e.pointerId;
+    const departX = e.clientX;
+    const departY = e.clientY;
+    // preventDefault dès le pointerdown : évite la sélection de texte à
+    // la souris et les événements souris de compatibilité au tactile
+    // (le défilement, régi par touch-action, reste possible : les
+    // cellules ne posent pas touchAction "none").
     e.preventDefault();
+
+    if (e.pointerType === "touch") {
+      // TAP simple = créer sur UN jour (façon Google Calendar). Le doigt
+      // reste dédié au défilement : pas de capture, et tout déplacement
+      // (défilement) ou pointercancel annule le tap sans rien créer.
+      const fin = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+      };
+      const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        if (Math.hypot(ev.clientX - departX, ev.clientY - departY) > 12) {
+          fin();
+        }
+      };
+      const onCancel = (ev: PointerEvent) => {
+        if (ev.pointerId === pointerId) fin();
+      };
+      const onUp = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        fin();
+        if (Math.hypot(ev.clientX - departX, ev.clientY - departY) > 12) {
+          return;
+        }
+        lancerCreation(key, key, ev.clientX, ev.clientY);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
+      return;
+    }
+
+    // Souris / stylet : simple clic = un jour, cliquer-glisser = plage.
+    gesteRef.current = true;
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
       /* indisponible : on continue sans */
     }
-    const pointerId = e.pointerId;
     const plage = { a: key, b: key };
     setPlageCreation({ ...plage });
 
@@ -660,11 +735,8 @@ export function CalendarMonth({
       if (ev.pointerId !== pointerId) return;
       const { a, b } = plage;
       cleanup();
-      // Un simple clic (sans glisser) ne crée rien : le bouton
-      // « + ajouter » reste le geste explicite pour un seul jour.
-      if (a === b) return;
       const [d, f] = a <= b ? [a, b] : [b, a];
-      onEmptyRangeClick!(parseKey(d), parseKey(f), chantierNom);
+      lancerCreation(d, f, ev.clientX, ev.clientY);
     }
 
     window.addEventListener("pointermove", onMove);
@@ -751,11 +823,15 @@ export function CalendarMonth({
   const chantierNom =
     chantiers.find((c) => c.id === defaultChantierId)?.nom ?? "";
 
+  // Plage surlignée : pendant le glisser, puis tant que la feuille de
+  // choix du chantier est ouverte (le contexte visuel reste sous les yeux).
   const plageSel: [string, string] | null = plageCreation
     ? plageCreation.a <= plageCreation.b
       ? [plageCreation.a, plageCreation.b]
       : [plageCreation.b, plageCreation.a]
-    : null;
+    : creation
+      ? [creation.debutKey, creation.finKey]
+      : null;
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
@@ -812,6 +888,27 @@ export function CalendarMonth({
             );
           })}
         </div>
+        {canEdit && (
+          <AideContextuelle titre="Aide du calendrier">
+            <p>Toucher une pilule : modifier la tâche.</p>
+            <p>Glisser une pilule : la reprogrammer (durée conservée).</p>
+            <p>
+              Tirer une extrémité de pilule : changer sa date de début ou de
+              fin (au tactile, toucher d&apos;abord la pilule pour faire
+              apparaître les poignées).
+            </p>
+            <p>Toucher un jour vide : créer une tâche sur ce jour.</p>
+            <p>
+              Cliquer-glisser sur les jours vides (souris) : créer une tâche
+              couvrant la plage.
+            </p>
+            <p>
+              Si aucun chantier n&apos;est filtré, une petite fenêtre propose
+              d&apos;abord de choisir le chantier.
+            </p>
+            <p>« +N autres » : afficher tout le contenu du jour.</p>
+          </AideContextuelle>
+        )}
         <div className="hidden md:block text-xs text-slate-500 dark:text-slate-400">
           {taches.length} tâche{taches.length > 1 ? "s" : ""} ·{" "}
           {events.length} événement{events.length > 1 ? "s" : ""}
@@ -881,7 +978,6 @@ export function CalendarMonth({
                     mode === "semaine" || d.getMonth() === monthIndex;
                   const isToday = k === todayKey;
                   const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                  const dayTaches = tachesByDay.get(k) ?? [];
                   const dayEvents = eventsByDay.get(k) ?? [];
                   const isOver = overKey === k && draggingId !== null;
                   const enCreation =
@@ -944,7 +1040,7 @@ export function CalendarMonth({
                               const Icon =
                                 e.type === "COMMANDE" ? Package : Truck;
                               return (
-                                <span key={e.id} title={e.label}>
+                                <span key={e.id} title={e.label} data-evt="1">
                                   <Icon
                                     size={10}
                                     className={
@@ -970,6 +1066,7 @@ export function CalendarMonth({
                             return (
                               <li
                                 key={e.id}
+                                data-evt="1"
                                 className="flex items-center gap-1 text-[10px] leading-tight italic text-slate-600 dark:text-slate-400"
                                 title={e.label}
                               >
@@ -1001,26 +1098,6 @@ export function CalendarMonth({
                         </button>
                       )}
 
-                      {/* Zone « ajouter une tâche » (case vide, chantier
-                          sélectionné, droits d'édition) */}
-                      {canEdit &&
-                        inMonth &&
-                        onEmptyCellClick &&
-                        defaultChantierId &&
-                        chantierNom &&
-                        dayTaches.length === 0 &&
-                        dayEvents.length === 0 &&
-                        debordement === 0 && (
-                          <button
-                            type="button"
-                            onClick={() => onEmptyCellClick(d, chantierNom)}
-                            onPointerDown={(e) => e.stopPropagation()}
-                            className="absolute bottom-0.5 left-1 right-1 text-left text-[10px] text-slate-300 dark:text-slate-700 hover:text-slate-700 dark:hover:text-slate-300"
-                            title="Créer une tâche ici"
-                          >
-                            + ajouter
-                          </button>
-                        )}
                     </div>
                   );
                 })}
@@ -1152,8 +1229,9 @@ export function CalendarMonth({
         </div>
       </div>
 
-      {/* Légende */}
-      <div className="flex flex-wrap items-center gap-3 px-3 py-2 border-t border-slate-200 dark:border-slate-800 text-[10px] text-slate-500 dark:text-slate-400">
+      {/* Légende : une seule ligne discrète (défilement horizontal sur
+          écran étroit) ; l'aide des gestes vit dans le « ? » du haut. */}
+      <div className="flex items-center gap-3 whitespace-nowrap overflow-x-auto px-3 py-2 border-t border-slate-200 dark:border-slate-800 text-[10px] text-slate-500 dark:text-slate-400">
         <span className="flex items-center gap-1">
           <span className="w-3 h-2 rounded-sm bg-slate-400" /> À faire
         </span>
@@ -1175,13 +1253,23 @@ export function CalendarMonth({
         <span className="flex items-center gap-1">
           <Truck size={10} className="text-slate-500" /> Fin location
         </span>
-        {canEdit && (
-          <span className="ml-auto text-slate-400 dark:text-slate-500">
-            Glisser une pilule = reprogrammer · tirer une extrémité = étirer ·
-            cliquer-glisser sur les cases vides (souris) = créer sur la plage
-          </span>
-        )}
       </div>
+
+      {/* Choix du chantier avant création (aucun filtre chantier actif) */}
+      {creation && (
+        <ChoixChantierCreation
+          debutKey={creation.debutKey}
+          finKey={creation.finKey}
+          anchor={creation.anchor}
+          chantiers={chantiers}
+          onChoisir={(c) => {
+            const { debutKey, finKey } = creation;
+            setCreation(null);
+            onEmptyRangeClick?.(parseKey(debutKey), parseKey(finKey), c.nom);
+          }}
+          onClose={() => setCreation(null)}
+        />
+      )}
 
       {/* Détail d'un jour (ouvert via « +N autres ») */}
       {dayDetailKey && (
@@ -1193,6 +1281,111 @@ export function CalendarMonth({
           onClose={() => setDayDetailKey(null)}
         />
       )}
+    </div>
+  );
+}
+
+const plageCreationFmt = new Intl.DateTimeFormat("fr-FR", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+});
+
+/**
+ * Petite feuille de choix du chantier avant création d'une tâche sur une
+ * plage de jours vides : feuille en bas d'écran sur mobile (anchor null),
+ * popover positionné près du pointeur sur desktop. Fermeture au clic en
+ * dehors, à la touche Échap, ou via la croix.
+ */
+function ChoixChantierCreation({
+  debutKey,
+  finKey,
+  anchor,
+  chantiers,
+  onChoisir,
+  onClose,
+}: {
+  debutKey: string;
+  finKey: string;
+  anchor: { left: number; top: number } | null;
+  chantiers: { id: string; nom: string }[];
+  onChoisir: (chantier: { id: string; nom: string }) => void;
+  onClose: () => void;
+}) {
+  // Échap ferme la feuille sans créer.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const titre =
+    debutKey === finKey
+      ? `Créer une tâche le ${plageCreationFmt.format(parseKey(debutKey))}`
+      : `Créer une tâche du ${plageCreationFmt.format(
+          parseKey(debutKey)
+        )} au ${plageCreationFmt.format(parseKey(finKey))}`;
+
+  return (
+    <div
+      className={cn(
+        "fixed inset-0 z-50",
+        anchor ? "bg-transparent" : "bg-black/50 flex items-end"
+      )}
+      onPointerDown={(e) => {
+        // Clic en dehors du panneau (le voile lui-même) : fermer.
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-label={titre}
+        className={cn(
+          "bg-white dark:bg-slate-900 shadow-xl flex flex-col",
+          anchor
+            ? "fixed w-72 max-w-[calc(100vw-16px)] max-h-[60vh] rounded-lg border border-slate-200 dark:border-slate-700"
+            : "w-full max-h-[70vh] rounded-t-2xl border-t border-slate-200 dark:border-slate-800"
+        )}
+        style={anchor ?? undefined}
+      >
+        <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              {titre}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Sur quel chantier ?
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 -m-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+            aria-label="Annuler la création"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="overflow-y-auto p-2 space-y-0.5">
+          {chantiers.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onChoisir(c)}
+              className="w-full min-h-[44px] text-left px-3 py-2.5 rounded-md text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              {c.nom}
+            </button>
+          ))}
+          {chantiers.length === 0 && (
+            <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-6">
+              Aucun chantier actif : créez d&apos;abord un chantier.
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

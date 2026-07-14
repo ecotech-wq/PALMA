@@ -105,8 +105,9 @@ export function PlanningViews({
     }
   }
 
-  /** Cliquer-glisser sur des cases vides du calendrier : crée une tâche
-   *  couvrant exactement la plage, puis ouvre la modale d'édition. */
+  /** Création depuis les cases vides du calendrier (tap = un seul jour,
+   *  cliquer-glisser = plage) : crée une tâche couvrant exactement la
+   *  plage, puis ouvre la modale d'édition. */
   async function handleEmptyRangeClick(
     dateDebut: Date,
     dateFin: Date,
@@ -178,7 +179,6 @@ export function PlanningViews({
         <CalendarMonth
           canEdit={canEdit}
           onClickTask={canEdit ? (id) => setEditingId(id) : undefined}
-          onEmptyCellClick={canEdit ? handleEmptyCellClick : undefined}
           onEmptyRangeClick={canEdit ? handleEmptyRangeClick : undefined}
           chantiers={chantiers}
           defaultChantierId={defaultChantierId}

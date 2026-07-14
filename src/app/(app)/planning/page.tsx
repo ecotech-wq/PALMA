@@ -246,112 +246,108 @@ export default async function PlanningPage({
         description="Tâches, livraisons et restitutions"
       />
 
-      {/* Saisie rapide style Todoist */}
-      {canEdit && (
-        <div className="mb-4">
-          <QuickAddBar
+      {/* Rangée unique et compacte au-dessus des vues : ajout rapide
+          (bouton « + Ajouter » qui déplie la saisie rapide), formulaire
+          complet (entrée discrète), filtres compacts, sélecteur de vues
+          et « Réinitialiser ». Les panneaux dépliés passent en pleine
+          largeur SOUS la rangée (order-last + w-full). */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {canEdit && (
+          <QuickAddBar chantiers={chantiers} defaultChantierId={chantier} />
+        )}
+        {canEdit && (
+          <CreateTacheForm
             chantiers={chantiers}
+            equipes={equipes}
+            taches={tachesCandidates}
             defaultChantierId={chantier}
+            action={createTache}
           />
-        </div>
-      )}
+        )}
 
-      <Card className="mb-5">
-        <CardBody>
-          <div className="flex flex-col gap-3">
-            <form
-              method="get"
-              className="flex flex-wrap items-center gap-2 sm:gap-3"
-            >
-              <FiltresPlanning
-                chantiers={chantiers}
-                ouvriers={ouvriers.map((o) => ({
-                  id: o.id,
-                  nom: o.nom,
-                  prenom: o.prenom,
-                }))}
-                equipes={equipes.map((e) => ({ id: e.id, nom: e.nom }))}
-                espaces={
-                  filtreEspaceVisible
-                    ? me.espaces.map((s) => ({ id: s.id, nom: s.nom }))
-                    : null
-                }
-                valeurs={{
-                  chantier: chantier ?? "",
-                  ouvrier: ouvrierSel ?? "",
-                  equipe: equipeSel ?? "",
-                  espace: espaceSel ?? "",
-                }}
-                vue={view}
-              />
+        {/* display:contents : les selects, le sélecteur de vues et le lien
+            Réinitialiser participent directement à la rangée flex-wrap,
+            tout en restant dans le même formulaire GET. */}
+        <form method="get" className="contents">
+          <FiltresPlanning
+            chantiers={chantiers}
+            ouvriers={ouvriers.map((o) => ({
+              id: o.id,
+              nom: o.nom,
+              prenom: o.prenom,
+            }))}
+            equipes={equipes.map((e) => ({ id: e.id, nom: e.nom }))}
+            espaces={
+              filtreEspaceVisible
+                ? me.espaces.map((s) => ({ id: s.id, nom: s.nom }))
+                : null
+            }
+            valeurs={{
+              chantier: chantier ?? "",
+              ouvrier: ouvrierSel ?? "",
+              equipe: equipeSel ?? "",
+              espace: espaceSel ?? "",
+            }}
+            vue={view}
+          />
 
-              {/* Les selects naviguent d'eux-mêmes (router.push) ; ces
-                  champs cachés conservent les filtres actifs quand on
-                  change de vue via les boutons submit du formulaire GET. */}
-              {chantier && (
-                <input type="hidden" name="chantier" value={chantier} />
-              )}
-              {ouvrierSel && (
-                <input type="hidden" name="ouvrier" value={ouvrierSel} />
-              )}
-              {equipeSel && (
-                <input type="hidden" name="equipe" value={equipeSel} />
-              )}
-              {espaceSel && (
-                <input type="hidden" name="espace" value={espaceSel} />
-              )}
+          {/* Les selects naviguent d'eux-mêmes (router.push) ; ces
+              champs cachés conservent les filtres actifs quand on
+              change de vue via les boutons submit du formulaire GET. */}
+          {chantier && (
+            <input type="hidden" name="chantier" value={chantier} />
+          )}
+          {ouvrierSel && (
+            <input type="hidden" name="ouvrier" value={ouvrierSel} />
+          )}
+          {equipeSel && (
+            <input type="hidden" name="equipe" value={equipeSel} />
+          )}
+          {espaceSel && (
+            <input type="hidden" name="espace" value={espaceSel} />
+          )}
 
-              <div className="inline-flex border border-slate-300 dark:border-slate-700 rounded-md overflow-hidden text-sm shrink-0">
-                {(
-                  [
-                    { value: "gantt", label: "Gantt", Icon: GanttChartSquare },
-                    { value: "kanban", label: "Kanban", Icon: Columns3 },
-                    { value: "calendrier", label: "Calendrier", Icon: CalendarDays },
-                    { value: "pert", label: "PERT", Icon: Network },
-                    { value: "liste", label: "Liste", Icon: ListIcon },
-                  ] as const
-                ).map((v, i) => {
-                  const active = view === v.value;
-                  return (
-                    <button
-                      key={v.value}
-                      type="submit"
-                      name="vue"
-                      value={v.value}
-                      aria-pressed={active}
-                      className={`inline-flex items-center gap-1.5 px-3 py-2 transition-colors ${
-                        i > 0 ? "border-l border-slate-300 dark:border-slate-700" : ""
-                      } ${
-                        active
-                          ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-medium"
-                          : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                      }`}
-                    >
-                      <v.Icon size={15} className="shrink-0" />
-                      <span className="hidden sm:inline">{v.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <Link
-                href="/planning"
-                className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-              >
-                Réinitialiser
-              </Link>
-            </form>
-
-            <CreateTacheForm
-              chantiers={chantiers}
-              equipes={equipes}
-              taches={tachesCandidates}
-              defaultChantierId={chantier}
-              action={createTache}
-            />
+          <div className="inline-flex border border-slate-300 dark:border-slate-700 rounded-md overflow-hidden text-sm shrink-0">
+            {(
+              [
+                { value: "gantt", label: "Gantt", Icon: GanttChartSquare },
+                { value: "kanban", label: "Kanban", Icon: Columns3 },
+                { value: "calendrier", label: "Calendrier", Icon: CalendarDays },
+                { value: "pert", label: "PERT", Icon: Network },
+                { value: "liste", label: "Liste", Icon: ListIcon },
+              ] as const
+            ).map((v, i) => {
+              const active = view === v.value;
+              return (
+                <button
+                  key={v.value}
+                  type="submit"
+                  name="vue"
+                  value={v.value}
+                  aria-pressed={active}
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 transition-colors ${
+                    i > 0 ? "border-l border-slate-300 dark:border-slate-700" : ""
+                  } ${
+                    active
+                      ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-medium"
+                      : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  <v.Icon size={15} className="shrink-0" />
+                  <span className="hidden sm:inline">{v.label}</span>
+                </button>
+              );
+            })}
           </div>
-        </CardBody>
-      </Card>
+
+          <Link
+            href="/planning"
+            className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+          >
+            Réinitialiser
+          </Link>
+        </form>
+      </div>
 
       {view !== "pert" &&
       view !== "calendrier" &&
@@ -426,8 +422,10 @@ export default async function PlanningPage({
 }
 
 function Legend() {
+  // Une seule ligne discrète : pas de retour à la ligne, défilement
+  // horizontal si l'écran est trop étroit (mobile 375 px).
   return (
-    <div className="flex flex-wrap items-center gap-3 text-[11px] sm:text-xs text-slate-500 dark:text-slate-500">
+    <div className="flex items-center gap-3 whitespace-nowrap overflow-x-auto text-[11px] sm:text-xs text-slate-500 dark:text-slate-500">
       <span className="flex items-center gap-1">
         <span className="w-3 h-3 bg-slate-300 rounded" /> À faire
       </span>

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
+import { AideContextuelle } from "./AideContextuelle";
 import {
   ajouterDependance,
   decalerTacheAvecSuccesseurs,
@@ -1011,15 +1012,56 @@ export function GanttChartV2({
             Entraîner les successeurs
           </button>
         )}
-        {events.length > 0 && (
-          <label className="ml-auto inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showEvents}
-              onChange={(e) => setShowEvents(e.target.checked)}
-            />
-            Afficher livraisons &amp; fins de location ({events.length})
-          </label>
+        {(events.length > 0 || canEdit) && (
+          <div className="ml-auto flex items-center gap-1.5">
+            {events.length > 0 && (
+              <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showEvents}
+                  onChange={(e) => setShowEvents(e.target.checked)}
+                />
+                Afficher livraisons &amp; fins de location ({events.length})
+              </label>
+            )}
+            {canEdit && (
+              <AideContextuelle titre="Aide du Gantt">
+                <p>Cliquer une barre : modifier la tâche.</p>
+                <p>
+                  Glisser une barre : la déplacer (avec ses successeurs si
+                  « Entraîner les successeurs » est actif).
+                </p>
+                <p>
+                  Glisser les <strong>poignées sombres</strong> aux
+                  extrémités : ajuster la durée d&apos;un seul côté. Sur une
+                  barre étroite, viser les{" "}
+                  <strong>petits traits gris</strong> accolés à ses bords.
+                </p>
+                <p>Cliquer une case vide : créer une tâche à cette date.</p>
+                <p>
+                  Survoler ou toucher une barre : des <strong>ronds</strong>{" "}
+                  apparaissent à ses extrémités ; tirer un rond vers une
+                  autre barre crée la dépendance.
+                </p>
+                <p>
+                  Cliquer une flèche : la sélectionner, puis la supprimer via
+                  la croix.
+                </p>
+                <p>
+                  Liseré rouge : tâche en retard. Ligne rouge verticale :
+                  aujourd&apos;hui (bouton « Aujourd&apos;hui » pour la
+                  recentrer).
+                </p>
+                <p>
+                  Défilement horizontal :{" "}
+                  <kbd className="px-1 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800">
+                    Shift
+                  </kbd>{" "}
+                  + molette.
+                </p>
+              </AideContextuelle>
+            )}
+          </div>
         )}
       </div>
 
@@ -1030,7 +1072,7 @@ export function GanttChartV2({
           <span>
             Aucune <strong>tâche</strong> planifiée : seules les livraisons et
             fins de location sont affichées. Décoche la case ci-dessus pour les
-            masquer, ou crée une tâche via la barre de saisie rapide.
+            masquer, ou crée une tâche via le bouton « + Ajouter ».
           </span>
         </div>
       )}
@@ -1532,26 +1574,6 @@ export function GanttChartV2({
           </div>
         </div>
       </div>
-      {canEdit && (
-        <div className="text-[11px] text-slate-500 dark:text-slate-400 px-3 py-2 border-t border-slate-100 dark:border-slate-800 italic leading-relaxed">
-          Tâches : cliquer = modifier · glisser barre = déplacer (avec ses
-          successeurs si le réglage est actif) · glisser{" "}
-          <strong>poignées sombres</strong> aux extrémités = ajuster la durée
-          d&apos;un seul côté (sur une barre étroite, les poignées sont les{" "}
-          <strong>petits traits gris</strong> accolés à ses bords) · clic sur
-          case vide = créer à cette date.
-          Dépendances : survoler ou toucher une barre fait apparaître les{" "}
-          <strong>ronds</strong> à ses extrémités ; tirer un rond vers une
-          autre barre crée la dépendance ; cliquer une flèche = la
-          sélectionner puis la supprimer via la croix. Liseré rouge = tâche en
-          retard. Ligne rouge = aujourd&apos;hui (bouton « Aujourd&apos;hui »
-          pour la recentrer). Scroll horizontal :{" "}
-          <kbd className="px-1 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800">
-            Shift
-          </kbd>{" "}
-          + molette.
-        </div>
-      )}
     </div>
   );
 }

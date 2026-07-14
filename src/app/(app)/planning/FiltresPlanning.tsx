@@ -13,9 +13,10 @@ export type ValeursFiltres = {
 type OptionRef = { id: string; nom: string };
 type OuvrierRef = { id: string; nom: string; prenom: string | null };
 
-// Style unique, identique au select chantier historique (charte slate).
+// Style unique et compact (charte slate) : la rangée d'outils du planning
+// tient sur une seule ligne, les selects suivent en text-xs / py-1.5.
 const SELECT_CLS =
-  "rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm flex-1 sm:flex-none min-w-0";
+  "rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs flex-1 sm:flex-none min-w-0";
 
 /**
  * Barre de filtres du planning : chantier, ouvrier affecté, équipe et,
