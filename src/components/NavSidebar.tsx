@@ -36,6 +36,7 @@ import {
   Trash2,
   Wallet,
   FileSignature,
+  FlaskConical,
   Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -174,6 +175,17 @@ const groups: NavGroup[] = [
       { href: "/paie", label: "Paie", icon: Banknote, adminOnly: true, module: "chantier" },
     ],
   },
+  {
+    key: "labo",
+    label: "Laboratoire",
+    icon: FlaskConical,
+    // Pilotage (admin + conducteur), même verrou que le suivi financier.
+    // Pas de garde de module : le labo sert le chantier ET la R&D interne.
+    pilotOnly: true,
+    items: [
+      { href: "/labo", label: "Laboratoire", icon: FlaskConical },
+    ],
+  },
 ];
 
 // Barre de tab mobile, variante par rôle. Messagerie est promue en
@@ -219,6 +231,8 @@ const mobileMore: NavItem[] = [
   { href: "/commandes", label: "Commandes", icon: ShoppingCart, clientHidden: true, pilotOnly: true },
   // Suivi financier : admin + conducteur (devis, situations, factures)
   { href: "/finance", label: "Suivi financier", icon: Wallet, clientHidden: true, pilotOnly: true },
+  // Laboratoire : admin + conducteur (essais, formulations, rapports)
+  { href: "/labo", label: "Laboratoire", icon: FlaskConical, clientHidden: true, pilotOnly: true },
   // OPC : admin + conducteur
   { href: "/planning", label: "Planning", icon: Calendar, clientHidden: true, pilotOnly: true },
   { href: "/rapports-hebdo", label: "Rapports hebdo", icon: CalendarRange, pilotOnly: true },

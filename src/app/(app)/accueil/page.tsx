@@ -15,6 +15,7 @@ import {
   Wallet,
   Banknote,
   FileSignature,
+  FlaskConical,
   ShieldCheck,
   UserCircle,
 } from "lucide-react";
@@ -52,6 +53,7 @@ const TILES: Tile[] = [
   { href: "/ouvriers", label: "Ouvriers", icon: HardHat, module: "chantier", pilotOnly: true },
   { href: "/equipes", label: "Équipes", icon: Users, module: "chantier", pilotOnly: true },
   { href: "/finance", label: "Suivi financier", icon: Wallet, pilotOnly: true },
+  { href: "/labo", label: "Laboratoire", icon: FlaskConical, pilotOnly: true },
   { href: "/paie", label: "Paie", icon: Banknote, adminOnly: true, module: "chantier" },
   { href: "/mes-documents", label: "Mes documents", icon: FileSignature, clientOnly: true },
   { href: "/admin/users", label: "Administration", icon: ShieldCheck, adminOnly: true },

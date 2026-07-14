@@ -18,12 +18,15 @@ export type PalierFacture =
   | "RELANCE_3"
   | "MISE_EN_DEMEURE";
 
-/** Tous les paliers du moteur (miroir de l'enum Prisma PalierRelance). */
+/** Tous les paliers du moteur (miroir de l'enum Prisma PalierRelance).
+ *  ESSAI_ECHU vient du module labo : sa classification pure vit dans
+ *  src/lib/labo-calc.ts (classerEssai), pas ici. */
 export type PalierRelance =
   | PalierFacture
   | "DEVIS_SANS_REPONSE"
   | "SITUATION_A_FACTURER"
-  | "RETENUE_LIBERABLE";
+  | "RETENUE_LIBERABLE"
+  | "ESSAI_ECHU";
 
 /**
  * Constat de classification : le palier atteint et l'écart en jours qui sert

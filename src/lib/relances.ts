@@ -8,9 +8,11 @@ import {
   classerDevis,
   classerSituation,
   classerRetenue,
+  diffJours,
   PREAVIS_LIBERATION_RETENUE_JOURS,
   type PalierRelance,
 } from "@/lib/relances-calc";
+import { classerEssai } from "@/lib/labo-calc";
 import type { Prisma } from "@/generated/prisma/client";
 
 // ─── Moteur de relances financières : balayage serveur ───────────────────────
@@ -38,11 +40,13 @@ export interface BilanRelances {
 interface Constat {
   espaceId: string;
   chantierId: string | null;
-  objetType: "FACTURE" | "DEVIS" | "SITUATION" | "RETENUE";
+  objetType: "FACTURE" | "DEVIS" | "SITUATION" | "RETENUE" | "ESSAI";
   objetId: string;
   palier: PalierRelance;
   titre: string;
   message: string;
+  /** Lien de la notification ; à défaut, le module finance du chantier. */
+  lien?: string;
 }
 
 const JOUR_MS = 24 * 3600 * 1000;
@@ -66,8 +70,9 @@ function lienFinance(chantierId: string | null): string {
 }
 
 /**
- * Balaye factures, devis, situations et retenues, journalise chaque constat
- * NOUVEAU dans RelanceLog et notifie les pilotes de l'espace. Appelé par le
+ * Balaye factures, devis, situations, retenues et essais labo à échéance
+ * dépassée, journalise chaque constat NOUVEAU dans RelanceLog et notifie
+ * les pilotes de l'espace. Appelé par le
  * cron quotidien (instrumentation), la route /api/cron/relances et l'action
  * lancerAnalyseRelances. `maintenant` est injectable pour les tests.
  * `espaceIds` borne le balayage aux espaces donnés (action à la demande d'un
@@ -88,7 +93,7 @@ export async function executerRelances(
     aujourdHui.getTime() + (PREAVIS_LIBERATION_RETENUE_JOURS + 1) * JOUR_MS
   );
 
-  const [factures, devis, situations, retenues] = await Promise.all([
+  const [factures, devis, situations, retenues, essais] = await Promise.all([
     db.facture.findMany({
       where: {
         ...filtreEspace,
@@ -161,6 +166,33 @@ export async function executerRelances(
         dateEcheanceLiberation: true,
         montantRetenuCumul: true,
         marche: { select: { reference: true } },
+      },
+    }),
+    // Essais labo encore ouverts dont l'échéance (jour UTC) est passée : la
+    // frontière d'espace passe par le prélèvement (EssaiLabo n'a pas
+    // d'espaceId propre). Le préavis « à échéance » reste un état d'écran
+    // (classerEssai), seul l'ÉCHU se relance.
+    db.essaiLabo.findMany({
+      where: {
+        statut: { in: ["PLANIFIE", "EN_COURS"] },
+        echeance: { not: null, lt: aujourdHui },
+        prelevement: espaceIds ? { espaceId: { in: espaceIds } } : {},
+      },
+      select: {
+        id: true,
+        statut: true,
+        type: true,
+        echeance: true,
+        eprouvette: { select: { code: true } },
+        prelevement: {
+          select: {
+            id: true,
+            espaceId: true,
+            chantierId: true,
+            reference: true,
+            datePrelevement: true,
+          },
+        },
       },
     }),
   ]);
@@ -285,6 +317,29 @@ export async function executerRelances(
     });
   }
 
+  // ── Essais labo : échéance d'écrasement (ou autre) dépassée ────────────────
+  for (const e of essais) {
+    const c = classerEssai(e, aujourdHui);
+    if (!c || c.classe !== "ECHU") continue;
+    // « J+28 » : âge de l'essai compté depuis le prélèvement (7 ou 28 jours
+    // pour le flux béton, libre ailleurs).
+    const age = diffJours(e.prelevement.datePrelevement, e.echeance as Date);
+    const quoi = e.eprouvette ? `Éprouvette ${e.eprouvette.code}. ` : "";
+    constats.push({
+      espaceId: e.prelevement.espaceId,
+      chantierId: e.prelevement.chantierId,
+      objetType: "ESSAI",
+      objetId: e.id,
+      palier: "ESSAI_ECHU",
+      titre:
+        `Essai en retard : ${e.type.toLowerCase()} ${e.prelevement.reference} ` +
+        `(J+${age} dépassé de ${c.jours} j)`,
+      message:
+        `${quoi}Réaliser l'essai et saisir le résultat dans le module labo.`,
+      lien: `/labo/${e.prelevement.id}`,
+    });
+  }
+
   // ── Journal (idempotence) + notifications internes ─────────────────────────
   // Destinataires résolus une fois par espace : les pilotes (ADMIN +
   // CONDUCTEUR membres de l'espace), à défaut les admins globaux actifs.
@@ -318,7 +373,7 @@ export async function executerRelances(
 
   for (const constat of constats) {
     const cibles = await destinataires(constat.espaceId);
-    const lien = lienFinance(constat.chantierId);
+    const lien = constat.lien ?? lienFinance(constat.chantierId);
     try {
       // Journal ET notifications internes dans la MÊME transaction : soit le
       // constat est journalisé avec ses notifications, soit rien. Sans cela,
@@ -369,7 +424,11 @@ export async function executerRelances(
 
   return {
     examines:
-      factures.length + devis.length + situations.length + retenues.length,
+      factures.length +
+      devis.length +
+      situations.length +
+      retenues.length +
+      essais.length,
     constats: constats.length,
     notifiesNouveaux,
     dejaTraites,

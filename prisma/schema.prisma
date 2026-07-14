@@ -221,6 +221,7 @@ model Chantier {
   retenues         RetenueGarantie[]
   // GED chantier (2026-07-11)
   documents        ChantierDocument[]
+  prelevementLabos PrelevementLabo[]
 
   @@index([type])
   @@index([espaceId])
@@ -1348,17 +1349,20 @@ model Espace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  membres       EspaceMembre[]
-  chantiers     Chantier[]
-  ouvriers      Ouvrier[]
-  equipes       Equipe[]
+  membres          EspaceMembre[]
+  chantiers        Chantier[]
+  ouvriers         Ouvrier[]
+  equipes          Equipe[]
   // Suivi financier (2026-07-08)
-  marches       Marche[]
-  devis         Devis[]
-  situations    SituationTravaux[]
-  factures      Facture[]
-  encaissements Encaissement[]
-  retenues      RetenueGarantie[]
+  marches          Marche[]
+  devis            Devis[]
+  situations       SituationTravaux[]
+  factures         Facture[]
+  encaissements    Encaissement[]
+  retenues         RetenueGarantie[]
+  formulationLabos FormulationLabo[]
+  prelevementLabos PrelevementLabo[]
+  equipementLabos  EquipementLabo[]
 }
 
 /// Adhésion d un utilisateur à un espace, avec un rôle PROPRE à cet espace
@@ -1779,6 +1783,7 @@ enum TypeObjetRelance {
   DEVIS
   SITUATION
   RETENUE
+  ESSAI
 }
 
 enum PalierRelance {
@@ -1790,6 +1795,7 @@ enum PalierRelance {
   DEVIS_SANS_REPONSE
   SITUATION_A_FACTURER
   RETENUE_LIBERABLE
+  ESSAI_ECHU
 }
 
 model RelanceLog {
@@ -1804,4 +1810,120 @@ model RelanceLog {
 
   @@unique([objetType, objetId, palier])
   @@index([espaceId, envoyeLe])
+}
+
+/// Module Laboratoire V1 (2026-07-14, OptimusLab). Deux flux sur un meme
+/// noyau : essais chantier (beton, echeances J+7/J+28) et R&D par
+/// formulation (terre crue, biosources, protocole libre). Voir
+/// docs/CONCEPTION-LABO.md.
+enum StatutEssaiLabo {
+  PLANIFIE
+  EN_COURS
+  VALIDE
+  ANNULE
+}
+
+model FormulationLabo {
+  id          String   @id @default(cuid())
+  espaceId    String
+  espace      Espace   @relation(fields: [espaceId], references: [id], onDelete: Cascade)
+  nom         String
+  campagne    String?
+  description String?
+  composition String?
+  createdAt   DateTime @default(now())
+  creePar     String?
+
+  prelevements PrelevementLabo[]
+
+  @@index([espaceId])
+}
+
+model PrelevementLabo {
+  id              String           @id @default(cuid())
+  espaceId        String
+  espace          Espace           @relation(fields: [espaceId], references: [id], onDelete: Cascade)
+  chantierId      String?
+  chantier        Chantier?        @relation(fields: [chantierId], references: [id], onDelete: SetNull)
+  formulationId   String?
+  formulation     FormulationLabo? @relation(fields: [formulationId], references: [id], onDelete: SetNull)
+  reference       String
+  materiau        String
+  origine         String?
+  datePrelevement DateTime         @db.Date
+  preleveur       String?
+  /// Classe prescrite pour le flux beton (ex. C25/30) : sert au verdict
+  /// de conformite des essais de compression.
+  classePrescrite String?
+  note            String?
+  createdAt       DateTime         @default(now())
+  creePar         String?
+
+  eprouvettes EprouvetteLabo[]
+  essais      EssaiLabo[]
+
+  @@index([espaceId])
+  @@index([chantierId])
+  @@index([formulationId])
+}
+
+model EprouvetteLabo {
+  id              String          @id @default(cuid())
+  prelevementId   String
+  prelevement     PrelevementLabo @relation(fields: [prelevementId], references: [id], onDelete: Cascade)
+  code            String          @unique
+  geometrie       String?
+  dateFabrication DateTime?       @db.Date
+  conditionsCure  String?
+
+  essais EssaiLabo[]
+
+  @@index([prelevementId])
+}
+
+model EquipementLabo {
+  id             String    @id @default(cuid())
+  espaceId       String
+  espace         Espace    @relation(fields: [espaceId], references: [id], onDelete: Cascade)
+  nom            String
+  dateEtalonnage DateTime? @db.Date
+  note           String?
+
+  essais EssaiLabo[]
+
+  @@index([espaceId])
+}
+
+model EssaiLabo {
+  id              String          @id @default(cuid())
+  prelevementId   String
+  prelevement     PrelevementLabo @relation(fields: [prelevementId], references: [id], onDelete: Cascade)
+  eprouvetteId    String?
+  eprouvette      EprouvetteLabo? @relation(fields: [eprouvetteId], references: [id], onDelete: SetNull)
+  equipementId    String?
+  equipement      EquipementLabo? @relation(fields: [equipementId], references: [id], onDelete: SetNull)
+  /// Type d'essai (compression, flexion, granulometrie, teneur en eau...).
+  type            String
+  /// Norme (ex. NF EN 12390-3) OU protocole libre : les deux champs
+  /// coexistent, la terre crue et les biosources n'ayant pas de
+  /// protocole consensuel (XP P13-901, guides).
+  norme           String?
+  protocole       String?
+  echeance        DateTime?       @db.Date
+  statut          StatutEssaiLabo @default(PLANIFIE)
+  operateur       String?
+  dateRealisation DateTime?       @db.Date
+  /// Resultat V1 integre a l'essai (un resultat par essai).
+  valeur          Decimal?        @db.Decimal(12, 4)
+  unite           String?
+  incertitude     String?
+  seuil           Decimal?        @db.Decimal(12, 4)
+  conforme        Boolean?
+  note            String?
+  createdAt       DateTime        @default(now())
+  creePar         String?
+
+  @@index([prelevementId])
+  @@index([echeance])
+  @@index([statut])
 }

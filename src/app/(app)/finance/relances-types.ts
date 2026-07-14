@@ -66,6 +66,13 @@ export const PALIER_BADGE: Record<
     label: "Retenue libérable",
     classe: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
   },
+  // Palier du module labo (essai à échéance dépassée) : terracotta = retard,
+  // comme la mise en demeure. Le cockpit finance ne l'affiche pas (groupes
+  // ci-dessous) ; le badge sert aux écrans labo.
+  ESSAI_ECHU: {
+    label: "Essai en retard",
+    classe: "bg-red-100 text-red-700",
+  },
 };
 
 /** Ordre de gravité décroissante pour trier les constats. */
@@ -78,6 +85,7 @@ export const RANG_PALIER: Record<PalierRelance, number> = {
   DEVIS_SANS_REPONSE: 5,
   SITUATION_A_FACTURER: 6,
   RETENUE_LIBERABLE: 7,
+  ESSAI_ECHU: 8,
 };
 
 /** Groupes de rendu, dans l'ordre d'affichage. */
