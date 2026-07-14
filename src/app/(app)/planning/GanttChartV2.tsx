@@ -91,12 +91,18 @@ const ROW_H = 44;
 
 // Largeur de la zone tactile d'une poignée EXTERNE (barres étroites).
 // Le grip visible ne fait que ~3 px, mais la zone de prise s'étend sur
-// 24 px vers l'extérieur de la barre. Compromis assumé : ces 24 px
-// recouvrent une partie de la case vide voisine (les 24 premiers px à
-// gauche et à droite d'une barre étroite ne déclenchent plus le
-// clic-création) ; le reste de la ligne reste cliquable pour créer, et
-// sans cette zone une tâche d'1-2 jours serait impossible à
-// redimensionner au doigt.
+// 24 px vers l'extérieur de la barre. Pour ne pas confisquer le
+// clic-création sur la case vide voisine, cette zone élargie n'est
+// active (pointer-events) que lorsque la ligne est survolée (desktop,
+// variante group-hover limitée aux appareils à survol par Tailwind v4)
+// ou que la barre est épinglée par un tap (mobile, portsPinnedId),
+// exactement comme les ports de dépendance. Compromis résiduel : sur
+// desktop la ligne est forcément survolée au moment du clic, le couloir
+// reste donc réservé aux poignées et aux ports, mais grips et ports y
+// sont alors visibles et le curseur signale la zone ; au doigt, le
+// clic-création fonctionne désormais jusqu'au bord de la barre, et le
+// redimensionnement d'une barre étroite passe par l'épinglage (tap sur
+// la barre), le geste déjà requis pour les ports.
 const EXT_HANDLE_W = 24;
 
 // Persistance locale du réglage « Entraîner les successeurs »
@@ -1363,9 +1369,15 @@ export function GanttChartV2({
                     {/* Poignées EXTERNES (barre trop étroite pour des
                         poignées internes) : petit grip vertical discret
                         accolé à chaque bord, zone tactile de 24 px vers
-                        l'extérieur (voir EXT_HANDLE_W pour le compromis
-                        avec le clic-création). Rendues HORS de la barre :
-                        celle-ci est en overflow-hidden. */}
+                        l'extérieur. Rendues HORS de la barre : celle-ci
+                        est en overflow-hidden. La zone élargie est en
+                        pointer-events none par défaut : le clic-création
+                        (garde e.target === e.currentTarget du conteneur
+                        de ligne) reste alors joignable au plus près de
+                        la barre. Elle ne devient cliquable qu'au survol
+                        de la ligne (desktop) ou barre épinglée (tap
+                        mobile), comme les ports. Voir EXT_HANDLE_W pour
+                        le compromis complet. */}
                     {showExtHandles && (
                       <>
                         <div
@@ -1374,7 +1386,11 @@ export function GanttChartV2({
                             e.stopPropagation();
                             startDrag(t, "left", e);
                           }}
-                          className="absolute top-0 bottom-0 z-[6] flex items-center justify-end cursor-ew-resize group/ext"
+                          className={cn(
+                            "absolute top-0 bottom-0 z-[6] flex items-center justify-end cursor-ew-resize group/ext",
+                            "pointer-events-none group-hover:pointer-events-auto",
+                            portsVisibles && "pointer-events-auto"
+                          )}
                           style={{
                             left: left - EXT_HANDLE_W,
                             width: EXT_HANDLE_W,
@@ -1390,7 +1406,11 @@ export function GanttChartV2({
                             e.stopPropagation();
                             startDrag(t, "right", e);
                           }}
-                          className="absolute top-0 bottom-0 z-[6] flex items-center justify-start cursor-ew-resize group/ext"
+                          className={cn(
+                            "absolute top-0 bottom-0 z-[6] flex items-center justify-start cursor-ew-resize group/ext",
+                            "pointer-events-none group-hover:pointer-events-auto",
+                            portsVisibles && "pointer-events-auto"
+                          )}
                           style={{
                             left: left + width,
                             width: EXT_HANDLE_W,

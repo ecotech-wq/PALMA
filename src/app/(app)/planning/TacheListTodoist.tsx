@@ -662,15 +662,19 @@ function TacheRow({
         )}
 
         {/* Checkbox de complétion. La zone tactile déborde du rond visible
-            (pseudo-élément) pour approcher les 44 px au doigt sans casser
-            l'alignement de la ligne. */}
+            (pseudo-élément) sans casser l'alignement de la ligne. Débord
+            asymétrique : 12 px en vertical (cible de 44 px de haut), 8 px
+            à gauche (remplit exactement le gap-2, sans chevaucher le
+            caret des sous-tâches), 4 px seulement à droite pour ne pas
+            mordre sur le nom de la tâche (risque de cocher en voulant
+            ouvrir la tâche). */}
         <button
           type="button"
           onClick={handleToggle}
           disabled={pending}
           aria-label={done ? "Marquer non terminée" : "Marquer terminée"}
           title={done ? "Marquer non terminée" : "Marquer terminée"}
-          className={`relative touch-manipulation before:absolute before:-inset-2.5 before:content-[''] before:rounded-full shrink-0 mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center transition ${
+          className={`relative touch-manipulation before:absolute before:-inset-y-3 before:-left-2 before:-right-1 before:content-[''] before:rounded-full shrink-0 mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center transition ${
             done
               ? "bg-green-500 border-green-600 text-white"
               : t.priorite === 1
