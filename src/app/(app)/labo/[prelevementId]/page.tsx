@@ -45,6 +45,9 @@ export default async function PrelevementLaboPage({
 }) {
   const { prelevementId } = await params;
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17) : même verrou que le layout labo,
+  // qui ne protège pas la page elle-même (rendu parallèle Next.js).
+  if (!me.canPilot) redirect("/aujourdhui");
 
   const p = await db.prelevementLabo.findUnique({
     where: { id: prelevementId },

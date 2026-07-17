@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Plus, Truck, AlertTriangle, ChevronRight } from "lucide-react";
 import { db } from "@/lib/db";
+import { borneLocationsParEspace } from "@/lib/visibilite-guards";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -12,16 +14,20 @@ import { Montant } from "@/features/discret";
 
 export default async function LocationsPage() {
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17) : le layout ne protège pas la page
+  // (rendu parallèle). Pilotes seulement, bornage d'espace par le chantier.
+  if (!me.canPilot) redirect("/aujourdhui");
   const today = new Date();
+  const borneEspace = borneLocationsParEspace(me.espaceIds);
 
   const [encours, cloturees] = await Promise.all([
     db.locationPret.findMany({
-      where: { cloture: false },
+      where: { cloture: false, ...borneEspace },
       include: { chantier: { select: { id: true, nom: true } } },
       orderBy: { dateFinPrevue: "asc" },
     }),
     db.locationPret.findMany({
-      where: { cloture: true },
+      where: { cloture: true, ...borneEspace },
       include: { chantier: { select: { id: true, nom: true } } },
       orderBy: { dateRetourReel: "desc" },
       take: 30,
@@ -109,18 +115,22 @@ export default async function LocationsPage() {
                           jusqu&apos;au {formatDate(l.dateFinPrevue)}
                         </div>
                       </div>
-                      <div className="text-right shrink-0">
-                        {l.type === "LOCATION" && (
-                          <div className="text-sm font-semibold">
-                            <Montant>{formatEuro(l.coutTotal.toString())}</Montant>
-                          </div>
-                        )}
-                        {Number(l.coutJour) > 0 && (
-                          <div className="text-xs text-slate-400 dark:text-slate-500">
-                            <Montant>{formatEuro(l.coutJour.toString())}</Montant>/j
-                          </div>
-                        )}
-                      </div>
+                      {/* Prix sous garde de rôle : ABSENTS du DOM sinon
+                          (le flou discret n'est pas un contrôle d'accès). */}
+                      {me.canSeePrices && (
+                        <div className="text-right shrink-0">
+                          {l.type === "LOCATION" && (
+                            <div className="text-sm font-semibold">
+                              <Montant>{formatEuro(l.coutTotal.toString())}</Montant>
+                            </div>
+                          )}
+                          {Number(l.coutJour) > 0 && (
+                            <div className="text-xs text-slate-400 dark:text-slate-500">
+                              <Montant>{formatEuro(l.coutJour.toString())}</Montant>/j
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <ChevronRight size={16} className="text-slate-300" />
                     </Link>
                   </li>
@@ -155,7 +165,7 @@ export default async function LocationsPage() {
                       <span className="font-medium text-slate-700 dark:text-slate-300 truncate flex-1">
                         {l.designation}
                       </span>
-                      {l.type === "LOCATION" && (
+                      {me.canSeePrices && l.type === "LOCATION" && (
                         <span className="font-medium shrink-0">
                           <Montant>{formatEuro(l.coutTotal.toString())}</Montant>
                         </span>

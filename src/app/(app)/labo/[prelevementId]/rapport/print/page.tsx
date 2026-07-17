@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-helpers";
 import { fmtValeur } from "../../../labo-labels";
@@ -30,6 +30,10 @@ export default async function RapportEssaiPrintPage({
 }) {
   const { prelevementId } = await params;
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17, M2) : même verrou que le layout labo et
+  // que labo/[prelevementId], qui ne protègent pas cette page (rendu
+  // parallèle Next.js).
+  if (!me.canPilot) redirect("/aujourdhui");
 
   const p = await db.prelevementLabo.findUnique({
     where: { id: prelevementId },

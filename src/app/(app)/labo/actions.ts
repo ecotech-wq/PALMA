@@ -633,7 +633,7 @@ export async function saisirResultat(formData: FormData) {
   // sont silencieux en échec : l'écriture du résultat ne se rejoue pas.
   if (conforme === false && essai.prelevement.chantierId) {
     // Deux liens : /labo est réservé aux pilotes (le layout redirige les
-    // autres vers /dashboard), les chefs sont donc envoyés sur la page du
+    // autres vers /aujourdhui), les chefs sont donc envoyés sur la page du
     // chantier, qu'ils peuvent ouvrir.
     const lienPilote = `/labo/${essai.prelevement.id}`;
     const lienChef = `/chantiers/${essai.prelevement.chantierId}`;

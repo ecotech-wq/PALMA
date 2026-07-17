@@ -14,7 +14,7 @@ export default async function EquipesLayout({
   children: React.ReactNode;
 }) {
   const me = await requireAuth();
-  if (!me.canPilot) redirect("/dashboard");
-  if (!me.modules.includes(MODULES.chantier)) redirect("/dashboard");
+  if (!me.canPilot) redirect("/aujourdhui");
+  if (!me.modules.includes(MODULES.chantier)) redirect("/aujourdhui");
   return <>{children}</>;
 }

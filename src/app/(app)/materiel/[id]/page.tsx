@@ -27,6 +27,10 @@ export default async function MaterielDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Dette planifiée (audit 2026-07-17, M3) : Materiel n'a pas d'espaceId en
+  // schéma, la fiche est donc lisible par tout connecté, toutes entreprises
+  // confondues. Le bornage par espace viendra avec la migration
+  // Materiel.espaceId ; en attendant, prixAchat reste derrière canSeePrices.
   const me = await requireAuth();
   const materiel = await db.materiel.findUnique({
     where: { id },
@@ -95,7 +99,12 @@ export default async function MaterielDetailPage({
                 numeroSerie: materiel.numeroSerie,
                 statut: materiel.statut,
                 possesseur: materiel.possesseur,
-                prixAchat: materiel.prixAchat ? String(materiel.prixAchat) : null,
+                // Prix d'achat : sous garde de rôle, ABSENT des props
+                // sérialisées sinon (matrice 2026-07-17).
+                prixAchat:
+                  me.canSeePrices && materiel.prixAchat
+                    ? String(materiel.prixAchat)
+                    : null,
                 dateAchat: materiel.dateAchat,
                 notes: materiel.notes,
                 photo: materiel.photo,

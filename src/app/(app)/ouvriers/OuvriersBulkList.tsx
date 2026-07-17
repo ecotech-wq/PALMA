@@ -35,7 +35,8 @@ type Ouvrier = {
   photo: string | null;
   telephone: string | null;
   typeContrat: string;
-  tarifBase: string;
+  /** Null pour les non-admins : le tarif ne quitte jamais le serveur. */
+  tarifBase: string | null;
   actif: boolean;
   equipeNom: string | null;
 };
@@ -215,7 +216,7 @@ export function OuvriersBulkList({
                 </div>
                 <div className="text-right shrink-0 hidden sm:block">
                   <Badge color="blue">{contratLabel[o.typeContrat]}</Badge>
-                  {isAdmin && (
+                  {isAdmin && o.tarifBase !== null && (
                     <div className="text-sm font-medium text-slate-900 dark:text-slate-100 mt-1">
                       <Montant>{formatEuro(o.tarifBase)}</Montant>
                       <span className="text-xs font-normal text-slate-500 dark:text-slate-400">

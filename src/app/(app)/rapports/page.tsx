@@ -45,7 +45,7 @@ export default async function RapportsListPage({
   const me = await requireAuth();
   if (me.isClient && !me.visibility.showJournal) {
     const { redirect } = await import("next/navigation");
-    redirect("/dashboard");
+    redirect("/aujourdhui");
   }
   const accessibleIds = await getAccessibleChantierIds(me);
   const { q, chantier } = await searchParams;

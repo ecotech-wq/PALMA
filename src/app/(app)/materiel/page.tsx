@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { MaterielStatutBadge } from "./MaterielStatutBadge";
+import { requireAuth } from "@/lib/auth-helpers";
 
 export default async function MaterielListPage({
   searchParams,
@@ -14,6 +15,12 @@ export default async function MaterielListPage({
   searchParams: Promise<{ q?: string; statut?: string }>;
 }) {
   const { q, statut } = await searchParams;
+  // Garde d'authentification (audit 2026-07-17) : la page ne passait par
+  // aucun requireAuth. Le parc matériel n'a pas d'espaceId en schéma : le
+  // bornage par entreprise attend une migration (vigilance consignée) ;
+  // aucun prix n'est rendu ici (prixAchat reste derrière canSeePrices sur
+  // la fiche).
+  await requireAuth();
 
   const materiels = await db.materiel.findMany({
     where: {

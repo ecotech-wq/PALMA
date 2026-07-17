@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Select } from "@/components/ui/Input";
 import { formatDate } from "@/lib/utils";
 import { cloturerSortie } from "./actions";
+import { requireAuth } from "@/lib/auth-helpers";
+import { borneSortiesParEspace } from "@/lib/visibilite-guards";
 
 const etatLabel: Record<string, string> = {
   BON: "Bon état",
@@ -26,9 +28,14 @@ const etatColor: Record<string, "green" | "yellow" | "red" | "slate"> = {
 };
 
 export default async function SortiesPage() {
+  // Gardes (audit 2026-07-17) : la page ne passait par aucun requireAuth et
+  // listait les sorties de toutes les entreprises. La frontière d'espace
+  // passe par le chantier ou l'équipe rattachés (pas d'espaceId propre).
+  const me = await requireAuth();
+  const borneEspace = borneSortiesParEspace(me.espaceIds);
   const [sortiesActives, sortiesCloturees] = await Promise.all([
     db.sortieMateriel.findMany({
-      where: { dateRetour: null },
+      where: { dateRetour: null, ...borneEspace },
       include: {
         materiel: { select: { id: true, nomCommun: true, marque: true, modele: true, photo: true } },
         equipe: { select: { id: true, nom: true } },
@@ -37,7 +44,7 @@ export default async function SortiesPage() {
       orderBy: { dateSortie: "desc" },
     }),
     db.sortieMateriel.findMany({
-      where: { dateRetour: { not: null } },
+      where: { dateRetour: { not: null }, ...borneEspace },
       include: {
         materiel: { select: { id: true, nomCommun: true, photo: true } },
         equipe: { select: { id: true, nom: true } },

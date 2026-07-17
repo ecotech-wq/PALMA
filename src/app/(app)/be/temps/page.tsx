@@ -19,7 +19,7 @@ export default async function MesTempsPage({
 }) {
   const { etude } = await searchParams;
   const me = await requireAuth();
-  if (me.isClient) redirect("/dashboard");
+  if (me.isClient) redirect("/aujourdhui");
 
   const accessibles = await getAccessibleChantierIds(me);
   const etudes = await db.chantier.findMany({

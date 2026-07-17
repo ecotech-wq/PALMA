@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Plus, User, Search } from "lucide-react";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/Button";
@@ -15,6 +16,9 @@ export default async function OuvriersListPage({
 }) {
   const { q, contrat, actif } = await searchParams;
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17) : le layout ne protège pas la page
+  // (rendu parallèle). Annuaire + téléphones réservés au pilotage.
+  if (!me.canPilot) redirect("/aujourdhui");
 
   const ouvriers = await db.ouvrier.findMany({
     where: {
@@ -121,7 +125,9 @@ export default async function OuvriersListPage({
             photo: o.photo,
             telephone: o.telephone,
             typeContrat: o.typeContrat,
-            tarifBase: String(o.tarifBase),
+            // Tarif : admin seul. Pour les autres rôles il ne quitte pas
+            // le serveur (ABSENT des props sérialisées, audit 2026-07-17).
+            tarifBase: me.isAdmin ? String(o.tarifBase) : null,
             actif: o.actif,
             equipeNom: o.equipe?.nom ?? null,
           }))}

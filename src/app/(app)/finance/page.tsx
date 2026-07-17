@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ChevronRight, TriangleAlert, FileText, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import {
@@ -27,6 +28,10 @@ import { RelancesCard } from "./RelancesCard";
 
 export default async function FinancePage() {
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17) : la garde du layout finance ne
+  // protège pas la page elle-même (rendu parallèle Next.js) ; sans ce
+  // verrou, le cockpit trésorerie partait aux CHEF/OUVRIER membres.
+  if (!me.canPilot) redirect("/aujourdhui");
   // Bornage : l'espace pour tous, ET l'adhésion aux chantiers pour un
   // conducteur (il ne voit pas les projets dont il n'est pas membre). Un admin
   // voit tout l'espace (bornChantier = null).

@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Plus, ShoppingCart, ChevronRight } from "lucide-react";
 import { db } from "@/lib/db";
+import { borneCommandesParEspace } from "@/lib/visibilite-guards";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
@@ -12,8 +14,12 @@ import { Montant } from "@/features/discret";
 
 export default async function CommandesListPage() {
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17) : le layout ne protège pas la page
+  // (rendu parallèle). Pilotes seulement, et bornage d'espace via le
+  // chantier de chaque commande (pas de cumul inter-entreprises).
+  if (!me.canPilot) redirect("/aujourdhui");
   const commandes = await db.commande.findMany({
-    where: { deletedAt: null },
+    where: { deletedAt: null, ...borneCommandesParEspace(me.espaceIds) },
     include: {
       chantier: { select: { id: true, nom: true } },
       _count: { select: { lignes: true } },

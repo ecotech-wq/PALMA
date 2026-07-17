@@ -60,7 +60,7 @@ export default async function MessagerieHubPage() {
   if (me.isClient) {
     // Les clients n'ont pas accès à la messagerie interne
     const { redirect } = await import("next/navigation");
-    redirect("/dashboard");
+    redirect("/aujourdhui");
   }
 
   const accessibleIds = await getAccessibleChantierIds(me);

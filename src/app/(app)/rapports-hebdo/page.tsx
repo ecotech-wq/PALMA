@@ -21,12 +21,13 @@ const dateFmt = new Intl.DateTimeFormat("fr-FR", {
  * Hub des rapports hebdomadaires. Liste tous les chantiers accessibles
  * et permet d'aller au rapport hebdo de chacun. Affiche l'état du
  * dernier rapport (brouillon / envoyé / signé client).
+ * Audit 2026-07-17 : hub réservé au pilotage (nav pilotOnly) ; le client
+ * consulte SON rapport depuis la fiche de son chantier
+ * (/chantiers/[id]/rapport-hebdo), selon son drapeau showRapportsHebdo.
  */
 export default async function RapportsHebdoHubPage() {
   const me = await requireAuth();
-  if (me.isClient && !me.visibility.showRapportsHebdo) {
-    redirect("/dashboard");
-  }
+  if (!me.canPilot) redirect("/aujourdhui");
   const accessibleIds = await getAccessibleChantierIds(me);
 
   const chantiers = await db.chantier.findMany({

@@ -2,7 +2,7 @@
   "name": "LYNX : gestion, suivi et coordination",
   "short_name": "LYNX",
   "description": "LYNX, plateforme de gestion, de suivi et de coordination de chantier et de bureau d'etudes.",
-  "start_url": "/accueil",
+  "start_url": "/aujourdhui",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
@@ -56,9 +56,9 @@
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     },
     {
-      "name": "Tableau de bord",
-      "short_name": "Accueil",
-      "url": "/dashboard",
+      "name": "Aujourd'hui",
+      "short_name": "Aujourd'hui",
+      "url": "/aujourdhui",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     }
   ]

@@ -12,7 +12,7 @@ import { updateAppSettings } from "./actions";
 export default async function ParametresPage() {
   const session = await auth();
   if (session?.user?.role !== "ADMIN") {
-    redirect("/dashboard");
+    redirect("/aujourdhui");
   }
 
   const settings = await getAppSettings();

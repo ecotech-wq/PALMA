@@ -12,6 +12,7 @@ import {
   requireEspaceCourant,
   espaceFilter,
 } from "@/lib/auth-helpers";
+import { nombreProtege } from "@/lib/visibilite-guards";
 
 const chantierSchema = z.object({
   nom: z.string().min(1, "Nom requis"),
@@ -23,12 +24,16 @@ const chantierSchema = z.object({
   dateDebut: z.string().optional().or(z.literal("")),
   dateFin: z.string().optional().or(z.literal("")),
   statut: z.enum(["PLANIFIE", "EN_COURS", "PAUSE", "TERMINE", "ANNULE"]),
-  budgetEspeces: z.coerce.number().nonnegative().default(0),
-  budgetVirement: z.coerce.number().nonnegative().default(0),
   chefId: z.string().optional().or(z.literal("")),
 });
 
-function parseChantier(formData: FormData) {
+/**
+ * Budgets : champs PROTÉGÉS (audit 2026-07-17). Le formulaire ne les émet
+ * que pour les rôles autorisés (plus de hidden input à valeur réelle).
+ * Absents du FormData ou appelant non autorisé -> undefined : Prisma
+ * ignore la clé et la valeur existante en base est conservée.
+ */
+function parseChantier(formData: FormData, budgetsAutorises: boolean) {
   const data = chantierSchema.parse({
     nom: formData.get("nom"),
     type: formData.get("type") || "CHANTIER",
@@ -37,8 +42,6 @@ function parseChantier(formData: FormData) {
     dateDebut: formData.get("dateDebut"),
     dateFin: formData.get("dateFin"),
     statut: formData.get("statut") || "PLANIFIE",
-    budgetEspeces: formData.get("budgetEspeces") || 0,
-    budgetVirement: formData.get("budgetVirement") || 0,
     chefId: formData.get("chefId"),
   });
 
@@ -50,15 +53,21 @@ function parseChantier(formData: FormData) {
     dateDebut: data.dateDebut ? new Date(data.dateDebut) : null,
     dateFin: data.dateFin ? new Date(data.dateFin) : null,
     statut: data.statut,
-    budgetEspeces: data.budgetEspeces,
-    budgetVirement: data.budgetVirement,
+    budgetEspeces: nombreProtege(budgetsAutorises, formData.get("budgetEspeces")),
+    budgetVirement: nombreProtege(budgetsAutorises, formData.get("budgetVirement")),
     chefId: data.chefId || null,
   };
 }
 
 export async function createChantier(formData: FormData) {
   const me = await requireAdmin();
-  const data = parseChantier(formData);
+  const parsed = parseChantier(formData, me.canSeePrices);
+  // À la création, un budget absent vaut 0 (défaut du schéma Prisma).
+  const data = {
+    ...parsed,
+    budgetEspeces: parsed.budgetEspeces ?? 0,
+    budgetVirement: parsed.budgetVirement ?? 0,
+  };
   // Socle espaces : tout projet naît dans l'espace courant, dont le module
   // correspondant doit être actif (une étude naît dans un espace « be »).
   const espace = requireEspaceCourant(me);
@@ -105,20 +114,10 @@ export async function updateChantier(id: string, formData: FormData) {
   // Contre-vérification 2026-07-07 : sans cette garde, tout authentifié
   // (client compris) pouvait modifier n'importe quel chantier par POST forgé.
   await requireChantierManager(me, id);
-  const data = parseChantier(formData);
-  // Sécurité : seul ADMIN ou CONDUCTEUR peut modifier le budget. Si
-  // l'appelant ne voit pas les prix (CHEF, CLIENT), on force les valeurs
-  // existantes en DB pour ignorer le payload.
-  if (!me.canSeePrices) {
-    const existing = await db.chantier.findUnique({
-      where: { id },
-      select: { budgetEspeces: true, budgetVirement: true },
-    });
-    if (existing) {
-      data.budgetEspeces = Number(existing.budgetEspeces);
-      data.budgetVirement = Number(existing.budgetVirement);
-    }
-  }
+  // Sécurité : seul ADMIN ou CONDUCTEUR peut modifier le budget. Pour les
+  // autres, nombreProtege renvoie undefined même sur payload forgé et
+  // Prisma ne touche pas aux colonnes (valeurs existantes conservées).
+  const data = parseChantier(formData, me.canSeePrices);
   // Le type de projet est figé après création : on l'écarte de la mise à
   // jour (le formulaire d'édition ne l'envoie pas, et zod remettrait le
   // défaut CHANTIER, ce qui requalifierait silencieusement une étude).

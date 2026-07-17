@@ -34,7 +34,7 @@ export default async function PointagePage({
   }>;
 }) {
   const me = await requireAuth();
-  if (me.isClient) redirect("/dashboard");
+  if (me.isClient) redirect("/aujourdhui");
   const {
     date: dateParam,
     mode: modeParam,

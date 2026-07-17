@@ -42,7 +42,7 @@ export default async function AffairesPage({
   searchParams: Promise<{ typologie?: string }>;
 }) {
   const me = await requireAuth();
-  if (!me.canPilot) redirect("/accueil");
+  if (!me.canPilot) redirect("/aujourdhui");
   const { typologie: brut } = await searchParams;
   const typologie: TypologieAffaire = estTypologie(brut)
     ? brut
@@ -94,7 +94,7 @@ export default async function AffairesPage({
 
   // Pilotes uniquement : le module Affaires est réservé aux ADMIN et
   // CONDUCTEUR (requireAffaireAccess) ; un CHEF responsable recevrait des
-  // liens /affaires/... qui le redirigent vers l'accueil.
+  // liens /affaires/... qui le redirigent vers « Aujourd'hui ».
   const responsables = await db.user.findMany({
     where: {
       status: "ACTIVE",

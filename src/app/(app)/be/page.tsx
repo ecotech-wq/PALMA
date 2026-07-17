@@ -13,7 +13,7 @@ import { requireAuth, getAccessibleChantierIds, chantierEspaceFilter } from "@/l
 
 export default async function EtudesPage() {
   const me = await requireAuth();
-  if (me.isClient) redirect("/dashboard");
+  if (me.isClient) redirect("/aujourdhui");
 
   const accessibles = await getAccessibleChantierIds(me);
 

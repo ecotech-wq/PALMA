@@ -15,13 +15,13 @@ import { ExportForm } from "./ExportForm";
 export default async function ExportsPage() {
   const session = await auth();
   if (session?.user?.role !== "ADMIN") {
-    redirect("/dashboard");
+    redirect("/aujourdhui");
   }
 
   return (
     <div className="space-y-5">
       <PageHeader
-        backHref="/dashboard"
+        backHref="/accueil"
         title="Exports"
         description="Données comptables et opérationnelles en CSV/FEC, prêtes pour Excel ou ton expert-comptable."
       />

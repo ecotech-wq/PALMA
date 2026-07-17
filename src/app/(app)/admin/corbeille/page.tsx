@@ -32,7 +32,7 @@ function daysRemaining(deletedAt: Date): number {
  */
 export default async function CorbeillePage() {
   const session = await auth();
-  if (session?.user?.role !== "ADMIN") redirect("/dashboard");
+  if (session?.user?.role !== "ADMIN") redirect("/aujourdhui");
 
   // Purge auto au chargement (idempotente, légère)
   const { purged } = await autoPurgeExpired();
@@ -66,7 +66,7 @@ export default async function CorbeillePage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        backHref="/dashboard"
+        backHref="/accueil"
         title="Corbeille"
         description={`Éléments supprimés des 30 derniers jours — restauration possible, purge automatique au-delà.`}
       />

@@ -50,7 +50,7 @@ export default async function FicheAffairePage({
 }) {
   const { id } = await params;
   const me = await requireAuth();
-  if (!me.canPilot) redirect("/accueil");
+  if (!me.canPilot) redirect("/aujourdhui");
 
   const affaire = await db.affaire.findUnique({
     where: { id },
@@ -83,7 +83,7 @@ export default async function FicheAffairePage({
 
   // Pilotes uniquement : le module Affaires est réservé aux ADMIN et
   // CONDUCTEUR (requireAffaireAccess) ; un CHEF responsable ou cible
-  // recevrait des liens /affaires/... qui le redirigent vers l'accueil.
+  // recevrait des liens /affaires/... qui le redirigent vers « Aujourd'hui ».
   const responsables = await db.user.findMany({
     where: {
       status: "ACTIVE",

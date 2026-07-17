@@ -38,7 +38,7 @@ export default async function AuditPage({
   const sp = await searchParams;
   const session = await auth();
   if (session?.user?.role !== "ADMIN") {
-    redirect("/dashboard");
+    redirect("/aujourdhui");
   }
 
   const action = sp.action || undefined;
@@ -76,7 +76,7 @@ export default async function AuditPage({
   return (
     <div className="space-y-5">
       <PageHeader
-        backHref="/dashboard"
+        backHref="/accueil"
         title="Journal d'audit"
         description="Trace append-only des actions sensibles (paie, validations, rôles, suppressions). Lecture seule, ne peut pas être modifié."
       />

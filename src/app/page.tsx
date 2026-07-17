@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 export default function Home() {
-  // L'écran d'accueil LYNX est le lanceur d'applications (grille par espace).
-  redirect("/accueil");
+  // L'atterrissage LYNX est « Aujourd'hui » (Ma journée). Le lanceur
+  // d'applications reste accessible via l'onglet « Accueil » (/accueil).
+  redirect("/aujourdhui");
 }

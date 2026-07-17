@@ -12,6 +12,6 @@ export default async function LocationsLayout({
   children: React.ReactNode;
 }) {
   const me = await requireAuth();
-  if (!me.canPilot) redirect("/dashboard");
+  if (!me.canPilot) redirect("/aujourdhui");
   return <>{children}</>;
 }

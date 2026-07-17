@@ -10,7 +10,7 @@ export default async function ForgotPasswordPage({
   searchParams: Promise<{ error?: string; sent?: string }>;
 }) {
   const session = await auth();
-  if (session?.user) redirect("/dashboard");
+  if (session?.user) redirect("/aujourdhui");
 
   const { error, sent } = await searchParams;
 

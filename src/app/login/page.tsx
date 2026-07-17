@@ -17,7 +17,7 @@ export default async function LoginPage({
   }>;
 }) {
   const session = await auth();
-  if (session?.user) redirect("/dashboard");
+  if (session?.user) redirect("/aujourdhui");
 
   const { error, callbackUrl, registered, reset, email: prefilledEmail } =
     await searchParams;
@@ -29,7 +29,7 @@ export default async function LoginPage({
     const email = String(formData.get("email") ?? "");
     const password = String(formData.get("password") ?? "");
     const totpCode = String(formData.get("totpCode") ?? "").trim();
-    const redirectTo = String(formData.get("callbackUrl") ?? "/dashboard");
+    const redirectTo = String(formData.get("callbackUrl") ?? "/aujourdhui");
 
     try {
       await signIn("credentials", {
@@ -95,7 +95,7 @@ export default async function LoginPage({
           )}
 
           <form action={login} className="space-y-4">
-            <input type="hidden" name="callbackUrl" value={callbackUrl ?? "/dashboard"} />
+            <input type="hidden" name="callbackUrl" value={callbackUrl ?? "/aujourdhui"} />
 
             <label className="block">
               <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">

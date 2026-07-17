@@ -28,7 +28,7 @@ import { LABEL_CATEGORIE } from "../chantiers/[id]/documents/categories";
 
 export default async function MesDocumentsPage() {
   const me = await requireAuth();
-  if (!me.isClient) redirect("/dashboard");
+  if (!me.isClient) redirect("/aujourdhui");
 
   const user = await db.user.findUnique({
     where: { id: me.id },

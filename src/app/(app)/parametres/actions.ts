@@ -46,5 +46,5 @@ export async function updateAppSettings(formData: FormData) {
   revalidatePath("/parametres");
   revalidatePath("/paie");
   revalidatePath("/paie/nouveau");
-  revalidatePath("/dashboard");
+  revalidatePath("/aujourdhui");
 }

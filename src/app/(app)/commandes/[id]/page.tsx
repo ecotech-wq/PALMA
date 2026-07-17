@@ -1,7 +1,12 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Trash2, Truck, Check } from "lucide-react";
 import { db } from "@/lib/db";
+import {
+  requireAuth,
+  requireChantierAccess,
+  espaceFilter,
+} from "@/lib/auth-helpers";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -19,18 +24,27 @@ export default async function CommandeDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Gardes (audit 2026-07-17) : la page servait prix unitaires et lignes
+  // sans authentification de rôle ni frontière d'espace, par URL forgée.
+  // Prix : ADMIN + CONDUCTEUR seulement ; puis adhésion/espace du chantier.
+  const me = await requireAuth();
+  if (!me.canSeePrices) redirect("/aujourdhui");
   const [commande, chantiers] = await Promise.all([
     db.commande.findUnique({
       where: { id },
       include: { chantier: true, lignes: true },
     }),
     db.chantier.findMany({
-      where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE", "TERMINE"] } },
+      where: {
+        statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE", "TERMINE"] },
+        ...espaceFilter(me),
+      },
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),
   ]);
   if (!commande) notFound();
+  await requireChantierAccess(me, commande.chantierId);
 
   const updateAction = updateCommande.bind(null, id);
   const deleteAction = deleteCommande.bind(null, id);

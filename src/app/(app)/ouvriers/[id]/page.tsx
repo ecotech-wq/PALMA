@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import {
   Trash2,
   Banknote,
@@ -57,6 +57,9 @@ export default async function OuvrierDetailPage({
   const { id } = await params;
   const { month: monthParam } = await searchParams;
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17) : le layout ne protège pas la page
+  // (rendu parallèle). Fiche annuaire réservée au pilotage.
+  if (!me.canPilot) redirect("/aujourdhui");
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   const sixtyDaysAgo = new Date();
@@ -260,7 +263,9 @@ export default async function OuvrierDetailPage({
                   telephone: ouvrier.telephone,
                   photo: ouvrier.photo,
                   typeContrat: ouvrier.typeContrat,
-                  tarifBase: String(ouvrier.tarifBase),
+                  // Tarif : admin seul, ABSENT des props sérialisées sinon
+                  // (audit 2026-07-17). Champ non émis -> valeur conservée.
+                  tarifBase: me.isAdmin ? String(ouvrier.tarifBase) : null,
                   modePaie: ouvrier.modePaie,
                   actif: ouvrier.actif,
                   equipeId: ouvrier.equipeId,
@@ -549,7 +554,9 @@ export default async function OuvrierDetailPage({
                   joursTravailles: Number(p.joursTravailles),
                 }))}
                 typeContrat={ouvrier.typeContrat}
-                tarifBase={Number(ouvrier.tarifBase)}
+                // Tarif : admin seul. 0 pour les autres : la valeur réelle
+                // ne part pas dans les props du composant client.
+                tarifBase={me.isAdmin ? Number(ouvrier.tarifBase) : 0}
                 showAmount={me.isAdmin}
               />
               {me.isAdmin && (

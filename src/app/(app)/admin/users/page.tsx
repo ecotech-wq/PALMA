@@ -1,5 +1,6 @@
-import { auth } from "@/auth";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/auth-helpers";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge, type BadgeColor } from "@/components/ui/Badge";
@@ -30,8 +31,13 @@ const statusColor: Record<string, BadgeColor> = {
 };
 
 export default async function AdminUsersPage() {
-  const session = await auth();
-  const meId = session?.user?.id ?? "";
+  // Garde de rôle (audit 2026-07-17) : l'annuaire complet (emails, rôles,
+  // adhésions) était servi à tout connecté, CLIENT compris. La gestion des
+  // comptes est une prérogative du propriétaire de PLATEFORME (rôle global),
+  // comme les server actions de ce module (ensureAdmin) et /admin/espaces.
+  const me = await requireAuth();
+  if (!me.isGlobalAdmin) redirect("/aujourdhui");
+  const meId = me.id;
 
   const [users, allChantiers, allEspaces] = await Promise.all([
     db.user.findMany({
@@ -59,7 +65,7 @@ export default async function AdminUsersPage() {
   return (
     <div>
       <PageHeader
-        backHref="/dashboard"
+        backHref="/accueil"
         title="Utilisateurs et accès"
         description={`${users.length} compte${users.length > 1 ? "s" : ""}${
           pendingCount > 0

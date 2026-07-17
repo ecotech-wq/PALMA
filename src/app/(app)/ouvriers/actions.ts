@@ -12,6 +12,7 @@ import {
   espaceFilter,
   type CurrentUser,
 } from "@/lib/auth-helpers";
+import { nombreProtege } from "@/lib/visibilite-guards";
 
 /**
  * Frontière d'espace pour UN ouvrier (même régime que les chantiers) :
@@ -43,20 +44,24 @@ const ouvrierSchema = z.object({
   prenom: z.string().optional().or(z.literal("")),
   telephone: z.string().optional().or(z.literal("")),
   typeContrat: z.enum(["FIXE", "JOUR", "SEMAINE", "MOIS", "FORFAIT"]),
-  tarifBase: z.coerce.number().nonnegative(),
   modePaie: z.enum(["JOUR", "SEMAINE", "MOIS"]),
   actif: z.coerce.boolean().optional(),
   equipeId: z.string().optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),
 });
 
-function parseOuvrier(formData: FormData) {
+/**
+ * tarifBase : champ PROTÉGÉ (audit 2026-07-17). Le formulaire ne l'émet
+ * que pour l'admin (plus de hidden input à valeur réelle). Absent du
+ * FormData ou appelant non admin -> undefined : Prisma ignore la clé à
+ * l'update, la valeur existante est conservée.
+ */
+function parseOuvrier(formData: FormData, tarifAutorise: boolean) {
   const data = ouvrierSchema.parse({
     nom: formData.get("nom"),
     prenom: formData.get("prenom"),
     telephone: formData.get("telephone"),
     typeContrat: formData.get("typeContrat") || "JOUR",
-    tarifBase: formData.get("tarifBase") || 0,
     modePaie: formData.get("modePaie") || "MOIS",
     actif: formData.get("actif") === "on",
     equipeId: formData.get("equipeId"),
@@ -68,7 +73,7 @@ function parseOuvrier(formData: FormData) {
     prenom: data.prenom || null,
     telephone: data.telephone || null,
     typeContrat: data.typeContrat,
-    tarifBase: data.tarifBase,
+    tarifBase: nombreProtege(tarifAutorise, formData.get("tarifBase")),
     modePaie: data.modePaie,
     actif: data.actif ?? true,
     equipeId: data.equipeId || null,
@@ -80,7 +85,10 @@ export async function createOuvrier(formData: FormData) {
   const me = await requireAdminOrConducteur();
   // Socle espaces : un ouvrier naît rattaché à l'entreprise courante.
   const espace = requireEspaceCourant(me);
-  const data = parseOuvrier(formData);
+  const parsed = parseOuvrier(formData, me.isAdmin);
+  // À la création, un tarif absent (conducteur) vaut 0 : l'admin le fixe
+  // ensuite depuis la fiche.
+  const data = { ...parsed, tarifBase: parsed.tarifBase ?? 0 };
   if (data.equipeId) await verifierEquipeDansEspace(me, data.equipeId);
   const photoFile = formData.get("photo") as File | null;
   let photo: string | null = null;
@@ -97,19 +105,16 @@ export async function createOuvrier(formData: FormData) {
 export async function updateOuvrier(id: string, formData: FormData) {
   const me = await requireAdminOrConducteur();
   await verifierEspaceOuvrier(me, id);
-  const data = parseOuvrier(formData);
+  // Sécurité : seul l'ADMIN peut modifier le tarif. Pour les autres,
+  // nombreProtege renvoie undefined même sur payload forgé et Prisma ne
+  // touche pas à la colonne (valeur existante conservée).
+  const data = parseOuvrier(formData, me.isAdmin);
   if (data.equipeId) await verifierEquipeDansEspace(me, data.equipeId);
   const photoFile = formData.get("photo") as File | null;
   const removePhoto = formData.get("removePhoto") === "1";
 
   const existing = await db.ouvrier.findUnique({ where: { id } });
   if (!existing) throw new Error("Ouvrier introuvable");
-
-  // Sécurité : seul l'ADMIN peut modifier le tarif (les conducteurs ne
-  // voient pas la paie complète). On force la valeur existante sinon.
-  if (!me.isAdmin) {
-    data.tarifBase = Number(existing.tarifBase);
-  }
 
   let photo: string | null = existing.photo;
   if (removePhoto && existing.photo) {

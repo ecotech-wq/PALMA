@@ -15,7 +15,7 @@ import { majEspace, creerEspace } from "./actions";
 
 export default async function AdminEspacesPage() {
   const me = await requireAuth();
-  if (!me.isGlobalAdmin) redirect("/dashboard");
+  if (!me.isGlobalAdmin) redirect("/aujourdhui");
 
   const espaces = await db.espace.findMany({
     orderBy: { nom: "asc" },

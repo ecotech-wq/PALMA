@@ -39,7 +39,7 @@ export default async function MessagerieChantierPage({
   const { chantierId } = await params;
   const { canal } = await searchParams;
   const me = await requireAuth();
-  if (me.isClient) redirect("/dashboard");
+  if (me.isClient) redirect("/aujourdhui");
   await requireChantierAccess(me, chantierId);
 
   // v4.2 : canaux du chantier. On garantit le canal "Général" puis on

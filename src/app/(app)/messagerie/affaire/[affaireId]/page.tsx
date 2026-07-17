@@ -45,8 +45,8 @@ export default async function MessagerieAffairePage({
 }) {
   const { affaireId } = await params;
   const me = await requireAuth();
-  if (me.isClient) redirect("/dashboard");
-  if (!me.canPilot) redirect("/accueil");
+  if (me.isClient) redirect("/aujourdhui");
+  if (!me.canPilot) redirect("/aujourdhui");
 
   const affaire = await db.affaire.findUnique({
     where: { id: affaireId },

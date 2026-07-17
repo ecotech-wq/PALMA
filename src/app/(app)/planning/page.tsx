@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   Calendar,
   GanttChartSquare,
@@ -42,6 +43,9 @@ export default async function PlanningPage({
 }) {
   const sp = await searchParams;
   const me = await requireAuth();
+  // Garde de rôle (audit 2026-07-17) : la nav marque /planning pilotOnly
+  // (masqué aux chefs), la page applique la même règle par cohérence.
+  if (!me.canPilot) redirect("/aujourdhui");
   const canEdit = !me.isClient;
   const vueRaw = Array.isArray(sp.vue) ? sp.vue[0] : sp.vue;
   const view: Vue =

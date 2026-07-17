@@ -13,7 +13,7 @@ export default async function ResetPasswordPage({
   searchParams: Promise<{ token?: string; error?: string; invalid?: string }>;
 }) {
   const session = await auth();
-  if (session?.user) redirect("/dashboard");
+  if (session?.user) redirect("/aujourdhui");
 
   const { token, error, invalid } = await searchParams;
 

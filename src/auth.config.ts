@@ -43,25 +43,27 @@ export const authConfig = {
         path.startsWith("/parametres") ||
         path.startsWith("/api/export/paiements");
       if (isAdminOnly && role !== "ADMIN") {
-        return NextResponse.redirect(new URL("/dashboard", request.nextUrl));
+        return NextResponse.redirect(new URL("/aujourdhui", request.nextUrl));
       }
 
-      // Restrictions CLIENT : un client ne peut voir que dashboard,
-      // chantiers, rapports, incidents et son profil. Tout le reste
-      // est bloqué.
+      // Restrictions CLIENT : un client ne peut voir que sa page du jour
+      // (/aujourdhui, qui lui sert sa vue dédiée), ses chantiers, rapports,
+      // incidents, ses documents à signer et son profil. Tout le reste est
+      // bloqué (y compris /dashboard et /accueil, redirigés ici).
       if (role === "CLIENT") {
         const clientAllowedRoots = [
-          "/dashboard",
+          "/aujourdhui",
           "/chantiers",
           "/rapports",
           "/incidents",
+          "/mes-documents",
           "/profil",
         ];
         const isClientAllowed = clientAllowedRoots.some(
           (r) => path === r || path.startsWith(r + "/")
         );
         if (!isClientAllowed) {
-          return NextResponse.redirect(new URL("/dashboard", request.nextUrl));
+          return NextResponse.redirect(new URL("/aujourdhui", request.nextUrl));
         }
       }
 

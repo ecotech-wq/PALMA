@@ -35,7 +35,7 @@ export default async function IncidentsListPage({
   const me = await requireAuth();
   if (me.isClient && !me.visibility.showIncidents) {
     const { redirect } = await import("next/navigation");
-    redirect("/dashboard");
+    redirect("/aujourdhui");
   }
   // Marque la liste comme lue pour cet utilisateur (badge sidebar →0)
   if (!me.isClient) {

@@ -180,7 +180,7 @@ export async function marquerPayesBulk(ids: string[]): Promise<number> {
   });
   const ouvrierIds = Array.from(new Set(paiements.map((p) => p.ouvrierId)));
   revalidatePath("/paie");
-  revalidatePath("/dashboard");
+  revalidatePath("/aujourdhui");
   for (const oid of ouvrierIds) {
     revalidatePath(`/ouvriers/${oid}`);
   }

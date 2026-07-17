@@ -19,11 +19,15 @@ import {
 /**
  * Hub des PV de réception. Liste tous les chantiers et affiche pour
  * chacun l'état de son PV (brouillon, envoyé client, signé, levée des
- * réserves). Réservé admin + conducteur de travaux + client.
+ * réserves). Réservé au pilotage (nav pilotOnly) ; le client signe SON PV
+ * depuis la fiche de son chantier, pas depuis ce hub.
+ * Audit 2026-07-17 : l'ancienne garde « if (isChef) » laissait passer
+ * OUVRIER et SOUS_TRAITANT (tous leurs flags à false). Le bon prédicat
+ * est l'inverse du droit, jamais l'énumération des rôles interdits.
  */
 export default async function PvReceptionHubPage() {
   const me = await requireAuth();
-  if (me.isChef) redirect("/dashboard");
+  if (!me.canPilot) redirect("/aujourdhui");
   const accessibleIds = await getAccessibleChantierIds(me);
 
   const chantiers = await db.chantier.findMany({

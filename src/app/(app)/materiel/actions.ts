@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { saveUploadedPhoto, deleteUploadedPhoto } from "@/lib/upload";
 import { requireAdminOrConducteur } from "@/lib/auth-helpers";
+import { nombreProtege } from "@/lib/visibilite-guards";
 
 const materielSchema = z.object({
   nomCommun: z.string().min(1, "Nom requis"),
@@ -14,12 +15,11 @@ const materielSchema = z.object({
   numeroSerie: z.string().optional().or(z.literal("")),
   statut: z.enum(["DISPO", "SORTI", "EN_LOCATION", "HS", "PERDU"]),
   possesseur: z.enum(["ENTREPRISE", "LOCATION", "PRET"]),
-  prixAchat: z.coerce.number().nonnegative().optional().nullable(),
   dateAchat: z.string().optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),
 });
 
-function parseMaterielForm(formData: FormData) {
+function parseMaterielForm(formData: FormData, prixAutorise: boolean) {
   const data = materielSchema.parse({
     nomCommun: formData.get("nomCommun"),
     marque: formData.get("marque"),
@@ -27,10 +27,20 @@ function parseMaterielForm(formData: FormData) {
     numeroSerie: formData.get("numeroSerie"),
     statut: formData.get("statut") || "DISPO",
     possesseur: formData.get("possesseur") || "ENTREPRISE",
-    prixAchat: formData.get("prixAchat") || null,
     dateAchat: formData.get("dateAchat"),
     notes: formData.get("notes"),
   });
+  // prixAchat : champ protégé NULLABLE (audit 2026-07-17). Absent du
+  // FormData ou appelant non autorisé -> undefined (Prisma conserve la
+  // valeur, un update sans le champ n'écrase plus le prix) ; vidé par un
+  // rôle autorisé -> null (effacement volontaire) ; sinon nombre validé.
+  const prixBrut = formData.get("prixAchat");
+  const prixAchat =
+    !prixAutorise || prixBrut === null
+      ? undefined
+      : prixBrut === ""
+        ? null
+        : nombreProtege(true, prixBrut);
   return {
     nomCommun: data.nomCommun,
     marque: data.marque || null,
@@ -38,15 +48,15 @@ function parseMaterielForm(formData: FormData) {
     numeroSerie: data.numeroSerie || null,
     statut: data.statut,
     possesseur: data.possesseur,
-    prixAchat: data.prixAchat ?? null,
+    prixAchat,
     dateAchat: data.dateAchat ? new Date(data.dateAchat) : null,
     notes: data.notes || null,
   };
 }
 
 export async function createMateriel(formData: FormData) {
-  await requireAdminOrConducteur();
-  const parsed = parseMaterielForm(formData);
+  const me = await requireAdminOrConducteur();
+  const parsed = parseMaterielForm(formData, me.canSeePrices);
   const photoFile = formData.get("photo") as File | null;
 
   let photoPath: string | null = null;
@@ -55,7 +65,7 @@ export async function createMateriel(formData: FormData) {
   }
 
   const created = await db.materiel.create({
-    data: { ...parsed, photo: photoPath },
+    data: { ...parsed, prixAchat: parsed.prixAchat ?? null, photo: photoPath },
   });
 
   revalidatePath("/materiel");
@@ -63,8 +73,8 @@ export async function createMateriel(formData: FormData) {
 }
 
 export async function updateMateriel(id: string, formData: FormData) {
-  await requireAdminOrConducteur();
-  const parsed = parseMaterielForm(formData);
+  const me = await requireAdminOrConducteur();
+  const parsed = parseMaterielForm(formData, me.canSeePrices);
   const photoFile = formData.get("photo") as File | null;
   const removePhoto = formData.get("removePhoto") === "1";
 

@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   LayoutDashboard,
+  LayoutGrid,
+  CalendarCheck,
   Hammer,
   Users,
   HardHat,
@@ -77,11 +79,20 @@ type NavGroup = {
   module?: string;
 };
 
-// Item solo (Accueil = le lanceur d'applications, toujours en haut)
-const dashboardItem: NavItem = {
+// Item solo « Aujourd'hui » : l'atterrissage (Ma journée), toujours en
+// premier, pour tous les rôles (le client y reçoit sa vue dédiée).
+const aujourdhuiItem: NavItem = {
+  href: "/aujourdhui",
+  label: "Aujourd'hui",
+  icon: CalendarCheck,
+};
+
+// Item solo « Accueil » : le lanceur d'applications (la grille), juste
+// sous Aujourd'hui. C'est l'ancienne entrée « Tableau de bord ».
+const accueilItem: NavItem = {
   href: "/accueil",
   label: "Accueil",
-  icon: LayoutDashboard,
+  icon: LayoutGrid,
 };
 
 // Item solo Messagerie — entrée principale du fil chantier (chat-first).
@@ -204,26 +215,34 @@ const groups: NavGroup[] = [
 // toucher à Messagerie ; Pointage reste à un tap dans le tiroir « Plus ».
 // Les rôles de TERRAIN (CHEF, OUVRIER) gardent Pointage : c'est leur geste
 // du matin et du soir.
+//
+// Arbitrage « Aujourd'hui / Accueil » (2026-07-17) : l'atterrissage devient
+// /aujourdhui ; il prend le premier onglet de la barre pour tous les rôles.
+// Le lanceur (Accueil, la grille) descend dans le tiroir « Plus » : sur
+// téléphone, on ouvre une app pour agir (messagerie, tâches, pointage),
+// pas pour contempler la grille ; elle reste à deux taps. Les 4e onglets
+// par rôle sont conservés (Paie admin, Planning conducteur, Rapports
+// chef/client) : la barre a cinq colonnes, autant les employer.
 const mobilePrimaryAdmin: NavItem[] = [
-  { href: "/accueil", label: "Accueil", icon: LayoutDashboard },
+  { href: "/aujourdhui", label: "Aujourd'hui", icon: CalendarCheck },
   { href: "/messagerie", label: "Messagerie", icon: MessageSquare },
-  { href: "/accueil#taches", label: "Tâches", icon: ListTodo },
+  { href: "/aujourdhui#taches", label: "Tâches", icon: ListTodo },
   { href: "/paie", label: "Paie", icon: Banknote, adminOnly: true },
 ];
 const mobilePrimaryConducteur: NavItem[] = [
-  { href: "/accueil", label: "Accueil", icon: LayoutDashboard },
+  { href: "/aujourdhui", label: "Aujourd'hui", icon: CalendarCheck },
   { href: "/messagerie", label: "Messagerie", icon: MessageSquare },
-  { href: "/accueil#taches", label: "Tâches", icon: ListTodo },
+  { href: "/aujourdhui#taches", label: "Tâches", icon: ListTodo },
   { href: "/planning", label: "Planning", icon: Calendar },
 ];
 const mobilePrimaryChef: NavItem[] = [
-  { href: "/accueil", label: "Accueil", icon: LayoutDashboard },
+  { href: "/aujourdhui", label: "Aujourd'hui", icon: CalendarCheck },
   { href: "/messagerie", label: "Messagerie", icon: MessageSquare },
   { href: "/pointage", label: "Pointage", icon: CheckSquare },
   { href: "/rapports", label: "Rapports", icon: FileText },
 ];
 const mobilePrimaryClient: NavItem[] = [
-  { href: "/accueil", label: "Accueil", icon: LayoutDashboard },
+  { href: "/aujourdhui", label: "Aujourd'hui", icon: CalendarCheck },
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
   { href: "/rapports", label: "Rapports", icon: FileText },
   { href: "/incidents", label: "Incidents", icon: AlertTriangle },
@@ -231,6 +250,9 @@ const mobilePrimaryClient: NavItem[] = [
 
 // Tout le reste, accessible via le bouton "Plus"
 const mobileMore: NavItem[] = [
+  // Le lanceur d'applications (la grille) : premier item du tiroir.
+  // Caché au client : le proxy le renvoie de /accueil vers /aujourdhui.
+  { href: "/accueil", label: "Accueil", icon: LayoutGrid, clientHidden: true },
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
   // Pointage : sorti de la barre primaire des pilotes (remplacé par
   // Tâches), il reste ici ; filtré automatiquement pour les rôles qui
@@ -266,7 +288,7 @@ const mobileMore: NavItem[] = [
 
 function BrandHeader({
   subtitle,
-  href = "/accueil",
+  href = "/aujourdhui",
 }: {
   subtitle?: string;
   href?: string;
@@ -541,7 +563,8 @@ export function DesktopSidebar({
       .filter((g) => g.items.length > 0);
   }, [isAdmin, isConducteur, canPilot, isClient, clientVisibility, modules]);
 
-  const isOnDashboard = pathname === "/accueil";
+  const isOnAujourdhui = pathname === "/aujourdhui";
+  const isOnAccueil = pathname === "/accueil";
   const isOnProfile = pathname?.startsWith("/profil");
   const isOnAdmin =
     pathname?.startsWith("/admin") || pathname?.startsWith("/parametres");
@@ -553,9 +576,9 @@ export function DesktopSidebar({
     >
       <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 shrink-0">
         <Link
-          href="/accueil"
+          href="/aujourdhui"
           className="flex items-center gap-3 min-w-0 hover:bg-slate-50 dark:hover:bg-slate-800 -mx-2 px-2 py-1 rounded-md transition flex-1"
-          title="Accueil"
+          title="Aujourd'hui"
         >
           <Image
             src={BRAND.logoIcon}
@@ -591,13 +614,24 @@ export function DesktopSidebar({
       </div>
 
       <nav className="flex-1 overflow-y-auto py-2 space-y-0.5">
-        {/* Tableau de bord — toujours en haut, isolé */}
+        {/* Aujourd'hui : l'atterrissage, toujours en premier */}
         <NavLeaf
-          href={dashboardItem.href}
-          label={dashboardItem.label}
-          icon={dashboardItem.icon}
-          active={isOnDashboard}
+          href={aujourdhuiItem.href}
+          label={aujourdhuiItem.label}
+          icon={aujourdhuiItem.icon}
+          active={isOnAujourdhui}
         />
+
+        {/* Accueil : le lanceur d'applications (la grille). Caché au
+            client, le proxy le renvoie de /accueil vers /aujourdhui. */}
+        {!isClient && (
+          <NavLeaf
+            href={accueilItem.href}
+            label={accueilItem.label}
+            icon={accueilItem.icon}
+            active={isOnAccueil}
+          />
+        )}
 
         {/* Messagerie — entrée principale du chat-first, cachée client */}
         {!isClient && (
@@ -972,7 +1006,7 @@ export function MobileTopBar({
       className="md:hidden sticky top-0 z-20 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-between gap-2"
       style={{ borderTop: "3px solid var(--space-accent, transparent)" }}
     >
-      <BrandHeader subtitle={userName} href="/accueil" />
+      <BrandHeader subtitle={userName} href="/aujourdhui" />
       <div className="flex items-center gap-1">
         <SearchTrigger variant="topbar" />
         {bell}

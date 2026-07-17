@@ -1,8 +1,10 @@
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { Card, CardBody } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CommandeForm } from "../CommandeForm";
 import { createCommande } from "../actions";
+import { requireAuth, espaceFilter } from "@/lib/auth-helpers";
 
 export default async function NouvelleCommandePage({
   searchParams,
@@ -10,6 +12,10 @@ export default async function NouvelleCommandePage({
   searchParams: Promise<{ chantierId?: string; demandeId?: string }>;
 }) {
   const { chantierId, demandeId } = await searchParams;
+  // Garde de page + bornage d'espace (audit 2026-07-17) : le sélecteur de
+  // chantiers listait toutes les entreprises.
+  const me = await requireAuth();
+  if (!me.canPilot) redirect("/aujourdhui");
 
   // Si on vient d'une demande de matériel approuvée, on pré-remplit le
   // formulaire (chantier + ligne avec description/quantité, fournisseur).
@@ -44,7 +50,10 @@ export default async function NouvelleCommandePage({
   }
 
   const chantiers = await db.chantier.findMany({
-    where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] } },
+    where: {
+      statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE"] },
+      ...espaceFilter(me),
+    },
     select: { id: true, nom: true },
     orderBy: { nom: "asc" },
   });

@@ -243,8 +243,13 @@ export default async function ChantierDetailPage({
                   dateDebut: chantier.dateDebut,
                   dateFin: chantier.dateFin,
                   statut: chantier.statut,
-                  budgetEspeces: String(chantier.budgetEspeces),
-                  budgetVirement: String(chantier.budgetVirement),
+                  // Audit 2026-07-17 (C1) : les budgets ne quittent le serveur
+                  // que pour les rôles autorisés. ChantierForm est un composant
+                  // client : toute valeur passée ici part dans le payload RSC,
+                  // même si le champ n'est pas rendu. L'action serveur conserve
+                  // les valeurs en base quand les champs sont absents.
+                  budgetEspeces: me.canSeePrices ? String(chantier.budgetEspeces) : null,
+                  budgetVirement: me.canSeePrices ? String(chantier.budgetVirement) : null,
                   chefId: chantier.chefId,
                 }}
                 chefs={chefs}

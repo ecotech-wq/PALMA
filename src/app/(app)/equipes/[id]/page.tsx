@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Trash2, User, Plus, Wrench } from "lucide-react";
 import { db } from "@/lib/db";
 import { PhotoVignette } from "@/components/PhotoVignette";
@@ -26,6 +26,10 @@ export default async function EquipeDetailPage({
 }) {
   const { id } = await params;
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17, M1) : le layout ne protège pas la page
+  // (rendu parallèle). Composition d'équipe et actions de détachement =
+  // pilotage, même verrou que /equipes.
+  if (!me.canPilot) redirect("/aujourdhui");
   // Select de chantier borné aux chantiers pilotables (voir /equipes).
   const accessibleIds = await getAccessibleChantierIds(me);
   const borneChantier =

@@ -107,7 +107,7 @@ export async function savePointage(date: string, formData: FormData) {
   });
 
   revalidatePath("/pointage");
-  revalidatePath("/dashboard");
+  revalidatePath("/aujourdhui");
 }
 
 // =====================================================
@@ -147,7 +147,7 @@ export async function updatePointage(id: string, formData: FormData) {
 
   revalidatePath("/pointage");
   revalidatePath(`/ouvriers/${existing.ouvrierId}`);
-  revalidatePath("/dashboard");
+  revalidatePath("/aujourdhui");
 }
 
 /**
@@ -305,7 +305,7 @@ export async function savePointageBatch(formData: FormData) {
 
   revalidatePath("/pointage");
   revalidatePath(`/ouvriers/${data.ouvrierId}`);
-  revalidatePath("/dashboard");
+  revalidatePath("/aujourdhui");
 }
 
 // =====================================================
@@ -409,7 +409,7 @@ export async function addPointagesRange(formData: FormData) {
 
   revalidatePath("/pointage");
   revalidatePath(`/ouvriers/${data.ouvrierId}`);
-  revalidatePath("/dashboard");
+  revalidatePath("/aujourdhui");
 }
 
 export async function deletePointage(id: string) {
@@ -430,5 +430,5 @@ export async function deletePointage(id: string) {
 
   revalidatePath("/pointage");
   revalidatePath(`/ouvriers/${existing.ouvrierId}`);
-  revalidatePath("/dashboard");
+  revalidatePath("/aujourdhui");
 }

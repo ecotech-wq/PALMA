@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Plus, Trash2, ExternalLink, FileText, Hammer } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
@@ -58,6 +58,10 @@ export default async function FinanceChantierPage({
 }) {
   const { chantierId } = await params;
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17) : marché, devis, situations, factures,
+  // encaissements = montants partout. Pilotes seulement (le CLIENT a sa vue
+  // dans /mes-documents), puis frontière chantier/espace.
+  if (!me.canSeePrices) redirect("/aujourdhui");
   await requireChantierAccess(me, chantierId);
 
   const chantier = await db.chantier.findUnique({

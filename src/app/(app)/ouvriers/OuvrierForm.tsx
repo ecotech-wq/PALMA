@@ -14,7 +14,8 @@ type Ouvrier = {
   telephone: string | null;
   photo: string | null;
   typeContrat: string;
-  tarifBase: unknown;
+  /** Null pour les non-admins : le tarif ne quitte jamais le serveur. */
+  tarifBase: string | null;
   modePaie: string;
   actif: boolean;
   equipeId: string | null;
@@ -163,7 +164,11 @@ export function OuvrierForm({
             <option value="FORFAIT">Forfait</option>
           </Select>
         </Field>
-        {isAdmin ? (
+        {/* Tarif : rendu SEULEMENT pour l'admin. Plus de hidden input pour
+            les autres (audit 2026-07-17 : la valeur réelle partait dans le
+            DOM). Champ absent du FormData -> l'action serveur conserve la
+            valeur existante en base. */}
+        {isAdmin && (
           <Field
             label={tarifLabels[typeContrat] ?? "Tarif (€)"}
             required
@@ -178,12 +183,6 @@ export function OuvrierForm({
               defaultValue={ouvrier?.tarifBase ? String(ouvrier.tarifBase) : ""}
             />
           </Field>
-        ) : (
-          <input
-            type="hidden"
-            name="tarifBase"
-            value={ouvrier?.tarifBase ? String(ouvrier.tarifBase) : "0"}
-          />
         )}
         <Field label="Mode de paie habituel" required hint="Quand l'ouvrier est payé en pratique">
           <Select name="modePaie" defaultValue={ouvrier?.modePaie ?? "MOIS"} required>

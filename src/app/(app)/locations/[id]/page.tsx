@@ -1,6 +1,11 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
+import {
+  requireAuth,
+  requireChantierAccess,
+  espaceFilter,
+} from "@/lib/auth-helpers";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -17,15 +22,27 @@ export default async function LocationDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Gardes (audit 2026-07-17) : la page servait coûts jour et totaux sans
+  // aucune garde ni frontière d'espace, par URL forgée. Prix : ADMIN +
+  // CONDUCTEUR ; puis adhésion/espace du chantier rattaché (s'il existe :
+  // une location sans chantier n'est attribuable à aucune entreprise).
+  const me = await requireAuth();
+  if (!me.canSeePrices) redirect("/aujourdhui");
   const [location, chantiers] = await Promise.all([
     db.locationPret.findUnique({ where: { id } }),
     db.chantier.findMany({
-      where: { statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE", "TERMINE"] } },
+      where: {
+        statut: { in: ["PLANIFIE", "EN_COURS", "PAUSE", "TERMINE"] },
+        ...espaceFilter(me),
+      },
       select: { id: true, nom: true },
       orderBy: { nom: "asc" },
     }),
   ]);
   if (!location) notFound();
+  if (location.chantierId) {
+    await requireChantierAccess(me, location.chantierId);
+  }
 
   const updateAction = updateLocation.bind(null, id);
   const deleteAction = deleteLocation.bind(null, id);

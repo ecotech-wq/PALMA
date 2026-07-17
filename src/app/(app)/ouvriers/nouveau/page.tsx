@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { Card, CardBody } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -7,6 +8,8 @@ import { requireAuth, espaceFilter } from "@/lib/auth-helpers";
 
 export default async function NouvelOuvrierPage() {
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17) : création réservée au pilotage.
+  if (!me.canPilot) redirect("/aujourdhui");
   const equipes = await db.equipe.findMany({
     where: espaceFilter(me),
     select: { id: true, nom: true },

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Plus, Users, Hammer } from "lucide-react";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/Button";
@@ -12,6 +13,9 @@ import { requireAuth, espaceFilter, getAccessibleChantierIds } from "@/lib/auth-
 
 export default async function EquipesListPage() {
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17) : le layout ne protège pas la page
+  // (rendu parallèle). Gestion des équipes = pilotage.
+  if (!me.canPilot) redirect("/aujourdhui");
   // Le Select de chantier ne propose que les chantiers PILOTABLES (un
   // conducteur n'attache une équipe qu'à un chantier dont il est membre :
   // requireChantierManager refuserait sinon). Un admin voit tout l'espace.

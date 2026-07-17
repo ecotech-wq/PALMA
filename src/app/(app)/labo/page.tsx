@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   CalendarClock,
   ChevronRight,
@@ -70,6 +71,9 @@ export default async function LaboPage({
 }) {
   const sp = await searchParams;
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17) : le layout labo a la garde canPilot
+  // mais ne protège pas la page elle-même (rendu parallèle Next.js).
+  if (!me.canPilot) redirect("/aujourdhui");
 
   // Filtre chantier (GET) validé côté serveur : un id hors périmètre est
   // ignoré, même convention que le planning.

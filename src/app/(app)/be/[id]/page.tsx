@@ -21,7 +21,7 @@ export default async function EtudePage({
 }) {
   const { id } = await params;
   const me = await requireAuth();
-  if (me.isClient) redirect("/dashboard");
+  if (me.isClient) redirect("/aujourdhui");
   await requireChantierAccess(me, id);
 
   const etude = await db.chantier.findUnique({

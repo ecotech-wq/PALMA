@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Check, X, Trash2, Save, Undo2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -34,6 +34,10 @@ export default async function PaiementDetailPage({
 }) {
   const { id } = await params;
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17) : la garde du layout ne protège pas
+  // la page elle-même (rendu parallèle Next.js). Sans elle, le bulletin
+  // (net, avances, retenues) était lisible par URL par tout rôle.
+  if (!me.canSeePaie) redirect("/aujourdhui");
   const paiement = await db.paiement.findUnique({
     where: { id },
     include: {

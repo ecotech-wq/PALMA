@@ -15,7 +15,7 @@ export default async function PaieLayout({
   children: React.ReactNode;
 }) {
   const me = await requireAuth();
-  if (!me.canSeePaie) redirect("/dashboard");
-  if (!me.modules.includes(MODULES.chantier)) redirect("/dashboard");
+  if (!me.canSeePaie) redirect("/aujourdhui");
+  if (!me.modules.includes(MODULES.chantier)) redirect("/aujourdhui");
   return <>{children}</>;
 }

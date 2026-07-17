@@ -99,7 +99,7 @@ export default async function PaieListPage({
 }) {
   // Réservé aux admins (la paie contient salaires, avances, retenues)
   const me = await requireAuth();
-  if (!me.canSeePaie) redirect("/dashboard");
+  if (!me.canSeePaie) redirect("/aujourdhui");
 
   const {
     month: monthParam,

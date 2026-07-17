@@ -13,8 +13,9 @@ type Chantier = {
   dateDebut: Date | null;
   dateFin: Date | null;
   statut: string;
-  budgetEspeces: unknown;
-  budgetVirement: unknown;
+  /** Null pour les rôles sans canSeePrices : le budget ne quitte jamais le serveur. */
+  budgetEspeces: string | null;
+  budgetVirement: string | null;
   chefId: string | null;
 };
 
@@ -124,7 +125,11 @@ export function ChantierForm({
         </Field>
       </div>
 
-      {isAdmin ? (
+      {/* Budgets : rendus SEULEMENT pour les rôles autorisés. Plus aucun
+          hidden input pour les autres (audit 2026-07-17 : la valeur réelle
+          partait dans le DOM). Quand les champs sont absents du FormData,
+          l'action serveur conserve les valeurs existantes en base. */}
+      {isAdmin && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Budget espèces (€)" hint="Cash prévu">
             <Input
@@ -145,20 +150,6 @@ export function ChantierForm({
             />
           </Field>
         </div>
-      ) : (
-        // Champs cachés pour préserver les valeurs lors d'un update CHEF
-        <>
-          <input
-            type="hidden"
-            name="budgetEspeces"
-            value={chantier?.budgetEspeces ? String(chantier.budgetEspeces) : "0"}
-          />
-          <input
-            type="hidden"
-            name="budgetVirement"
-            value={chantier?.budgetVirement ? String(chantier.budgetVirement) : "0"}
-          />
-        </>
       )}
 
       <div className="flex justify-end gap-2 pt-2">

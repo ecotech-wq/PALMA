@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { Card, CardBody } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -72,6 +73,9 @@ export default async function NouveauPaiementPage({
 }) {
   const sp = await searchParams;
   const me = await requireAuth();
+  // Garde de page (audit 2026-07-17) : le layout ne protège pas la page
+  // (rendu parallèle). L'aperçu calcule tarif, avances et net : admin seul.
+  if (!me.canSeePaie) redirect("/aujourdhui");
   const ouvriers = await db.ouvrier.findMany({
     where: { actif: true, ...espaceFilter(me) },
     select: { id: true, nom: true, prenom: true, typeContrat: true, tarifBase: true },
