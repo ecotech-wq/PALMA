@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { Check, User, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/Toast";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import { cn } from "@/lib/utils";
 
 type Ouvrier = {
@@ -251,8 +252,7 @@ function EquipeSection({
                 <li key={o.id} className="p-3 flex items-center gap-3">
                   <div className="w-9 h-9 shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
                     {o.photo ? (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img src={o.photo} alt={fullName} loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
+                      <PhotoVignette url={o.photo} alt={fullName} className="absolute inset-0 w-full h-full object-cover" />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500">
                         <User size={16} />

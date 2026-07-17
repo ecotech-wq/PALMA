@@ -11,6 +11,7 @@ import {
   requireChantierAccess,
 } from "@/lib/auth-helpers";
 import { JournalTimeline } from "@/app/(app)/journal/JournalTimeline";
+import { parseDocumentsMessage } from "@/lib/pieces-jointes";
 
 const dateFmt = new Intl.DateTimeFormat("fr-FR", {
   weekday: "long",
@@ -121,6 +122,8 @@ export default async function JournalChantierPage({
               texte: m.texte,
               photos: m.photos,
               videos: m.videos,
+              audios: m.audios,
+              documents: parseDocumentsMessage(m.documents),
               hiddenFromClient: m.hiddenFromClient,
               incidentId: m.incidentId,
               demandeId: m.demandeId,

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CheckCircle2, RotateCcw, Trash2, Play } from "lucide-react";
 import { db } from "@/lib/db";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -144,11 +145,9 @@ export default async function IncidentDetailPage({
                         rel="noreferrer"
                         className="relative aspect-square rounded-md overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:ring-2 hover:ring-brand-300 transition"
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={url}
+                        <PhotoVignette
+                          url={url}
                           alt={`Photo ${idx + 1}`}
-                          loading="lazy"
                           className="absolute inset-0 w-full h-full object-cover"
                         />
                       </a>

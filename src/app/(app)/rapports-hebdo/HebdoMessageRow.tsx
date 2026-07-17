@@ -13,6 +13,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import { toggleMessageIncluded } from "./actions";
 import {
   toggleHiddenFromClient,
@@ -192,11 +193,9 @@ export function HebdoMessageRow({
                 rel="noreferrer"
                 className="relative aspect-square rounded overflow-hidden bg-slate-100 dark:bg-slate-800"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={url}
+                <PhotoVignette
+                  url={url}
                   alt={`Photo ${idx + 1}`}
-                  loading="lazy"
                   className="absolute inset-0 w-full h-full object-cover"
                 />
               </a>

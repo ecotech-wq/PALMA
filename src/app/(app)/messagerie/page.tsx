@@ -84,6 +84,8 @@ export default async function MessagerieHubPage() {
           texte: true,
           photos: true,
           videos: true,
+          audios: true,
+          documents: true,
           createdAt: true,
           author: { select: { name: true } },
         },
@@ -158,7 +160,11 @@ export default async function MessagerieHubPage() {
                   ? `📷 ${last.photos.length} photo${last.photos.length > 1 ? "s" : ""}`
                   : last.videos.length > 0
                     ? `🎥 vidéo`
-                    : "[média]")
+                    : last.audios.length > 0
+                      ? "Mémo vocal"
+                      : Array.isArray(last.documents) && last.documents.length > 0
+                        ? "Pièce jointe"
+                        : "[média]")
               : null;
             const typeLabel = last
               ? (

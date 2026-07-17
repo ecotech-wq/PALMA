@@ -228,6 +228,7 @@ function DisplayRow({
             width={400}
             height={400}
             loading="lazy"
+            decoding="async"
             className="rounded-md border border-slate-200 dark:border-slate-800 max-w-full h-auto object-contain bg-slate-50 dark:bg-slate-900"
           />
           {onRemovePhoto && (

@@ -1,7 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
+import { TAILLE_PAGE_MESSAGES } from "@/features/messaging/core/pagination";
+import { PhotoVignette } from "@/components/PhotoVignette";
+import { AudiosMessage, DocumentsMessage } from "@/components/MediasMessage";
+import type { DocumentMessage } from "@/lib/pieces-jointes";
 
 /* -----------------------------------------------------------------------
  *  Hook de polling live sur un chantier. Toutes les `intervalMs`, on
@@ -65,6 +75,7 @@ import {
   EyeOff,
   Eye,
   ExternalLink,
+  History,
   Search,
   X as XIcon,
   CheckCircle2,
@@ -110,6 +121,10 @@ type ChatMessage = {
   texte: string | null;
   photos: string[];
   videos: string[];
+  // Optionnels : messages antérieurs aux colonnes audios/documents ou
+  // renvoyés par une API pas encore à jour
+  audios?: string[];
+  documents?: DocumentMessage[];
   hiddenFromClient: boolean;
   incidentId: string | null;
   demandeId: string | null;
@@ -311,8 +326,22 @@ type DemandeInfo = {
   unite: string | null;
 };
 
+/** Premier ancêtre défilable (le CardBody overflow-y-auto de la page). */
+function getScrollParent(el: HTMLElement | null): HTMLElement | null {
+  let node = el?.parentElement ?? null;
+  while (node) {
+    const oy = window.getComputedStyle(node).overflowY;
+    if (oy === "auto" || oy === "scroll") return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 export function ChantierFeed({
   chantierId,
+  canalId,
+  canalGeneral,
+  hasOlder = false,
   messages,
   currentUserId,
   viewerRole,
@@ -322,6 +351,9 @@ export function ChantierFeed({
   photoMeta = {},
 }: {
   chantierId: string;
+  canalId: string;
+  canalGeneral: boolean;
+  hasOlder?: boolean;
   messages: ChatMessage[];
   currentUserId: string;
   viewerRole: TagRole;
@@ -333,16 +365,133 @@ export function ChantierFeed({
   // Polling live : refresh auto quand un nouveau message arrive
   useMessagerieLivePoll(chantierId);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<string>("ALL");
   // Recherche repliée par défaut : l'écran appartient aux messages.
   const [searchOpen, setSearchOpen] = useState(false);
-  // Résultats étendus chargés via API (au-delà des 14 jours)
+  // Résultats étendus chargés via API (au-delà de la première page)
   const [extendedResults, setExtendedResults] = useState<ChatMessage[]>([]);
   const [extendedSearching, setExtendedSearching] = useState(false);
   const lastExtendedQueryRef = useRef<string>("");
 
+  /* ----- Pagination vers le passé (« Messages précédents ») ----------- */
+  // Pages plus anciennes chargées à la demande, en ordre ascendant.
+  const [olderMessages, setOlderMessages] = useState<ChatMessage[]>([]);
+  const [olderHasMore, setOlderHasMore] = useState(hasOlder);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  // Métadonnées EXIF des photos des pages anciennes (celles de la première
+  // page arrivent par la prop photoMeta)
+  const [extraPhotoMeta, setExtraPhotoMeta] = useState<
+    Record<string, PhotoMeta>
+  >({});
+  // Ancre de défilement : posée avant l'insertion d'une page ancienne,
+  // consommée juste après le rendu pour que le fil ne saute pas.
+  const scrollAnchorRef = useRef<{ height: number; top: number } | null>(null);
+  const prevMessagesRef = useRef<ChatMessage[]>(messages);
+
   const isFiltering = query.trim() !== "" || filter !== "ALL";
+
+  // Quand le polling rafraîchit la page, la fenêtre « 30 plus récents »
+  // glisse : les messages qui en sortent par le bas sont conservés côté
+  // client pour que le fil déjà lu ne se troue pas. Un message SUPPRIMÉ,
+  // lui, reste dans la fenêtre temporelle : il n'est pas conservé.
+  // Comparaison LARGE (<=) : un message créé dans la même milliseconde
+  // que la borne basse de la fenêtre peut en sortir lui aussi (ordre
+  // composite createdAt puis id) ; le strict le perdrait de l'affichage.
+  useEffect(() => {
+    const prev = prevMessagesRef.current;
+    if (prev === messages) return;
+    prevMessagesRef.current = messages;
+    if (messages.length < TAILLE_PAGE_MESSAGES) return; // fenêtre non pleine
+    const oldestNew =
+      messages.length > 0
+        ? new Date(messages[0].createdAt).getTime()
+        : Infinity;
+    const newIds = new Set(messages.map((m) => m.id));
+    const dropped = prev.filter(
+      (m) =>
+        !newIds.has(m.id) && new Date(m.createdAt).getTime() <= oldestNew
+    );
+    if (dropped.length === 0) return;
+    setOlderMessages((cur) => {
+      const curIds = new Set(cur.map((m) => m.id));
+      const add = dropped.filter((m) => !curIds.has(m.id));
+      if (add.length === 0) return cur;
+      // Tri composite (createdAt puis id) : stable même quand deux
+      // messages partagent la même milliseconde.
+      return [...cur, ...add].sort((a, b) => {
+        const d =
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        if (d !== 0) return d;
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+    });
+  }, [messages]);
+
+  async function chargerMessagesPrecedents() {
+    if (loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const oldest = olderMessages[0] ?? messages[0];
+      const before = oldest
+        ? new Date(oldest.createdAt).toISOString()
+        : new Date().toISOString();
+      // Curseur composite (createdAt, id) : sans beforeId, deux messages
+      // créés dans la même milliseconde à la frontière d'une page
+      // pourraient être sautés ou dupliqués.
+      const beforeId = oldest ? `&beforeId=${encodeURIComponent(oldest.id)}` : "";
+      const container = getScrollParent(rootRef.current);
+      scrollAnchorRef.current = container
+        ? { height: container.scrollHeight, top: container.scrollTop }
+        : null;
+      const res = await fetch(
+        `/api/messagerie/${encodeURIComponent(chantierId)}/history?before=${encodeURIComponent(
+          before
+        )}${beforeId}&canal=${encodeURIComponent(canalId)}&general=${canalGeneral ? "1" : "0"}`,
+        { cache: "no-store" }
+      );
+      if (res.ok) {
+        const data = (await res.json()) as {
+          messages: ChatMessage[];
+          hasMore: boolean;
+          photoMeta: Record<string, PhotoMeta>;
+        };
+        setOlderMessages((cur) => {
+          const curIds = new Set(cur.map((m) => m.id));
+          const add = data.messages.filter((m) => !curIds.has(m.id));
+          return [...add, ...cur];
+        });
+        setOlderHasMore(data.hasMore);
+        setExtraPhotoMeta((cur) => ({ ...cur, ...data.photoMeta }));
+      }
+    } catch {
+      // silencieux : l'utilisateur peut réessayer
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
+  // Restaure la position de lecture après l'insertion d'une page ancienne
+  useLayoutEffect(() => {
+    const anchor = scrollAnchorRef.current;
+    if (!anchor) return;
+    scrollAnchorRef.current = null;
+    const container = getScrollParent(rootRef.current);
+    if (container) {
+      container.scrollTop = container.scrollHeight - anchor.height + anchor.top;
+    }
+  }, [olderMessages]);
+
+  // Fil complet affiché : pages anciennes + fenêtre serveur (dédupliquée)
+  const olderIds = new Set(olderMessages.map((m) => m.id));
+  const allMessages =
+    olderMessages.length > 0
+      ? [...olderMessages, ...messages.filter((m) => !olderIds.has(m.id))]
+      : messages;
+
+  // Métadonnées photos : première page (prop) + pages anciennes (état)
+  const metaCombinee = { ...photoMeta, ...extraPhotoMeta };
 
   // Reset des résultats étendus quand la query change
   useEffect(() => {
@@ -357,11 +506,11 @@ export function ChantierFeed({
     setExtendedSearching(true);
     try {
       // Cherche STRICTEMENT plus ancien que le plus vieux message déjà chargé
-      // pour ne pas doublonner
-      const before =
-        messages.length > 0
-          ? new Date(messages[0].createdAt).toISOString()
-          : new Date().toISOString();
+      // (pages précédentes comprises) pour ne pas doublonner
+      const oldest = olderMessages[0] ?? messages[0];
+      const before = oldest
+        ? new Date(oldest.createdAt).toISOString()
+        : new Date().toISOString();
       const res = await fetch(
         `/api/messagerie/${encodeURIComponent(chantierId)}/search?q=${encodeURIComponent(
           query.trim()
@@ -380,8 +529,8 @@ export function ChantierFeed({
     }
   }
 
-  // Filtrage côté client (volume modeste, 14 derniers jours)
-  const visibleMessages = messages.filter((m) => {
+  // Filtrage côté client (volume modeste : les pages chargées)
+  const visibleMessages = allMessages.filter((m) => {
     if (filter !== "ALL") {
       const inFilter = FILTERS.find((f) => f.key === filter)?.types.includes(
         m.type
@@ -396,14 +545,20 @@ export function ChantierFeed({
     return true;
   });
 
-  // Auto-scroll sur le dernier message — sauf en mode filtre/recherche
-  // (on laisse l'utilisateur lire ses résultats sans saut surprise)
+  // Auto-scroll sur le dernier message : au montage et quand un NOUVEAU
+  // message arrive en bas du fil. Clé : l'id du dernier message, pas la
+  // longueur, pour que le chargement de pages anciennes (en haut) ne
+  // renvoie pas l'utilisateur en bas. Pas de saut en mode filtre/recherche.
+  const lastId = messages.length > 0 ? messages[messages.length - 1].id : null;
+  const lastSeenIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (isFiltering) return;
+    if (lastSeenIdRef.current === lastId) return;
+    lastSeenIdRef.current = lastId;
     bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
-  }, [messages.length, isFiltering]);
+  }, [lastId, isFiltering]);
 
-  if (messages.length === 0) {
+  if (allMessages.length === 0) {
     return (
       <div className="p-10 text-center text-sm text-slate-500 dark:text-slate-400 italic">
         Aucun message sur ce canal pour l&apos;instant. Écris le premier
@@ -427,7 +582,7 @@ export function ChantierFeed({
   }
 
   return (
-    <div className="space-y-4 p-3">
+    <div ref={rootRef} className="space-y-4 p-3">
       {/* Recherche repliée : une loupe flottante qui suit le défilement,
           sans prendre une ligne au fil. Dépliée : champ + filtres + X. */}
       {!searchOpen ? (
@@ -500,7 +655,8 @@ export function ChantierFeed({
             <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400">
               <span>
                 {visibleMessages.length} résultat
-                {visibleMessages.length > 1 ? "s" : ""} sur les 14 derniers jours
+                {visibleMessages.length > 1 ? "s" : ""} parmi les messages
+                chargés
               </span>
               {query.trim().length >= 2 && (
                 <button
@@ -519,6 +675,23 @@ export function ChantierFeed({
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Charger l'historique : une page de 30 de plus vers le passé.
+          Masqué en mode recherche (le lien « Chercher dans tout
+          l'historique » couvre ce besoin). */}
+      {olderHasMore && !isFiltering && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={chargerMessagesPrecedents}
+            disabled={loadingOlder}
+            className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+          >
+            <History size={12} />
+            {loadingOlder ? "Chargement…" : "Messages précédents"}
+          </button>
         </div>
       )}
 
@@ -550,7 +723,7 @@ export function ChantierFeed({
                 demandeInfo={m.demandeId ? demandeInfo[m.demandeId] : undefined}
                 currentUserId={currentUserId}
                 viewerRole={viewerRole}
-                photoMeta={photoMeta}
+                photoMeta={metaCombinee}
               />
             ))}
           </ul>
@@ -577,7 +750,7 @@ export function ChantierFeed({
                 demandeInfo={m.demandeId ? demandeInfo[m.demandeId] : undefined}
                 currentUserId={currentUserId}
                 viewerRole={viewerRole}
-                photoMeta={photoMeta}
+                photoMeta={metaCombinee}
               />
             ))}
           </ul>
@@ -803,11 +976,9 @@ function MessageBubble({
                     className="relative w-20 h-20 rounded overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 group/photo"
                     title={geo ? "Photo géolocalisée — clic pour voir + carte" : "Voir en plus grand"}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={url}
+                    <PhotoVignette
+                      url={url}
                       alt={`Photo ${i + 1}`}
-                      loading="lazy"
                       className="w-full h-full object-cover"
                     />
                     {geo && (
@@ -821,7 +992,7 @@ function MessageBubble({
             </div>
           )}
 
-          {/* Vidéos */}
+          {/* Vidéos (servies telles quelles, sans transcodage) */}
           {msg.videos.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {msg.videos.map((url, i) => (
@@ -835,6 +1006,12 @@ function MessageBubble({
               ))}
             </div>
           )}
+
+          {/* Mémos vocaux */}
+          <AudiosMessage audios={msg.audios ?? []} />
+
+          {/* Pièces jointes documentaires */}
+          <DocumentsMessage documents={msg.documents ?? []} />
 
           {/* Réactions existantes + bouton ajout */}
           {(grouped.size > 0 || pickerOpen) && (

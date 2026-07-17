@@ -17,10 +17,17 @@ import {
   PackageOpen,
   PackageCheck,
   Video,
+  Mic,
   Image as ImageIcon,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
+import { EnregistreurAudio } from "@/components/EnregistreurAudio";
+import {
+  ACCEPT_DOCUMENTS,
+  formatEchecsUpload,
+  formatTailleFichier,
+} from "@/lib/pieces-jointes";
 import { postChantierMessage } from "./actions";
 
 type Materiel = { id: string; nomCommun: string; statut: string };
@@ -149,6 +156,7 @@ export function ChantierComposer({
   const router = useRouter();
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const docRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [pending, startTransition] = useTransition();
@@ -233,11 +241,39 @@ export function ChantierComposer({
 
   function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const list = Array.from(e.target.files ?? []);
-    setFiles(list);
+    // Ajout (pas remplacement) : on peut cumuler photos ET documents
+    // avant l'envoi. L'input est vidé pour pouvoir re-choisir le même
+    // fichier après un retrait.
+    setFiles((prev) => [...prev, ...list]);
+    if (e.target) e.target.value = "";
   }
 
   function removeFile(idx: number) {
     setFiles((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  /** Envoi immédiat d'un mémo vocal, comme un message à part entière. */
+  function envoyerAudio(fichier: File) {
+    const fd = new FormData();
+    fd.set("chantierId", chantierId);
+    if (canalId) fd.set("canalId", canalId);
+    fd.set("category", "NOTE");
+    fd.set("texte", "");
+    if (canHideFromClient && hiddenFromClient) fd.set("hiddenFromClient", "1");
+    fd.append("medias", fichier);
+    startTransition(async () => {
+      try {
+        const res = await postChantierMessage(fd);
+        if (res.echecs.length > 0) {
+          toast.error(formatEchecsUpload(res.echecs));
+        } else {
+          toast.success("Mémo vocal envoyé");
+        }
+        router.refresh();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Erreur");
+      }
+    });
   }
 
   function submit(e: React.FormEvent) {
@@ -287,8 +323,14 @@ export function ChantierComposer({
 
     startTransition(async () => {
       try {
-        await postChantierMessage(fd);
-        toast.success(`${meta.label} envoyé`);
+        const res = await postChantierMessage(fd);
+        if (res.echecs.length > 0) {
+          // Le message est parti, mais des pièces jointes ont été
+          // refusées (taille, extension...) : on le dit clairement.
+          toast.error(`${meta.label} envoyé, mais ${formatEchecsUpload(res.echecs)}`);
+        } else {
+          toast.success(`${meta.label} envoyé`);
+        }
         reset();
         setCategory("NOTE");
         router.refresh();
@@ -304,7 +346,7 @@ export function ChantierComposer({
   return (
     <form
       onSubmit={submit}
-      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm"
+      className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm"
     >
       {/* Bandeau catégorie typée : rappel + fermeture d'un X */}
       {isTyped && (
@@ -478,10 +520,19 @@ export function ChantierComposer({
             >
               {f.type.startsWith("video/") ? (
                 <Video size={12} className="text-slate-500" />
-              ) : (
+              ) : f.type.startsWith("audio/") ? (
+                <Mic size={12} className="text-slate-500" />
+              ) : f.type.startsWith("image/") ? (
                 <ImageIcon size={12} className="text-slate-500" />
+              ) : (
+                <FileText size={12} className="text-slate-500" />
               )}
               <span className="truncate max-w-[150px]">{f.name}</span>
+              {f.size > 0 && (
+                <span className="text-[10px] text-slate-400">
+                  {formatTailleFichier(f.size)}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => removeFile(i)}
@@ -612,6 +663,33 @@ export function ChantierComposer({
           onChange={handleFiles}
           className="hidden"
         />
+        {/* Documents (trombone) : mêmes extensions que la GED chantier */}
+        <input
+          ref={docRef}
+          type="file"
+          accept={ACCEPT_DOCUMENTS}
+          multiple
+          onChange={handleFiles}
+          className="hidden"
+        />
+
+        {/* Mémo vocal : bouton micro 44 px, panneau au-dessus de la barre */}
+        <EnregistreurAudio
+          onEnvoyer={envoyerAudio}
+          disabled={pending}
+          envoiEnCours={pending}
+        />
+
+        {/* Pièce jointe document */}
+        <button
+          type="button"
+          onClick={() => docRef.current?.click()}
+          aria-label="Joindre un document"
+          title="Joindre un document (PDF, Office, DWG...)"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+        >
+          <Paperclip size={18} />
+        </button>
 
         <textarea
           ref={textareaRef}

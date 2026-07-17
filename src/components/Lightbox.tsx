@@ -152,6 +152,7 @@ export function Lightbox({
             <img
               src={current}
               alt=""
+              decoding="async"
               draggable={false}
               className="max-w-full max-h-[90vh] object-contain select-none"
             />

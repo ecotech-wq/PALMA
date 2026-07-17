@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
 import {
@@ -224,9 +225,8 @@ export function ReserveForm({
           <div className="flex flex-wrap gap-2">
             {existingPhotos.map((url) => (
               <div key={url} className="relative group">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={url}
+                <PhotoVignette
+                  url={url}
                   alt="Photo réserve"
                   className="w-16 h-16 object-cover rounded border border-slate-200 dark:border-slate-800"
                 />

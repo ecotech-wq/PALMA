@@ -5,6 +5,10 @@ import sharp from "sharp";
 import exifr from "exifr";
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
+import {
+  EXTENSIONS_AUDIO,
+  EXTENSIONS_DOCUMENTS,
+} from "@/lib/pieces-jointes";
 
 const UPLOADS_ROOT = path.join(process.cwd(), "public", "uploads");
 
@@ -84,6 +88,19 @@ export async function saveUploadedPhoto(
     .webp({ quality: 82 })
     .toFile(fullPath);
 
+  // Miniature 320 px à côté de l'original : les grilles et vignettes la
+  // chargent à la place du 1280 px (voir lib/photos.ts et <PhotoVignette>).
+  // Best-effort : si la génération échoue, l'UI retombe sur l'original.
+  try {
+    await sharp(buffer)
+      .rotate()
+      .resize(320, 320, { fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 70 })
+      .toFile(path.join(dir, `${id}.thumb.webp`));
+  } catch (e) {
+    console.error("Génération de la miniature échouée:", e);
+  }
+
   const url = `/uploads/${folder}/${filename}`;
 
   // Persiste les métadonnées si on a trouvé quelque chose d'utile.
@@ -136,13 +153,13 @@ export async function getPhotoMetadata(
 
 /**
  * Sauvegarde une image de plan (issue d'un PDF rastérisé ou d'une photo
- * d'un plan). Contrairement à `saveUploadedPhoto`, on ne redimensionne
- * pas : les plans doivent rester nets quand on zoome dessus pour placer
- * les puces. Conversion en webp quand même pour gagner en taille
- * disque, en haute qualité.
+ * d'un plan). Redimensionnée à 2560 px maximum (sans agrandissement) :
+ * assez de définition pour zoomer et placer les puces, sans les fichiers
+ * de 700 Ko qu'un scan A4 en pleine résolution produisait. Conversion en
+ * webp qualité 85.
  *
  * Limite : 40 Mo (PDF haute résolution rastérisé en 300 dpi peut être
- * volumineux).
+ * volumineux). Les fichiers déjà uploadés ne sont pas retouchés.
  */
 export async function saveUploadedPlanImage(file: File): Promise<string> {
   if (!file || file.size === 0) {
@@ -166,7 +183,8 @@ export async function saveUploadedPlanImage(file: File): Promise<string> {
 
   await sharp(buffer, { limitInputPixels: 268_435_456 /* ~16k×16k */ })
     .rotate()
-    .webp({ quality: 92 })
+    .resize(2560, 2560, { fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 85 })
     .toFile(fullPath);
 
   return `/uploads/pv/${filename}`;
@@ -180,6 +198,14 @@ export async function deleteUploadedPhoto(relativePath: string | null | undefine
     await unlink(safePath);
   } catch {
     // ignore - file may already be gone
+  }
+  // Supprime aussi la miniature associée, si elle existe
+  if (safePath.endsWith(".webp") && !safePath.endsWith(".thumb.webp")) {
+    try {
+      await unlink(safePath.slice(0, -".webp".length) + ".thumb.webp");
+    } catch {
+      // ignore - pas de miniature (ancienne photo) ou déjà supprimée
+    }
   }
 }
 
@@ -251,15 +277,47 @@ export async function saveUploadedPlan(
 }
 
 /**
+ * Sauvegarde un MÉMO VOCAL (ou tout fichier audio) tel quel, sans
+ * transcodage, dans /uploads/audios. La route /uploads sert déjà les
+ * requêtes Range, donc <audio preload="metadata"> fonctionne sans rien
+ * d'autre. Limite : 25 Mo (un mémo opus de 10 min pèse environ 5 Mo).
+ */
+export async function saveUploadedAudio(file: File): Promise<string> {
+  if (!file || file.size === 0) throw new Error("Aucun fichier reçu");
+  if (file.size > 25 * 1024 * 1024) {
+    throw new Error("Audio trop volumineux (max 25 Mo)");
+  }
+  if (!file.type.startsWith("audio/")) {
+    throw new Error("Le fichier doit être un audio");
+  }
+
+  const dir = path.join(UPLOADS_ROOT, "audios");
+  await mkdir(dir, { recursive: true });
+
+  const rawExt = (file.name.split(".").pop() ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  // Extension whitelistée, sinon déduite du type MIME de l'enregistreur
+  // (audio/mp4 sur iOS Safari -> .m4a, audio/webm ailleurs -> .webm).
+  const ext = (EXTENSIONS_AUDIO as readonly string[]).includes(rawExt)
+    ? rawExt
+    : file.type.includes("mp4") || file.type.includes("aac")
+      ? "m4a"
+      : "webm";
+  const id = randomUUID();
+  const filename = `${id}.${ext}`;
+  await writeFile(path.join(dir, filename), Buffer.from(await file.arrayBuffer()));
+  return `/uploads/audios/${filename}`;
+}
+
+/**
  * Sauvegarde un DOCUMENT (GED) : CV et pièces d'un ouvrier, plans, contrats,
  * devis d'un chantier... Fichier conservé tel quel (pas de transformation),
  * extension d'origine gardée pour l'ouverture native (PDF, Office, images).
+ * La whiteliste vit dans lib/pieces-jointes.ts (partagée avec l'attribut
+ * accept du bouton trombone côté client).
  */
-const DOC_EXTS = [
-  "pdf", "png", "jpg", "jpeg", "webp", "heic",
-  "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods",
-  "dwg", "dxf", "txt", "csv", "zip",
-] as const;
+const DOC_EXTS = EXTENSIONS_DOCUMENTS;
 
 export async function saveUploadedDocument(
   file: File,

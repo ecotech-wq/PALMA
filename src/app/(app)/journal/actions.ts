@@ -6,8 +6,16 @@ import { db } from "@/lib/db";
 import {
   saveUploadedPhoto,
   saveUploadedVideo,
+  saveUploadedAudio,
+  saveUploadedDocument,
   deleteUploadedPhoto,
 } from "@/lib/upload";
+import {
+  formatEchecsUpload,
+  parseDocumentsMessage,
+  type DocumentMessage,
+  type EchecUpload,
+} from "@/lib/pieces-jointes";
 import {
   requireAuth,
   requireChantierAccess,
@@ -23,23 +31,49 @@ const createSchema = z.object({
 async function uploadMedia(formData: FormData): Promise<{
   photos: string[];
   videos: string[];
+  audios: string[];
+  documents: DocumentMessage[];
+  echecs: EchecUpload[];
 }> {
   const photos: string[] = [];
   const videos: string[] = [];
+  const audios: string[] = [];
+  const documents: DocumentMessage[] = [];
+  // Les échecs (taille, extension...) ne sont plus avalés en silence :
+  // ils remontent au composer qui les affiche en toast.
+  const echecs: EchecUpload[] = [];
   const files = formData.getAll("medias") as File[];
   for (const f of files) {
     if (!(f instanceof File) || f.size === 0) continue;
     try {
       if (f.type.startsWith("video/")) {
+        // Vidéo servie telle quelle, sans transcodage (limite assumée :
+        // le poids est celui du fichier d'origine, max 100 Mo).
         videos.push(await saveUploadedVideo(f, "journal"));
+      } else if (f.type.startsWith("audio/")) {
+        audios.push(await saveUploadedAudio(f));
       } else if (f.type.startsWith("image/")) {
         photos.push(await saveUploadedPhoto(f, "journal"));
+      } else {
+        // Document (trombone) : extension whitelistée et 25 Mo max
+        // vérifiés côté serveur par saveUploadedDocument.
+        const doc = await saveUploadedDocument(f, "docs-chantiers");
+        documents.push({
+          url: doc.url,
+          nom: doc.originalName,
+          mimeType: doc.mimeType,
+          taille: doc.size,
+        });
       }
     } catch (e) {
       console.error("Upload media failed:", e);
+      echecs.push({
+        nom: f.name,
+        raison: e instanceof Error ? e.message : "Erreur inconnue",
+      });
     }
   }
-  return { photos, videos };
+  return { photos, videos, audios, documents, echecs };
 }
 
 /**
@@ -58,9 +92,21 @@ export async function createJournalMessage(formData: FormData) {
 
   await requireChantierAccess(me, data.chantierId);
 
-  const { photos, videos } = await uploadMedia(formData);
+  const { photos, videos, audios, documents, echecs } =
+    await uploadMedia(formData);
 
-  if (!data.texte && photos.length === 0 && videos.length === 0) {
+  if (
+    !data.texte &&
+    photos.length === 0 &&
+    videos.length === 0 &&
+    audios.length === 0 &&
+    documents.length === 0
+  ) {
+    // Si le message ne tenait qu'à ses pièces jointes et qu'elles ont
+    // toutes été refusées, l'erreur doit dire pourquoi (pas un générique).
+    if (echecs.length > 0) {
+      throw new Error(formatEchecsUpload(echecs));
+    }
     throw new Error("Le message doit contenir du texte ou un fichier");
   }
 
@@ -73,9 +119,20 @@ export async function createJournalMessage(formData: FormData) {
       texte: data.texte || null,
       photos,
       videos,
+      audios,
+      documents,
     },
     include: { chantier: { select: { nom: true, chefId: true } } },
   });
+
+  // Aperçu pour la notification quand le message n'a pas de texte
+  const apercu =
+    (data.texte ?? "").slice(0, 80) ||
+    (audios.length > 0
+      ? "[mémo vocal]"
+      : documents.length > 0
+        ? "[pièce jointe]"
+        : "[média]");
 
   // Notifier l'autre côté de la conversation
   if (me.isChef) {
@@ -83,7 +140,7 @@ export async function createJournalMessage(formData: FormData) {
     await notifyAdmins(
       "RAPPORT_CREE",
       `Journal — ${created.chantier.nom}`,
-      `${me.name} : ${(data.texte ?? "").slice(0, 80) || "[média]"}`,
+      `${me.name} : ${apercu}`,
       `/chantiers/${data.chantierId}/journal?date=${data.date}`
     );
   } else if (me.isAdmin && created.chantier.chefId && created.chantier.chefId !== me.id) {
@@ -92,13 +149,17 @@ export async function createJournalMessage(formData: FormData) {
       created.chantier.chefId,
       "RAPPORT_CREE",
       `Journal — ${created.chantier.nom}`,
-      `${me.name} : ${(data.texte ?? "").slice(0, 80) || "[média]"}`,
+      `${me.name} : ${apercu}`,
       `/chantiers/${data.chantierId}/journal?date=${data.date}`
     );
   }
 
   revalidatePath(`/chantiers/${data.chantierId}/journal`);
   revalidatePath(`/chantiers/${data.chantierId}`);
+
+  // Les pièces jointes refusées remontent au composer (toast) : le
+  // message est parti, mais l'utilisateur sait ce qui manque.
+  return { messageId: created.id, echecs };
 }
 
 const updateSchema = z.object({
@@ -160,6 +221,10 @@ export async function deleteJournalMessage(id: string) {
   // Nettoyer les fichiers
   for (const url of existing.photos) await deleteUploadedPhoto(url);
   for (const url of existing.videos) await deleteUploadedPhoto(url);
+  for (const url of existing.audios) await deleteUploadedPhoto(url);
+  for (const doc of parseDocumentsMessage(existing.documents)) {
+    await deleteUploadedPhoto(doc.url);
+  }
 
   await db.journalMessage.delete({ where: { id } });
 

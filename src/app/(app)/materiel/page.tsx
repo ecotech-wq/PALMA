@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Plus, Wrench, Search } from "lucide-react";
 import { db } from "@/lib/db";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -98,11 +99,9 @@ export default async function MaterielListPage({
             >
               <div className="aspect-square bg-slate-100 dark:bg-slate-800 relative">
                 {m.photo ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={m.photo}
+                  <PhotoVignette
+                    url={m.photo}
                     alt={m.nomCommun}
-                    loading="lazy"
                     className="absolute inset-0 w-full h-full object-cover"
                   />
                 ) : (

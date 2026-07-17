@@ -7,6 +7,7 @@ import { Phone, User, ChevronRight, CheckSquare, Square } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/Toast";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import { OuvrierActiveToggle } from "./OuvrierActiveToggle";
 import { bulkToggleOuvriers } from "./actions";
 import { formatEuro, cn } from "@/lib/utils";
@@ -178,11 +179,9 @@ export function OuvriersBulkList({
                   )}
                 >
                   {o.photo ? (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={o.photo}
+                    <PhotoVignette
+                      url={o.photo}
                       alt={fullName}
-                      loading="lazy"
                       className="absolute inset-0 w-full h-full object-cover"
                     />
                   ) : (

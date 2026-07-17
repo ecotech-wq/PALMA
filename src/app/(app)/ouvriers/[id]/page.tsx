@@ -12,6 +12,7 @@ import {
   Briefcase,
 } from "lucide-react";
 import { db } from "@/lib/db";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -205,9 +206,8 @@ export default async function OuvrierDetailPage({
       <Card className="mb-5">
         <CardBody className="flex items-center gap-4">
           {ouvrier.photo ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={ouvrier.photo}
+            <PhotoVignette
+              url={ouvrier.photo}
               alt={fullName}
               className="w-16 h-16 shrink-0 rounded-full object-cover border border-slate-200 dark:border-slate-800"
             />

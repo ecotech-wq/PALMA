@@ -13,12 +13,14 @@ import { documentsChantier } from "../chantier-documents";
 import { requireAuth, requireChantierAccess, espaceFilter } from "@/lib/auth-helpers";
 import { markResourceRead } from "@/lib/read-state";
 import { getPhotoMetadata } from "@/lib/upload";
+import { parseDocumentsMessage } from "@/lib/pieces-jointes";
 import {
   listChannelsFor,
   getOrCreateGeneral,
   ChannelBar,
   readResourceKey,
 } from "@/features/messaging";
+import { TAILLE_PAGE_MESSAGES } from "@/features/messaging/core/pagination";
 
 /**
  * Le fil d'un chantier — écran de messagerie pensé téléphone d'abord
@@ -52,12 +54,6 @@ export default async function MessagerieChantierPage({
   // Marque le canal actif comme lu (badge sidebar décrémenté à la prochaine nav)
   await markResourceRead(me.id, readResourceKey(chantierId, activeCanalId));
 
-  // Fenêtre par défaut : 14 derniers jours
-  const now = new Date();
-  const since = new Date(now);
-  since.setDate(since.getDate() - 14);
-  since.setHours(0, 0, 0, 0);
-
   const tachesActivesWhere: Prisma.TacheWhereInput = {
     chantierId,
     deletedAt: null,
@@ -70,7 +66,7 @@ export default async function MessagerieChantierPage({
 
   const [
     chantier,
-    messages,
+    messagesRecents,
     materiels,
     equipes,
     sortiesOuvertes,
@@ -91,10 +87,13 @@ export default async function MessagerieChantierPage({
         chef: { select: { id: true, name: true } },
       },
     }),
+    // Première page : les N messages les plus récents du canal (lus en
+    // ordre descendant + 1 pour savoir s'il reste un historique, puis
+    // remis en ordre d'affichage). La suite se charge via le bouton
+    // « Messages précédents » (route /api/messagerie/[id]/history).
     db.journalMessage.findMany({
       where: {
         chantierId,
-        createdAt: { gte: since },
         // Canal actif ; les messages historiques sans canal restent au Général
         ...(isGeneralActive
           ? { OR: [{ canalId: activeCanalId }, { canalId: null }] }
@@ -107,7 +106,10 @@ export default async function MessagerieChantierPage({
         },
         tags: { select: { tagCode: true } },
       },
-      orderBy: { createdAt: "asc" },
+      // Ordre composite (createdAt, id) : départage les messages créés
+      // dans la même milliseconde, en phase avec le curseur de /history.
+      orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
+      take: TAILLE_PAGE_MESSAGES + 1,
     }),
     db.materiel.findMany({
       where: { statut: { in: ["DISPO", "SORTI"] } },
@@ -165,6 +167,10 @@ export default async function MessagerieChantierPage({
     db.pvReserve.count({ where: reservesOuvertesWhere }),
   ]);
   if (!chantier) notFound();
+
+  // Remise en ordre d'affichage (ascendant) + drapeau « il y a plus vieux »
+  const hasOlder = messagesRecents.length > TAILLE_PAGE_MESSAGES;
+  const messages = messagesRecents.slice(0, TAILLE_PAGE_MESSAGES).reverse();
 
   const rubriques: Rubrique[] = [
     {
@@ -339,7 +345,13 @@ export default async function MessagerieChantierPage({
             <Card className="h-full">
               <CardBody className="!p-0 h-full overflow-y-auto">
                 <ChantierFeed
+                  // key : changer de canal remet à zéro l'état client
+                  // (pages précédentes chargées, recherche, filtres)
+                  key={activeCanalId}
                   chantierId={chantierId}
+                  canalId={activeCanalId}
+                  canalGeneral={isGeneralActive}
+                  hasOlder={hasOlder}
                   messages={messages.map((m) => ({
                     id: m.id,
                     authorId: m.authorId,
@@ -349,6 +361,8 @@ export default async function MessagerieChantierPage({
                     texte: m.texte,
                     photos: m.photos,
                     videos: m.videos,
+                    audios: m.audios,
+                    documents: parseDocumentsMessage(m.documents),
                     hiddenFromClient: m.hiddenFromClient,
                     incidentId: m.incidentId,
                     demandeId: m.demandeId,

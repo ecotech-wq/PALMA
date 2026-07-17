@@ -4,6 +4,7 @@ import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, MapPin, CheckCircle2, Circle, Pencil } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import {
   supprimerReserve,
   basculerLeveeReserve,
@@ -151,9 +152,8 @@ export function ReserveList({
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {r.photos.map((url) => (
                       <div key={url} className="relative group">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={url}
+                        <PhotoVignette
+                          url={url}
                           alt="Photo réserve"
                           className="w-20 h-20 object-cover rounded border border-slate-200 dark:border-slate-800"
                         />

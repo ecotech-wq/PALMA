@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Textarea } from "@/components/ui/Input";
 import { useToast } from "@/components/Toast";
+import { PhotoVignette } from "@/components/PhotoVignette";
 
 type Rapport = {
   id: string;
@@ -205,11 +206,9 @@ export function RapportForm({
                 key={url}
                 className="relative aspect-square rounded-md overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 group"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={url}
+                <PhotoVignette
+                  url={url}
                   alt="Photo"
-                  loading="lazy"
                   className="absolute inset-0 w-full h-full object-cover"
                 />
                 <button

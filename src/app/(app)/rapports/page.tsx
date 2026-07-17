@@ -12,6 +12,7 @@ import {
   Plus,
 } from "lucide-react";
 import { db } from "@/lib/db";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -183,12 +184,10 @@ export default async function RapportsListPage({
                         href={`/chantiers/${r.chantier.id}#rapport-${r.id}`}
                         className="relative w-14 h-14 rounded overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800"
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={url}
+                        <PhotoVignette
+                          url={url}
                           alt={`Photo ${idx + 1}`}
                           className="absolute inset-0 w-full h-full object-cover"
-                          loading="lazy"
                         />
                       </Link>
                     ))}

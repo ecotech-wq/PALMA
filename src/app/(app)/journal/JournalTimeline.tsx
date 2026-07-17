@@ -16,6 +16,8 @@ import {
   Eye,
   EyeOff,
   ExternalLink,
+  Mic,
+  Paperclip,
   Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -27,6 +29,15 @@ import {
   toggleHiddenFromClient,
 } from "./actions";
 import { Lightbox } from "@/components/Lightbox";
+import { PhotoVignette } from "@/components/PhotoVignette";
+import { EnregistreurAudio } from "@/components/EnregistreurAudio";
+import { AudiosMessage, DocumentsMessage } from "@/components/MediasMessage";
+import {
+  ACCEPT_DOCUMENTS,
+  formatEchecsUpload,
+  formatTailleFichier,
+  type DocumentMessage,
+} from "@/lib/pieces-jointes";
 
 type Message = {
   id: string;
@@ -37,6 +48,8 @@ type Message = {
   texte: string | null;
   photos: string[];
   videos: string[];
+  audios: string[];
+  documents: DocumentMessage[];
   hiddenFromClient: boolean;
   incidentId: string | null;
   demandeId: string | null;
@@ -249,6 +262,8 @@ function MessageBubble({
             small
           />
         )}
+        <AudiosMessage audios={m.audios} />
+        <DocumentsMessage documents={m.documents} />
       </div>
     );
   }
@@ -308,6 +323,8 @@ function MessageBubble({
               ))}
             </div>
           )}
+          <AudiosMessage audios={m.audios} />
+          <DocumentsMessage documents={m.documents} />
         </div>
         <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-2 justify-end">
           {isAdmin && (
@@ -381,11 +398,9 @@ function PhotoGrid({
           onClick={() => onOpen(idx)}
           className={`relative ${small ? "aspect-square" : "aspect-video"} rounded-md overflow-hidden bg-slate-100 dark:bg-slate-800`}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={url}
+          <PhotoVignette
+            url={url}
             alt={`Photo ${idx + 1}`}
-            loading="lazy"
             className="absolute inset-0 w-full h-full object-cover"
           />
         </button>
@@ -394,7 +409,13 @@ function PhotoGrid({
   );
 }
 
-/** Zone de saisie pour poster un nouveau message (texte + médias). */
+/**
+ * Zone de saisie pour poster un nouveau message (texte + médias).
+ * Une seule ligne au téléphone : photo/vidéo, micro, trombone (3 boutons
+ * compacts de 44 px), champ texte, envoyer. Les pickers photo mobiles
+ * proposent déjà « prendre une photo / filmer », donc un seul bouton
+ * média remplace l'ancien trio caméra / galerie / vidéo.
+ */
 function ComposeBox({
   chantierId,
   date,
@@ -407,9 +428,8 @@ function ComposeBox({
   const [pending, startTransition] = useTransition();
   const [files, setFiles] = useState<File[]>([]);
   const [texte, setTexte] = useState("");
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
-  const videoInputRef = useRef<HTMLInputElement>(null);
+  const mediaInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
   function onPick(e: React.ChangeEvent<HTMLInputElement>) {
@@ -427,7 +447,12 @@ function ComposeBox({
     for (const f of files) formData.append("medias", f);
     startTransition(async () => {
       try {
-        await createJournalMessage(formData);
+        const res = await createJournalMessage(formData);
+        if (res.echecs.length > 0) {
+          // Le message est parti, mais des pièces jointes ont été
+          // refusées (taille, extension...) : on le dit clairement.
+          toast.error(`Message envoyé, mais ${formatEchecsUpload(res.echecs)}`);
+        }
         setFiles([]);
         setTexte("");
         formRef.current?.reset();
@@ -438,8 +463,29 @@ function ComposeBox({
     });
   }
 
+  /** Envoi immédiat d'un mémo vocal, comme un message à part entière. */
+  function envoyerAudio(fichier: File) {
+    const fd = new FormData();
+    fd.set("chantierId", chantierId);
+    fd.set("date", date);
+    fd.append("medias", fichier);
+    startTransition(async () => {
+      try {
+        const res = await createJournalMessage(fd);
+        if (res.echecs.length > 0) {
+          toast.error(formatEchecsUpload(res.echecs));
+        } else {
+          toast.success("Mémo vocal envoyé");
+        }
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Erreur");
+      }
+    });
+  }
+
   return (
-    <form ref={formRef} action={onSubmit} className="space-y-2">
+    <form ref={formRef} action={onSubmit} className="relative space-y-2">
       <input type="hidden" name="chantierId" value={chantierId} />
       <input type="hidden" name="date" value={date} />
 
@@ -448,76 +494,78 @@ function ComposeBox({
           {files.map((f, idx) => (
             <div
               key={`${f.name}-${idx}`}
-              className="relative w-14 h-14 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-center"
+              className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300"
             >
               {f.type.startsWith("video/") ? (
-                <Video size={18} className="text-slate-500" />
+                <Video size={12} className="text-slate-500" />
+              ) : f.type.startsWith("audio/") ? (
+                <Mic size={12} className="text-slate-500" />
+              ) : f.type.startsWith("image/") ? (
+                <Camera size={12} className="text-slate-500" />
               ) : (
-                <Camera size={18} className="text-slate-500" />
+                <FileText size={12} className="text-slate-500" />
+              )}
+              <span className="max-w-[150px] truncate">{f.name}</span>
+              {f.size > 0 && (
+                <span className="text-[10px] text-slate-400">
+                  {formatTailleFichier(f.size)}
+                </span>
               )}
               <button
                 type="button"
                 onClick={() => removeFile(idx)}
-                className="absolute -top-1.5 -right-1.5 bg-red-600 text-white rounded-full p-0.5"
+                aria-label={`Retirer ${f.name}`}
+                className="text-slate-400 hover:text-red-600"
               >
-                <X size={10} />
+                <X size={12} />
               </button>
             </div>
           ))}
         </div>
       )}
 
-      <div className="flex items-end gap-1.5 flex-wrap">
-        {/* Caméra : ouvre direct l'appareil photo (mobile) */}
+      <div className="flex items-end gap-1.5">
+        {/* Photos et vidéos : le picker mobile propose aussi la caméra */}
         <input
-          ref={cameraInputRef}
+          ref={mediaInputRef}
           type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={onPick}
-          className="hidden"
-        />
-        {/* Galerie : sélection depuis pellicule + multi */}
-        <input
-          ref={galleryInputRef}
-          type="file"
-          accept="image/*"
+          accept="image/*,video/*"
           multiple
           onChange={onPick}
           className="hidden"
         />
-        {/* Vidéo : caméra arrière */}
+        {/* Documents (trombone) : mêmes extensions que la GED chantier */}
         <input
-          ref={videoInputRef}
+          ref={docInputRef}
           type="file"
-          accept="video/*"
-          capture="environment"
+          accept={ACCEPT_DOCUMENTS}
+          multiple
           onChange={onPick}
           className="hidden"
         />
         <button
           type="button"
-          onClick={() => cameraInputRef.current?.click()}
-          className="shrink-0 p-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
-          title="Prendre une photo"
+          onClick={() => mediaInputRef.current?.click()}
+          aria-label="Joindre des photos ou vidéos"
+          title="Photos / vidéos"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
         >
-          <Camera size={16} />
+          <ImageIcon size={18} />
         </button>
+        {/* Mémo vocal : bouton micro 44 px, panneau au-dessus de la barre */}
+        <EnregistreurAudio
+          onEnvoyer={envoyerAudio}
+          disabled={pending}
+          envoiEnCours={pending}
+        />
         <button
           type="button"
-          onClick={() => galleryInputRef.current?.click()}
-          className="shrink-0 p-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
-          title="Choisir depuis la galerie"
+          onClick={() => docInputRef.current?.click()}
+          aria-label="Joindre un document"
+          title="Joindre un document (PDF, Office, DWG...)"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
         >
-          <ImageIcon size={16} />
-        </button>
-        <button
-          type="button"
-          onClick={() => videoInputRef.current?.click()}
-          className="shrink-0 p-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
-          title="Vidéo"
-        >
-          <Video size={16} />
+          <Paperclip size={18} />
         </button>
         <Textarea
           name="texte"
@@ -525,7 +573,7 @@ function ComposeBox({
           value={texte}
           onChange={(e) => setTexte(e.target.value)}
           placeholder="Écrire un message…"
-          className="flex-1 min-h-[40px] resize-none"
+          className="min-w-0 flex-1 min-h-[40px] resize-none"
         />
         <Button
           type="submit"

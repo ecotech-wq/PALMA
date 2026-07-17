@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Textarea } from "@/components/ui/Input";
 import { useToast } from "@/components/Toast";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import { uploadPlan, deletePlan } from "./actions";
 
 type Plan = {
@@ -147,9 +148,8 @@ export function PlansSection({
                     rel="noreferrer"
                     className="block mt-2 rounded-md overflow-hidden bg-slate-100 dark:bg-slate-800 max-h-48"
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={p.fileUrl}
+                    <PhotoVignette
+                      url={p.fileUrl}
                       alt={p.nom}
                       className="w-full h-auto max-h-48 object-cover"
                     />

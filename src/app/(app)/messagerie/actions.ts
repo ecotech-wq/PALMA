@@ -6,8 +6,16 @@ import { db } from "@/lib/db";
 import {
   saveUploadedPhoto,
   saveUploadedVideo,
+  saveUploadedAudio,
+  saveUploadedDocument,
   deleteUploadedPhoto,
 } from "@/lib/upload";
+import {
+  formatEchecsUpload,
+  parseDocumentsMessage,
+  type DocumentMessage,
+  type EchecUpload,
+} from "@/lib/pieces-jointes";
 import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
 import { notifyAdmins, notify } from "@/lib/notifications";
 import { audit } from "@/lib/audit";
@@ -77,23 +85,59 @@ const baseSchema = z.object({
 async function uploadMedia(formData: FormData): Promise<{
   photos: string[];
   videos: string[];
+  audios: string[];
+  documents: DocumentMessage[];
+  echecs: EchecUpload[];
 }> {
   const photos: string[] = [];
   const videos: string[] = [];
+  const audios: string[] = [];
+  const documents: DocumentMessage[] = [];
+  // Les échecs (taille, extension...) ne sont plus avalés en silence :
+  // ils remontent au composer qui les affiche en toast.
+  const echecs: EchecUpload[] = [];
   const files = formData.getAll("medias") as File[];
   for (const f of files) {
     if (!(f instanceof File) || f.size === 0) continue;
     try {
       if (f.type.startsWith("video/")) {
+        // Vidéo servie telle quelle, sans transcodage (limite assumée :
+        // le poids est celui du fichier d'origine, max 100 Mo).
         videos.push(await saveUploadedVideo(f, "journal"));
+      } else if (f.type.startsWith("audio/")) {
+        audios.push(await saveUploadedAudio(f));
       } else if (f.type.startsWith("image/")) {
         photos.push(await saveUploadedPhoto(f, "journal"));
+      } else {
+        // Document (trombone) : extension whitelistée et 25 Mo max
+        // vérifiés côté serveur par saveUploadedDocument.
+        const doc = await saveUploadedDocument(f, "docs-chantiers");
+        documents.push({
+          url: doc.url,
+          nom: doc.originalName,
+          mimeType: doc.mimeType,
+          taille: doc.size,
+        });
       }
     } catch (e) {
       console.error("Upload media failed:", e);
+      echecs.push({
+        nom: f.name,
+        raison: e instanceof Error ? e.message : "Erreur inconnue",
+      });
     }
   }
-  return { photos, videos };
+  return { photos, videos, audios, documents, echecs };
+}
+
+/** Aperçu de notification pour un message sans texte. */
+function apercuMedia(media: {
+  audios: string[];
+  documents: DocumentMessage[];
+}): string {
+  if (media.audios.length > 0) return "[mémo vocal]";
+  if (media.documents.length > 0) return "[pièce jointe]";
+  return "[média]";
 }
 
 function startOfToday(): Date {
@@ -143,14 +187,22 @@ export async function postChantierMessage(formData: FormData) {
       ? data.canalId
       : (await getOrCreateGeneral(data.chantierId)).id;
 
-  const { photos, videos } = await uploadMedia(formData);
+  const { photos, videos, audios, documents, echecs } =
+    await uploadMedia(formData);
 
   if (
     data.category === "NOTE" &&
     !data.texte &&
     photos.length === 0 &&
-    videos.length === 0
+    videos.length === 0 &&
+    audios.length === 0 &&
+    documents.length === 0
   ) {
+    // Si le message ne tenait qu'à ses pièces jointes et qu'elles ont
+    // toutes été refusées, l'erreur doit dire pourquoi (pas un générique).
+    if (echecs.length > 0) {
+      throw new Error(formatEchecsUpload(echecs));
+    }
     throw new Error("Le message doit contenir du texte ou un média");
   }
 
@@ -172,15 +224,22 @@ export async function postChantierMessage(formData: FormData) {
         texte: data.texte || null,
         photos,
         videos,
+        audios,
+        documents,
         hiddenFromClient,
         canalId,
       },
     });
-    await notifyChat(me, chantier, data.chantierId, data.texte || "[média]");
+    await notifyChat(
+      me,
+      chantier,
+      data.chantierId,
+      data.texte || apercuMedia({ audios, documents })
+    );
     revalidatePath(`/chantiers/${data.chantierId}/journal`);
     revalidatePath(`/chantiers/${data.chantierId}`);
     revalidatePath(`/messagerie/${data.chantierId}`);
-    return msg;
+    return { messageId: msg.id, echecs };
   }
 
   // ---------- INCIDENT ----------
@@ -208,6 +267,8 @@ export async function postChantierMessage(formData: FormData) {
         texte: data.texte || null,
         photos,
         videos,
+        audios,
+        documents,
         incidentId: incident.id,
         hiddenFromClient,
         canalId,
@@ -222,7 +283,7 @@ export async function postChantierMessage(formData: FormData) {
     revalidatePath(`/chantiers/${data.chantierId}/journal`);
     revalidatePath(`/incidents`);
     revalidatePath(`/messagerie/${data.chantierId}`);
-    return msg;
+    return { messageId: msg.id, echecs };
   }
 
   // ---------- DEMANDE MATERIEL ----------
@@ -252,6 +313,8 @@ export async function postChantierMessage(formData: FormData) {
         texte: data.texte || description,
         photos,
         videos,
+        audios,
+        documents,
         demandeId: demande.id,
         hiddenFromClient,
         canalId,
@@ -266,7 +329,7 @@ export async function postChantierMessage(formData: FormData) {
     revalidatePath(`/chantiers/${data.chantierId}/journal`);
     revalidatePath(`/demandes`);
     revalidatePath(`/messagerie/${data.chantierId}`);
-    return msg;
+    return { messageId: msg.id, echecs };
   }
 
   // ---------- RAPPORT QUOTIDIEN ----------
@@ -294,6 +357,8 @@ export async function postChantierMessage(formData: FormData) {
         texte: data.texte,
         photos,
         videos,
+        audios,
+        documents,
         rapportId: rapport.id,
         hiddenFromClient,
         canalId,
@@ -308,7 +373,7 @@ export async function postChantierMessage(formData: FormData) {
     revalidatePath(`/chantiers/${data.chantierId}/journal`);
     revalidatePath(`/rapports`);
     revalidatePath(`/messagerie/${data.chantierId}`);
-    return msg;
+    return { messageId: msg.id, echecs };
   }
 
   // ---------- SORTIE MATERIEL ----------
@@ -344,6 +409,8 @@ export async function postChantierMessage(formData: FormData) {
           `📤 Sortie : ${materiel?.nomCommun ?? "matériel"}`,
         photos,
         videos,
+        audios,
+        documents,
         sortieId: sortie.id,
         hiddenFromClient,
         canalId,
@@ -353,7 +420,7 @@ export async function postChantierMessage(formData: FormData) {
     revalidatePath(`/sorties`);
     revalidatePath(`/materiel`);
     revalidatePath(`/messagerie/${data.chantierId}`);
-    return msg;
+    return { messageId: msg.id, echecs };
   }
 
   // ---------- RETOUR MATERIEL ----------
@@ -396,6 +463,8 @@ export async function postChantierMessage(formData: FormData) {
           `📥 Retour : ${sortie.materiel.nomCommun} (${data.etatRetour || "BON"})`,
         photos,
         videos,
+        audios,
+        documents,
         sortieId: sortie.id,
         hiddenFromClient,
         canalId,
@@ -405,7 +474,7 @@ export async function postChantierMessage(formData: FormData) {
     revalidatePath(`/sorties`);
     revalidatePath(`/materiel`);
     revalidatePath(`/messagerie/${data.chantierId}`);
-    return msg;
+    return { messageId: msg.id, echecs };
   }
 
   throw new Error("Catégorie inconnue");
@@ -717,6 +786,10 @@ export async function deleteChantierMessage(messageId: string) {
 
   for (const url of existing.photos) await deleteUploadedPhoto(url);
   for (const url of existing.videos) await deleteUploadedPhoto(url);
+  for (const url of existing.audios) await deleteUploadedPhoto(url);
+  for (const doc of parseDocumentsMessage(existing.documents)) {
+    await deleteUploadedPhoto(doc.url);
+  }
 
   await db.journalMessage.delete({ where: { id: messageId } });
   revalidatePath(`/chantiers/${existing.chantierId}/journal`);

@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/Toast";
 import { Lightbox } from "@/components/Lightbox";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import { RapportForm } from "./RapportForm";
 import {
   createRapport,
@@ -270,11 +271,9 @@ function RapportRow({
               onClick={() => setLightboxIdx(idx)}
               className="relative aspect-square rounded-md overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:ring-2 hover:ring-brand-300 transition"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={url}
+              <PhotoVignette
+                url={url}
                 alt={`Photo ${idx + 1}`}
-                loading="lazy"
                 className="absolute inset-0 w-full h-full object-cover"
               />
             </button>

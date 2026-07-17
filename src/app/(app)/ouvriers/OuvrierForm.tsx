@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, User } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import { Input, Field, Textarea, Select } from "@/components/ui/Input";
 
 type Equipe = { id: string; nom: string };
@@ -94,11 +95,9 @@ export function OuvrierForm({
         <div className="w-24 shrink-0">
           <div className="aspect-square bg-slate-100 dark:bg-slate-800 rounded-lg relative overflow-hidden border border-slate-200 dark:border-slate-800">
             {photoPreview ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={photoPreview}
+              <PhotoVignette
+                url={photoPreview}
                 alt="Aperçu"
-                loading="lazy"
                 className="absolute inset-0 w-full h-full object-cover"
               />
             ) : (

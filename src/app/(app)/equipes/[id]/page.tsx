@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Trash2, User, Plus, Wrench } from "lucide-react";
 import { db } from "@/lib/db";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -136,8 +137,7 @@ export default async function EquipeDetailPage({
                     <li key={o.id} className="py-2 flex items-center gap-3">
                       <div className="w-9 h-9 shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
                         {o.photo ? (
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img src={o.photo} alt={fullName} loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
+                          <PhotoVignette url={o.photo} alt={fullName} className="absolute inset-0 w-full h-full object-cover" />
                         ) : (
                           <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500">
                             <User size={16} />
@@ -214,8 +214,7 @@ export default async function EquipeDetailPage({
                   <li key={s.id} className="py-2 flex items-center gap-3">
                     <div className="w-10 h-10 shrink-0 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
                       {s.materiel.photo ? (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={s.materiel.photo} alt={s.materiel.nomCommun} loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
+                        <PhotoVignette url={s.materiel.photo} alt={s.materiel.nomCommun} className="absolute inset-0 w-full h-full object-cover" />
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500">
                           <Wrench size={16} />

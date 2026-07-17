@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PhotoVignette } from "@/components/PhotoVignette";
 
 /**
  * Le mur du terrain : les dernières photos postées dans les canaux des
@@ -33,11 +34,9 @@ export function MurDuTerrain({
             className="group relative h-24 w-32 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-800"
             title={`Ouvrir la conversation (${p.chantierNom})`}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={p.url}
+            <PhotoVignette
+              url={p.url}
               alt={`Photo du chantier ${p.chantierNom}`}
-              loading="lazy"
               className="h-full w-full object-cover transition-transform group-hover:scale-105"
             />
             <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1 pt-3 text-[10px] font-medium text-white">

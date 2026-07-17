@@ -1044,6 +1044,10 @@ model JournalMessage {
   texte            String?
   photos           String[]           @default([])
   videos           String[]           @default([])
+  /// Mémos vocaux : fichiers audio bruts (dossier /uploads/audios)
+  audios           String[]           @default([])
+  /// Pièces jointes documentaires : tableau JSON [{ url, nom, mimeType, taille }]
+  documents        Json               @default("[]")
   // v4.2 : canal du message (null = messages historiques, rattachés au canal Général par la migration)
   canalId          String?
   canal            Canal?             @relation(fields: [canalId], references: [id], onDelete: SetNull)

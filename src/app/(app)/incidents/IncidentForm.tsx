@@ -6,6 +6,7 @@ import { Save, Camera, X, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Textarea } from "@/components/ui/Input";
 import { useToast } from "@/components/Toast";
+import { PhotoVignette } from "@/components/PhotoVignette";
 import { categorieLabel, graviteLabel } from "./IncidentBadges";
 
 type Chantier = { id: string; nom: string };
@@ -168,8 +169,7 @@ export function IncidentForm({
                 key={url}
                 className="relative aspect-square rounded-md overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
+                <PhotoVignette url={url} alt="" className="absolute inset-0 w-full h-full object-cover" />
                 <button
                   type="button"
                   onClick={() => removeExisting(url)}
