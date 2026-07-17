@@ -2,7 +2,15 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, Loader2, Phone } from "lucide-react";
+import {
+  CalendarClock,
+  CheckSquare,
+  Image as ImageIcon,
+  Loader2,
+  MessageSquare,
+  Paperclip,
+  Phone,
+} from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { changerEtape } from "./actions";
 
@@ -25,6 +33,12 @@ export type AffaireCarte = {
   /** Prochaine action échue ou affaire sans action depuis 14 j : AMBRE. */
   dormante: boolean;
   responsable: { name: string } | null;
+  /** Badges façon Trello (comptés côté serveur, jamais par carte). */
+  checklistFaits: number;
+  checklistTotal: number;
+  nbDocuments: number;
+  nbPhotos: number;
+  nbMessages: number;
 };
 
 export type ColonneEtape = { cle: string; libelle: string };
@@ -441,6 +455,55 @@ function AffaireCarteKanban({
               {a.joursEtape} j
             </span>
           </div>
+          {/* Badges façon Trello : discrets, absents quand le compte est
+              nul (la checklist s'affiche dès qu'elle a des pièces, verte
+              quand tout est coché). */}
+          {(a.checklistTotal > 0 ||
+            a.nbDocuments > 0 ||
+            a.nbPhotos > 0 ||
+            a.nbMessages > 0) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10px] text-slate-500 dark:text-slate-400">
+              {a.checklistTotal > 0 && (
+                <span
+                  className={`inline-flex items-center gap-1 ${
+                    a.checklistFaits >= a.checklistTotal
+                      ? "font-medium text-emerald-600 dark:text-emerald-400"
+                      : ""
+                  }`}
+                  title="Pièces de la checklist"
+                >
+                  <CheckSquare size={12} />
+                  <span className="font-mono tabular-nums">
+                    {a.checklistFaits}/{a.checklistTotal}
+                  </span>
+                </span>
+              )}
+              {a.nbDocuments > 0 && (
+                <span
+                  className="inline-flex items-center gap-1"
+                  title="Documents du dossier client"
+                >
+                  <Paperclip size={12} />
+                  <span className="font-mono tabular-nums">{a.nbDocuments}</span>
+                </span>
+              )}
+              {a.nbPhotos > 0 && (
+                <span className="inline-flex items-center gap-1" title="Photos">
+                  <ImageIcon size={12} />
+                  <span className="font-mono tabular-nums">{a.nbPhotos}</span>
+                </span>
+              )}
+              {a.nbMessages > 0 && (
+                <span
+                  className="inline-flex items-center gap-1"
+                  title="Messages du fil"
+                >
+                  <MessageSquare size={12} />
+                  <span className="font-mono tabular-nums">{a.nbMessages}</span>
+                </span>
+              )}
+            </div>
+          )}
         </div>
         {pending && (
           <Loader2 size={12} className="animate-spin text-slate-400" />

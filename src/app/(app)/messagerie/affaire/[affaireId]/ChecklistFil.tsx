@@ -1,18 +1,21 @@
 "use client";
 
-// ─── Checklist des pièces, dépliable et cochable dans le fil ─────────────────
-// La checklist du dossier (pièces du permis de construire) vivait uniquement
-// sur la fiche. Ici elle se déplie sous le bandeau du fil et se coche d'un
-// tap : état OPTIMISTE local (la case répond immédiatement), server action
-// cocherChecklist (qui pose la trace « Pièce reçue : ... » dans le fil),
-// puis revalidation (router.refresh). Une pièce peut aussi être validée par
-// un document de la GED d'affaire (AffaireDocument.checklistCle) : le
+// ─── Checklist des pièces du dossier, en feuille bas d'écran ─────────────────
+// La checklist du dossier (pièces du permis de construire) vivait dépliée
+// sous le bandeau du fil ; elle vit désormais dans la feuille « + » du
+// composer (« Pièces du dossier ») pour laisser toute la hauteur au fil.
+// Même mécanique qu'avant : état OPTIMISTE local (la case répond
+// immédiatement), server action cocherChecklist (qui pose la trace
+// « Pièce reçue : ... » dans le fil), rollback + toast en échec, puis
+// revalidation (router.refresh). Une pièce peut aussi être validée par un
+// document de la GED d'affaire (AffaireDocument.checklistCle) : le
 // trombone renvoie alors vers le fichier.
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, Paperclip } from "lucide-react";
+import { ClipboardCheck, Paperclip, X } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
 import type { ChecklistItem } from "@/lib/affaires";
 import { cocherChecklist } from "@/app/(app)/affaires/actions";
 
@@ -24,22 +27,22 @@ export function ChecklistFil({
   items,
   docs,
   canEdit,
+  onClose,
 }: {
   affaireId: string;
   items: ChecklistItem[];
   /** cle de checklist -> document validant (AffaireDocument.checklistCle). */
   docs: Record<string, DocPiece>;
   canEdit: boolean;
+  onClose: () => void;
 }) {
-  const [ouvert, setOuvert] = useState(false);
   // Surcouche optimiste : cle -> valeur affichée en attendant le serveur.
   // Conservée après succès (elle coïncide alors avec l'état revalidé).
   const [optimiste, setOptimiste] = useState<Record<string, boolean>>({});
   const [, startTransition] = useTransition();
   const router = useRouter();
   const toast = useToast();
-
-  if (items.length === 0) return null;
+  const fondOpaque = usePanneauOpaque();
 
   const affiches = items.map((it) => ({
     ...it,
@@ -66,37 +69,46 @@ export function ChecklistFil({
   }
 
   return (
-    <div className="mt-1.5 border-t border-slate-100 pt-1 dark:border-slate-800">
-      <button
-        type="button"
-        onClick={() => setOuvert((o) => !o)}
-        aria-expanded={ouvert}
-        className="flex min-h-[36px] w-full items-center gap-1.5 rounded-md px-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800/60"
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 sm:items-center"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        style={fondOpaque}
+        className="max-h-[88dvh] w-full overflow-y-auto rounded-t-2xl border border-slate-200 p-4 shadow-xl dark:border-slate-700 sm:max-w-md sm:rounded-2xl"
       >
-        {ouvert ? (
-          <ChevronDown size={14} className="shrink-0 text-slate-400" />
-        ) : (
-          <ChevronRight size={14} className="shrink-0 text-slate-400" />
-        )}
-        Pièces du dossier
-        <span
-          className={`tabular-nums ${
-            faits === items.length
-              ? "text-green-700 dark:text-green-400"
-              : "text-slate-500"
-          }`}
-        >
-          {faits}/{items.length}
-        </span>
-      </button>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-slate-100">
+            <ClipboardCheck size={17} className="text-slate-500" />
+            Pièces du dossier
+            <span
+              className={`text-sm font-medium tabular-nums ${
+                faits === items.length
+                  ? "text-green-700 dark:text-green-400"
+                  : "text-slate-500"
+              }`}
+            >
+              {faits}/{items.length}
+            </span>
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer"
+            className="flex h-11 w-11 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            <X size={16} />
+          </button>
+        </div>
 
-      {ouvert && (
-        <ul className="pb-1">
+        <ul>
           {affiches.map((it) => {
             const doc = docs[it.cle];
             return (
               <li key={it.cle} className="flex items-center gap-1">
-                <label className="flex min-h-[44px] min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md px-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md px-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/60">
                   <input
                     type="checkbox"
                     checked={it.fait}
@@ -132,7 +144,7 @@ export function ChecklistFil({
             );
           })}
         </ul>
-      )}
+      </div>
     </div>
   );
 }

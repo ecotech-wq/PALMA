@@ -13,6 +13,7 @@ import {
   etapesDe,
   joursDansEtape,
   libelleEtape,
+  parseChecklist,
   valeurPipeline,
   type TypologieAffaire,
 } from "@/lib/affaires";
@@ -73,17 +74,97 @@ export default async function AffairesPage({
     (a) => a.typologie === typologie && a.statut !== "EN_COURS"
   );
 
-  const cartes: AffaireCarte[] = enCours.map((a) => ({
-    id: a.id,
-    titre: a.titre,
-    contactNom: a.contactNom,
-    contactTel: a.contactTel,
-    valeurEstimee: a.valeurEstimee === null ? null : Number(a.valeurEstimee),
-    etapeCle: a.etapeCle,
-    joursEtape: joursDansEtape(a.etapeDepuis, maintenant),
-    dormante: estDormante(a, maintenant) !== null,
-    responsable: a.responsable ? { name: a.responsable.name } : null,
-  }));
+  // Badges façon Trello sur les cartes : comptages agrégés en un nombre
+  // CONSTANT de requêtes pour tout le plateau (groupBy / _count sur les ids
+  // affichés, déjà bornés par l'espace via la requête ci-dessus), jamais un
+  // aller-retour par carte.
+  const idsEnCours = enCours.map((a) => a.id);
+  const nbDocuments = new Map<string, number>();
+  const nbPhotos = new Map<string, number>();
+  const nbMessages = new Map<string, number>();
+  if (idsEnCours.length > 0) {
+    const [docsGroupes, photosDeposees, canaux] = await Promise.all([
+      // Tout le dossier client (toutes catégories confondues).
+      db.affaireDocument.groupBy({
+        by: ["affaireId"],
+        where: { affaireId: { in: idsEnCours } },
+        _count: { _all: true },
+      }),
+      // Photos déposées directement au dossier (messageId null) : celles
+      // rangées depuis le fil sont déjà comptées via les photos du canal,
+      // les recompter ici les ferait apparaître deux fois.
+      db.affaireDocument.groupBy({
+        by: ["affaireId"],
+        where: {
+          affaireId: { in: idsEnCours },
+          categorie: "PHOTOS",
+          messageId: null,
+        },
+        _count: { _all: true },
+      }),
+      db.canal.findMany({
+        where: { affaireId: { in: idsEnCours } },
+        select: { id: true, affaireId: true },
+      }),
+    ]);
+    for (const g of docsGroupes) nbDocuments.set(g.affaireId, g._count._all);
+    for (const g of photosDeposees) nbPhotos.set(g.affaireId, g._count._all);
+
+    const canalVersAffaire = new Map<string, string>();
+    for (const c of canaux) {
+      if (c.affaireId) canalVersAffaire.set(c.id, c.affaireId);
+    }
+    const canalIds = [...canalVersAffaire.keys()];
+    if (canalIds.length > 0) {
+      const [messagesGroupes, messagesAvecPhotos] = await Promise.all([
+        // Messages humains du fil : les traces système (auteur null) ne
+        // comptent pas, façon Trello (activité réelle, pas journal).
+        db.journalMessage.groupBy({
+          by: ["canalId"],
+          where: { canalId: { in: canalIds }, authorId: { not: null } },
+          _count: { _all: true },
+        }),
+        // Photos du fil : Prisma ne sait pas sommer les cardinalités d'un
+        // tableau en groupBy ; on ne rapatrie que les messages qui EN ONT.
+        db.journalMessage.findMany({
+          where: { canalId: { in: canalIds }, photos: { isEmpty: false } },
+          select: { canalId: true, photos: true },
+        }),
+      ]);
+      for (const g of messagesGroupes) {
+        const affId = g.canalId ? canalVersAffaire.get(g.canalId) : undefined;
+        if (affId) {
+          nbMessages.set(affId, (nbMessages.get(affId) ?? 0) + g._count._all);
+        }
+      }
+      for (const m of messagesAvecPhotos) {
+        const affId = m.canalId ? canalVersAffaire.get(m.canalId) : undefined;
+        if (affId) {
+          nbPhotos.set(affId, (nbPhotos.get(affId) ?? 0) + m.photos.length);
+        }
+      }
+    }
+  }
+
+  const cartes: AffaireCarte[] = enCours.map((a) => {
+    const checklist = parseChecklist(a.checklist);
+    return {
+      id: a.id,
+      titre: a.titre,
+      contactNom: a.contactNom,
+      contactTel: a.contactTel,
+      valeurEstimee: a.valeurEstimee === null ? null : Number(a.valeurEstimee),
+      etapeCle: a.etapeCle,
+      joursEtape: joursDansEtape(a.etapeDepuis, maintenant),
+      dormante: estDormante(a, maintenant) !== null,
+      responsable: a.responsable ? { name: a.responsable.name } : null,
+      checklistFaits: checklist.filter((c) => c.fait).length,
+      checklistTotal: checklist.length,
+      nbDocuments: nbDocuments.get(a.id) ?? 0,
+      nbPhotos: nbPhotos.get(a.id) ?? 0,
+      nbMessages: nbMessages.get(a.id) ?? 0,
+    };
+  });
 
   // Valeur du pipeline courant (somme des valeurs estimées en cours).
   const parEtape = valeurPipeline(

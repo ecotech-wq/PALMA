@@ -28,6 +28,8 @@ import {
   getOrCreateGeneral,
   getOrCreateCanalAffaire,
 } from "@/features/messaging";
+import { rangerPiecesJointes } from "@/app/(app)/affaires/[id]/documents/actions";
+import { CATEGORIES_DOC_AFFAIRE } from "@/lib/ged-affaire";
 
 /* -------------------------------------------------------------------------
  *  Composer chat-first : un seul point d'entrée pour TOUTES les actions
@@ -93,12 +95,21 @@ const baseSchema = z.object({
   etatRetour: z.enum(["BON", "USE", "CASSE", "MANQUANT"]).optional(),
 });
 
+/** Résultat d'UN fichier du champ `medias`, aligné sur son index : sert
+ *  au plan de rangement du fil d'affaire (retrouver l'URL stockée de
+ *  chaque pièce envoyée). null = entrée vide ou upload refusé. */
+type ResultatMedia = {
+  type: "photo" | "video" | "audio" | "document";
+  url: string;
+} | null;
+
 async function uploadMedia(formData: FormData): Promise<{
   photos: string[];
   videos: string[];
   audios: string[];
   documents: DocumentMessage[];
   echecs: EchecUpload[];
+  resultats: ResultatMedia[];
 }> {
   const photos: string[] = [];
   const videos: string[] = [];
@@ -107,18 +118,28 @@ async function uploadMedia(formData: FormData): Promise<{
   // Les échecs (taille, extension...) ne sont plus avalés en silence :
   // ils remontent au composer qui les affiche en toast.
   const echecs: EchecUpload[] = [];
+  const resultats: ResultatMedia[] = [];
   const files = formData.getAll("medias") as File[];
   for (const f of files) {
-    if (!(f instanceof File) || f.size === 0) continue;
+    if (!(f instanceof File) || f.size === 0) {
+      resultats.push(null);
+      continue;
+    }
     try {
       if (f.type.startsWith("video/")) {
         // Vidéo servie telle quelle, sans transcodage (limite assumée :
         // le poids est celui du fichier d'origine, max 100 Mo).
-        videos.push(await saveUploadedVideo(f, "journal"));
+        const url = await saveUploadedVideo(f, "journal");
+        videos.push(url);
+        resultats.push({ type: "video", url });
       } else if (f.type.startsWith("audio/")) {
-        audios.push(await saveUploadedAudio(f));
+        const url = await saveUploadedAudio(f);
+        audios.push(url);
+        resultats.push({ type: "audio", url });
       } else if (f.type.startsWith("image/")) {
-        photos.push(await saveUploadedPhoto(f, "journal"));
+        const url = await saveUploadedPhoto(f, "journal");
+        photos.push(url);
+        resultats.push({ type: "photo", url });
       } else {
         // Document (trombone) : extension whitelistée et 25 Mo max
         // vérifiés côté serveur par saveUploadedDocument.
@@ -129,6 +150,7 @@ async function uploadMedia(formData: FormData): Promise<{
           mimeType: doc.mimeType,
           taille: doc.size,
         });
+        resultats.push({ type: "document", url: doc.url });
       }
     } catch (e) {
       console.error("Upload media failed:", e);
@@ -136,9 +158,10 @@ async function uploadMedia(formData: FormData): Promise<{
         nom: f.name,
         raison: e instanceof Error ? e.message : "Erreur inconnue",
       });
+      resultats.push(null);
     }
   }
-  return { photos, videos, audios, documents, echecs };
+  return { photos, videos, audios, documents, echecs, resultats };
 }
 
 /** Aperçu de notification pour un message sans texte. */
@@ -538,6 +561,24 @@ async function notifyChat(
 }
 
 /**
+ * Plan de rangement envoyé par le composer d'un fil d'affaire : une
+ * entrée par fichier du champ `medias`, DANS LE MÊME ORDRE. null =
+ * « Ne pas classer » (la pièce reste simple pièce jointe du fil).
+ */
+const planRangementSchema = z
+  .array(
+    z
+      .object({
+        nom: z.string().trim().max(200).optional().or(z.literal("")),
+        categorie: z.enum(CATEGORIES_DOC_AFFAIRE),
+        checklistCle: z.string().trim().max(60).optional().or(z.literal("")),
+        dossierPerso: z.string().trim().max(60).optional().or(z.literal("")),
+      })
+      .nullable()
+  )
+  .max(30);
+
+/**
  * Poste une NOTE dans le canal d'une affaire (CRM). Même pipeline de
  * médias que les fils de chantier ; le message est ancré par son canalId
  * seul (chantierId null). Appelée par postChantierMessage après la garde
@@ -569,7 +610,7 @@ async function posterDansFilAffaire(
   }
   if (!canalId) canalId = (await getOrCreateCanalAffaire(affaireId)).id;
 
-  const { photos, videos, audios, documents, echecs } =
+  const { photos, videos, audios, documents, echecs, resultats } =
     await uploadMedia(formData);
   if (
     !texte &&
@@ -617,16 +658,66 @@ async function posterDansFilAffaire(
     );
   }
 
+  // Plan de rangement décidé AVANT l'envoi (sélecteur sur chaque puce du
+  // composer) : rangement côté serveur, dans la même action, par la
+  // logique existante rangerPiecesJointes (gardes, idempotence, coche de
+  // checklist et trace « Pièce reçue »). Le message est déjà posté : un
+  // plan invalide ne doit pas faire échouer l'envoi, l'erreur remonte au
+  // composer qui l'affiche en toast.
+  let rangees = 0;
+  let rangementErreur: string | null = null;
+  const planBrut = formData.get("rangement");
+  if (typeof planBrut === "string" && planBrut !== "") {
+    try {
+      const plan = planRangementSchema.parse(JSON.parse(planBrut));
+      const pieces = plan.flatMap((entree, i) => {
+        const stocke = resultats[i];
+        if (!entree || !stocke) return [];
+        // Seules les photos et les documents se rangent dans le dossier
+        // client (les vidéos et mémos vocaux restent dans le fil).
+        if (stocke.type !== "photo" && stocke.type !== "document") return [];
+        return [
+          {
+            url: stocke.url,
+            nom: entree.nom || "",
+            categorie: entree.categorie,
+            checklistCle: entree.checklistCle || "",
+            dossierPerso: entree.dossierPerso || "",
+          },
+        ];
+      });
+      if (pieces.length > 0) {
+        const res = await rangerPiecesJointes({
+          affaireId,
+          messageId: msg.id,
+          pieces,
+        });
+        rangees = res.rangees;
+      }
+    } catch (e) {
+      console.error("Plan de rangement refusé:", e);
+      // Une ZodError afficherait son JSON brut en anglais dans le toast :
+      // message générique lisible à la place.
+      rangementErreur =
+        e instanceof z.ZodError
+          ? "Pièces envoyées mais non rangées : plan de classement invalide"
+          : e instanceof Error
+            ? `Pièces envoyées mais non rangées : ${e.message}`
+            : "Pièces envoyées mais non rangées";
+    }
+  }
+
   revalidatePath(`/messagerie/affaire/${affaireId}`);
   revalidatePath(`/affaires/${affaireId}/canal`);
   revalidatePath("/messagerie");
-  // Les pièces stockées (URLs réelles) remontent au composer : il propose
-  // alors de les ranger dans le dossier client (GED d'affaire), avec la
-  // catégorie pré-suggérée et, pour les pièces client, la checklist.
+  // Les pièces stockées (URLs réelles) remontent au composer, avec le
+  // bilan du rangement décidé avant l'envoi.
   return {
     messageId: msg.id,
     echecs,
     pieces: { photos, documents },
+    rangees,
+    rangementErreur,
   };
 }
 

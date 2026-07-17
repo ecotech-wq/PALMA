@@ -1115,6 +1115,9 @@ model PlanChantier {
   uploader    User     @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
   nom         String
   description String?
+  /// Type de plan personnalisable (2026-07-18) : saisie libre au dépôt,
+  /// suggestions tirées des types déjà employés sur le chantier.
+  type        String?
   fileUrl     String
   mimeType    String
   fileSize    Int
@@ -1122,6 +1125,7 @@ model PlanChantier {
   updatedAt   DateTime @updatedAt
 
   @@index([chantierId])
+  @@index([chantierId, type])
 }
 
 // =====================================================
@@ -1994,6 +1998,9 @@ model Affaire {
   responsableId     String?
   responsable       User?            @relation("AffairesResponsable", fields: [responsableId], references: [id], onDelete: SetNull)
   checklist         Json             @default("[]")
+  /// Dossiers personnalisés du dossier client (2026-07-18) : tableau de
+  /// { cle, libelle }. Les documents y sont rattachés par dossierPerso.
+  dossiersPerso     Json             @default("[]")
   clientUserId      String?
   clientUser        User?            @relation("AffairesClient", fields: [clientUserId], references: [id], onDelete: SetNull)
   chantierId        String?
@@ -2032,6 +2039,9 @@ model AffaireDocument {
   categorie    CategorieDocAffaire @default(AUTRE)
   /// Cle de la piece de checklist validee par ce document (ex. cadastre).
   checklistCle String?
+  /// Cle d'un dossier personnalisé de l'affaire (Affaire.dossiersPerso) :
+  /// non nul, le document appartient à ce dossier ; nul, à sa catégorie.
+  dossierPerso String?
   nom          String
   fichier      String
   mimeType     String?
@@ -2049,4 +2059,5 @@ model AffaireDocument {
   @@unique([affaireId, messageId, fichier])
   @@index([affaireId, categorie])
   @@index([affaireId, checklistCle])
+  @@index([affaireId, dossierPerso])
 }

@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { Loader2, Mic, Send, Square, X } from "lucide-react";
 import { formatDureeAudio } from "@/lib/pieces-jointes";
 
@@ -43,17 +49,27 @@ function extensionPourMime(mime: string): string {
   return mime.includes("mp4") ? "m4a" : "webm";
 }
 
-export function EnregistreurAudio({
-  onEnvoyer,
-  disabled = false,
-  envoiEnCours = false,
-}: {
-  /** Reçoit le fichier audio finalisé (nom memo-vocal-*.webm ou .m4a). */
-  onEnvoyer: (fichier: File) => void;
-  disabled?: boolean;
-  /** Vrai pendant l'envoi serveur : fige le bouton Envoyer de l'aperçu. */
-  envoiEnCours?: boolean;
-}) {
+/** Poignée impérative : démarrer l'enregistrement depuis l'extérieur
+ *  (option « Mémo vocal » de la feuille « + » du composer). */
+export type EnregistreurAudioHandle = { demarrer: () => void };
+
+export const EnregistreurAudio = forwardRef<
+  EnregistreurAudioHandle,
+  {
+    /** Reçoit le fichier audio finalisé (nom memo-vocal-*.webm ou .m4a). */
+    onEnvoyer: (fichier: File) => void;
+    disabled?: boolean;
+    /** Vrai pendant l'envoi serveur : fige le bouton Envoyer de l'aperçu. */
+    envoiEnCours?: boolean;
+    /** Masque le bouton micro de la barre (le panneau d'état reste rendu) :
+     *  le composer WhatsApp remplace le micro par « Envoyer » dès que le
+     *  message n'est plus vide, sans démonter l'enregistreur. */
+    masquerBouton?: boolean;
+  }
+>(function EnregistreurAudio(
+  { onEnvoyer, disabled = false, envoiEnCours = false, masquerBouton = false },
+  ref
+) {
   const [phase, setPhase] = useState<Phase>("pret");
   const [secondes, setSecondes] = useState(0);
   const [erreur, setErreur] = useState("");
@@ -236,19 +252,24 @@ export function EnregistreurAudio({
     reinitialiser();
   }
 
+  // Démarrage depuis l'extérieur (feuille « + » du composer).
+  useImperativeHandle(ref, () => ({ demarrer }));
+
   return (
     <>
-      {/* Bouton micro : 44 px, toujours présent dans la barre */}
-      <button
-        type="button"
-        onClick={demarrer}
-        disabled={disabled || phase === "enregistrement"}
-        aria-label="Enregistrer un mémo vocal"
-        title="Mémo vocal"
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-      >
-        <Mic size={19} />
-      </button>
+      {/* Bouton micro : 44 px dans la barre (masquable par le composer) */}
+      {!masquerBouton && (
+        <button
+          type="button"
+          onClick={demarrer}
+          disabled={disabled || phase === "enregistrement"}
+          aria-label="Enregistrer un mémo vocal"
+          title="Mémo vocal"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+        >
+          <Mic size={19} />
+        </button>
+      )}
 
       {/* Panneau d'état : recouvre la barre d'envoi (parent en relative) */}
       {phase !== "pret" && (
@@ -345,4 +366,4 @@ export function EnregistreurAudio({
       )}
     </>
   );
-}
+});

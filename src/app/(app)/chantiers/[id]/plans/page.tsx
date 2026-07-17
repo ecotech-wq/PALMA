@@ -34,6 +34,14 @@ export default async function PlansChantierPage({
 
   if (!chantier) notFound();
 
+  // Types déjà employés sur CE chantier : suggestions du dépôt et feuille
+  // de reclassement (dérivés des plans déjà chargés, zéro requête en plus).
+  const typesExistants = [
+    ...new Set(
+      plans.map((p) => p.type).filter((t): t is string => t !== null)
+    ),
+  ].sort((a, b) => a.localeCompare(b, "fr"));
+
   return (
     <div>
       <PageHeader
@@ -49,12 +57,14 @@ export default async function PlansChantierPage({
             currentUserId={me.id}
             isAdmin={me.isAdmin}
             canUpload={!me.isClient}
+            typesExistants={typesExistants}
             plans={plans.map((p) => ({
               id: p.id,
               uploaderId: p.uploaderId,
               uploaderName: p.uploader.name,
               nom: p.nom,
               description: p.description,
+              type: p.type,
               fileUrl: p.fileUrl,
               mimeType: p.mimeType,
               fileSize: p.fileSize,

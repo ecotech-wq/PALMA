@@ -25,6 +25,11 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: "50mb",
     },
+    // Next 16 : dès qu'un middleware est présent, le corps des requêtes
+    // est tronqué à 10 Mo par défaut, donc toute pièce jointe > 10 Mo
+    // arrive coupée (« Unexpected end of form »). On aligne sur la
+    // limite des Server Actions ci-dessus.
+    middlewareClientMaxBodySize: "50mb",
   },
 
   images: {

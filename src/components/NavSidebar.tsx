@@ -106,6 +106,19 @@ const messagerieItem: NavItem = {
 
 // Groupes thématiques pour la sidebar — repliables, pré-ouverts si on est dedans
 const groups: NavGroup[] = [
+  // Commercial : le pipeline d'affaires (CRM). Premier groupe, juste sous
+  // Messagerie : l'affaire est la porte d'entrée de tout projet (chantier
+  // comme étude), elle précède le terrain. Pas de garde de module : une
+  // affaire précède le projet.
+  {
+    key: "commercial",
+    label: "Commercial",
+    icon: Handshake,
+    pilotOnly: true,
+    items: [
+      { href: "/affaires", label: "Affaires", icon: Handshake },
+    ],
+  },
   {
     key: "chantiers",
     label: "Chantiers & équipes",
@@ -172,19 +185,6 @@ const groups: NavGroup[] = [
       { href: "/locations", label: "Locations / Prêts", icon: Truck, pilotOnly: true },
       { href: "/commandes", label: "Commandes", icon: ShoppingCart, pilotOnly: true },
       { href: "/demandes", label: "Demandes matériel", icon: Package },
-    ],
-  },
-  // Commercial : le pipeline d'affaires (CRM), en AMONT des finances. Une
-  // affaire n'est pas encore de l'argent : elle mérite son propre groupe,
-  // placé avant Finances. Pas de garde de module : une affaire précède le
-  // projet (chantier comme étude).
-  {
-    key: "commercial",
-    label: "Commercial",
-    icon: Handshake,
-    pilotOnly: true,
-    items: [
-      { href: "/affaires", label: "Affaires", icon: Handshake },
     ],
   },
   {
@@ -264,6 +264,9 @@ const mobileMore: NavItem[] = [
   // Le lanceur d'applications (la grille) : premier item du tiroir.
   // Caché au client : le proxy le renvoie de /accueil vers /aujourdhui.
   { href: "/accueil", label: "Accueil", icon: LayoutGrid, clientHidden: true },
+  // Affaires (CRM) : juste après Accueil, comme le groupe Commercial suit
+  // Messagerie dans la sidebar (Messagerie vit déjà en barre primaire).
+  { href: "/affaires", label: "Affaires", icon: Handshake, clientHidden: true, pilotOnly: true },
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
   // Pointage : sorti de la barre primaire des pilotes (remplacé par
   // Tâches), il reste ici ; filtré automatiquement pour les rôles qui
@@ -280,8 +283,6 @@ const mobileMore: NavItem[] = [
   // Prix sensibles : admin + conducteur uniquement
   { href: "/locations", label: "Locations / Prêts", icon: Truck, clientHidden: true, pilotOnly: true },
   { href: "/commandes", label: "Commandes", icon: ShoppingCart, clientHidden: true, pilotOnly: true },
-  // Affaires (CRM) : admin + conducteur (pipeline commercial)
-  { href: "/affaires", label: "Affaires", icon: Handshake, clientHidden: true, pilotOnly: true },
   // Suivi financier : admin + conducteur (devis, situations, factures)
   { href: "/finance", label: "Suivi financier", icon: Wallet, clientHidden: true, pilotOnly: true },
   // Laboratoire : admin + conducteur (essais, formulations, rapports)

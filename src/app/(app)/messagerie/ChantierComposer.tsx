@@ -19,22 +19,36 @@ import {
   Video,
   Mic,
   Image as ImageIcon,
+  ClipboardCheck,
+  UserPlus,
+  CalendarClock,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
-import { EnregistreurAudio } from "@/components/EnregistreurAudio";
+import {
+  EnregistreurAudio,
+  type EnregistreurAudioHandle,
+} from "@/components/EnregistreurAudio";
 import {
   ACCEPT_DOCUMENTS,
+  controlerTaillesEnvoi,
   formatEchecsUpload,
   formatTailleFichier,
 } from "@/lib/pieces-jointes";
-import { mimeDepuisUrl, nomDepuisUrl } from "@/lib/ged-affaire";
+import {
+  suggererCategorie,
+  type DossierPerso,
+} from "@/lib/ged-affaire";
 import type { ChecklistItem } from "@/lib/affaires";
 import { postChantierMessage } from "./actions";
 import {
-  RangerDossierClient,
-  type PieceEnvoyee,
-} from "./RangerDossierClient";
+  ChoixClassement,
+  FeuilleNouveauDossier,
+  decoderDestination,
+} from "./ChoixClassement";
+import { ChecklistFil, type DocPiece } from "./affaire/[affaireId]/ChecklistFil";
+import { FeuilleConfier } from "./affaire/[affaireId]/FeuilleConfier";
+import { FeuilleProchaineAction } from "./affaire/[affaireId]/FeuilleProchaineAction";
 
 type Materiel = { id: string; nomCommun: string; statut: string };
 type Equipe = { id: string; nom: string };
@@ -134,13 +148,30 @@ const METEO_OPTIONS = [
   { value: "VENT_FORT", label: "Vent fort" },
 ];
 
+const selectPieceCls =
+  "min-h-11 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100";
+
+/** Pilotage de l'affaire depuis la feuille « + » du composer. */
+export type PilotageAffaire = {
+  cibles: { id: string; name: string }[];
+  prochaineAction: string | null;
+  /** "AAAA-MM-JJ" ou null. */
+  prochaineActionLe: string | null;
+  /** Faux quand l'affaire est close (GAGNEE / PERDUE). */
+  active: boolean;
+};
+
 /**
- * Composer du fil de chantier, façon WhatsApp : une seule ligne au repos
- * ([+] champ [envoyer]) pour laisser le maximum d'écran aux messages.
- * Le bouton « + » déplie une feuille (bas d'écran au téléphone, menu
- * ancré sur grand écran) avec les catégories typées, l'ajout de photos
- * et la visibilité client. Une catégorie typée choisie affiche un
- * bandeau et ses champs propres, refermables d'un X.
+ * Composer du fil, façon WhatsApp : une barre minimale ([+] champ, et UN
+ * bouton à droite qui bascule micro <-> envoyer selon que le message est
+ * vide), pour laisser le maximum d'écran aux messages. TOUT le reste vit
+ * dans la feuille « + » (bas d'écran au téléphone, menu ancré sur grand
+ * écran) : photos et vidéos, document, mémo vocal, catégories typées du
+ * chantier, visibilité client et, en contexte affaire, les gestes de
+ * pilotage (pièces du dossier, confier une action, prochaine action).
+ * En contexte affaire, chaque pièce jointe porte son classement AVANT
+ * envoi (façon Trello) : catégorie suggérée, dossiers personnalisés,
+ * nouveau dossier à la volée, ou « Ne pas classer ».
  */
 export function ChantierComposer({
   chantierId = "",
@@ -151,6 +182,9 @@ export function ChantierComposer({
   sortiesOuvertes = [],
   canHideFromClient = false,
   checklistDossier = [],
+  docsChecklist = {},
+  dossiersPerso = [],
+  pilotage = null,
 }: {
   chantierId?: string;
   /** Contexte AFFAIRE (CRM) : le composer poste dans le canal de
@@ -165,10 +199,16 @@ export function ChantierComposer({
   sortiesOuvertes?: SortieOuverte[];
   /** Affiche le toggle « cacher du client » (admin / conducteur uniquement) */
   canHideFromClient?: boolean;
-  /** Contexte affaire : checklist du dossier (pièces du permis), proposée
-   *  par la feuille de rangement pour les pièces de catégorie
-   *  « Pièces client ». Vide hors permis de construire. */
+  /** Contexte affaire : checklist du dossier (pièces du permis), cochable
+   *  depuis la feuille « + » et proposée au classement des pièces de
+   *  catégorie « Pièces client ». Vide hors permis de construire. */
   checklistDossier?: ChecklistItem[];
+  /** Contexte affaire : document de GED validant chaque pièce cochée. */
+  docsChecklist?: Record<string, DocPiece>;
+  /** Contexte affaire : dossiers personnalisés du dossier client. */
+  dossiersPerso?: DossierPerso[];
+  /** Contexte affaire : gestes de pilotage de la feuille « + ». */
+  pilotage?: PilotageAffaire | null;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -176,13 +216,27 @@ export function ChantierComposer({
   const docRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<EnregistreurAudioHandle>(null);
   const [pending, startTransition] = useTransition();
   const panneau = usePanneauOpaque();
   const [category, setCategory] = useState<Categorie>("NOTE");
   const [texte, setTexte] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  // Classement AVANT envoi (contexte affaire) : une destination encodée
+  // ("cat:...", "perso:...", "aucun") et une clé de checklist par fichier,
+  // alignées sur `files`.
+  const [choixPieces, setChoixPieces] = useState<string[]>([]);
+  const [checklistCles, setChecklistCles] = useState<string[]>([]);
+  // Dossiers créés à la volée depuis le composer (en plus de la prop).
+  const [dossiersCrees, setDossiersCrees] = useState<DossierPerso[]>([]);
+  // Index du fichier dont le sélecteur a demandé « Nouveau dossier... ».
+  const [nouveauPourIndex, setNouveauPourIndex] = useState<number | null>(null);
   const [hiddenFromClient, setHiddenFromClient] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Feuilles de pilotage (contexte affaire), ouvertes depuis la feuille +.
+  const [checklistOuverte, setChecklistOuverte] = useState(false);
+  const [confierOuvert, setConfierOuvert] = useState(false);
+  const [prochaineOuverte, setProchaineOuverte] = useState(false);
   // Champs conditionnels
   const [gravite, setGravite] = useState<"INFO" | "ATTENTION" | "URGENT">(
     "ATTENTION"
@@ -198,14 +252,15 @@ export function ChantierComposer({
   const [etatRetour, setEtatRetour] = useState<
     "BON" | "USE" | "CASSE" | "MANQUANT"
   >("BON");
-  // Contexte affaire : après un envoi avec pièces jointes, la feuille
-  // « Ranger dans le dossier client » se propose (non bloquante).
-  const [rangement, setRangement] = useState<{
-    messageId: string;
-    pieces: PieceEnvoyee[];
-  } | null>(null);
 
   const meta = CATEGORY_META[category];
+  const dossiersAffiches = [
+    ...dossiersPerso,
+    ...dossiersCrees.filter((d) => !dossiersPerso.some((e) => e.cle === d.cle)),
+  ];
+  const premiereNonRecue =
+    checklistDossier.find((c) => !c.fait)?.cle ?? checklistDossier[0]?.cle ?? "";
+  const piecesCochees = checklistDossier.filter((c) => c.fait).length;
 
   // Fermeture du menu « + » au clic extérieur et à Échap
   useEffect(() => {
@@ -237,6 +292,9 @@ export function ChantierComposer({
   function reset() {
     setTexte("");
     setFiles([]);
+    setChoixPieces([]);
+    setChecklistCles([]);
+    setNouveauPourIndex(null);
     setHiddenFromClient(false);
     setGravite("ATTENTION");
     setCategorieIncident("AUTRE");
@@ -262,17 +320,53 @@ export function ChantierComposer({
     textareaRef.current?.focus();
   }
 
+  /** Un fichier vidéo ou audio reste dans le fil : pas de classement. */
+  function estClassable(f: File): boolean {
+    return !f.type.startsWith("video/") && !f.type.startsWith("audio/");
+  }
+
   function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const list = Array.from(e.target.files ?? []);
+    // Plafonds CLIENT : par type (miroir des limites serveur : photo
+    // 10 Mo, document et audio 25 Mo), enveloppe de 45 Mo par envoi
+    // complet (la requête server action est plafonnée à 50 Mo), et 30
+    // pièces par message (au-delà, le plan de rangement serait rejeté).
+    // Refuser ici évite d'uploader en entier un fichier voué au refus.
+    const { indicesAcceptes, refus } = controlerTaillesEnvoi(
+      files.map((f) => f.size),
+      list.map((f) => ({ nom: f.name, taille: f.size, type: f.type }))
+    );
+    for (const message of refus) toast.error(message);
+    const acceptes = indicesAcceptes.map((i) => list[i]);
     // Ajout (pas remplacement) : on peut cumuler photos ET documents
     // avant l'envoi. L'input est vidé pour pouvoir re-choisir le même
     // fichier après un retrait.
-    setFiles((prev) => [...prev, ...list]);
+    setFiles((prev) => [...prev, ...acceptes]);
+    setChoixPieces((prev) => [
+      ...prev,
+      ...acceptes.map((f) =>
+        estClassable(f) ? `cat:${suggererCategorie(f.type)}` : "aucun"
+      ),
+    ]);
+    setChecklistCles((prev) => [...prev, ...acceptes.map(() => "")]);
     if (e.target) e.target.value = "";
   }
 
   function removeFile(idx: number) {
     setFiles((prev) => prev.filter((_, i) => i !== idx));
+    setChoixPieces((prev) => prev.filter((_, i) => i !== idx));
+    setChecklistCles((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function changerChoixPiece(idx: number, valeur: string) {
+    setChoixPieces((prev) => prev.map((v, i) => (i === idx ? valeur : v)));
+    // En passant sur « Pièces client », proposer d'office la première
+    // pièce encore attendue ; sinon pas de clé.
+    setChecklistCles((prev) =>
+      prev.map((v, i) =>
+        i === idx ? (valeur === "cat:PIECES_CLIENT" ? premiereNonRecue : "") : v
+      )
+    );
   }
 
   /** Cible du message : chantier OU affaire (exactement l'une des deux). */
@@ -349,10 +443,30 @@ export function ChantierComposer({
     }
     // Médias
     for (const f of files) fd.append("medias", f);
-    // Photos envoyées, dans l'ordre d'upload : sert à retrouver le nom
-    // d'origine de chaque photo stockée (perdu au stockage, converti en
-    // webp) quand la feuille de rangement se propose.
-    const fichiersEnvoyes = files;
+    // Fil d'AFFAIRE : plan de rangement décidé AVANT envoi, une entrée
+    // par fichier DANS LE MÊME ORDRE que `medias` (null = ne pas classer).
+    // Le serveur range dans la même action (rangerPiecesJointes : gardes,
+    // idempotence, coche de checklist et trace « Pièce reçue »).
+    if (affaireId && files.length > 0) {
+      const plan = files.map((f, i) => {
+        if (!estClassable(f)) return null;
+        const destination = decoderDestination(choixPieces[i] ?? "aucun");
+        if (!destination) return null;
+        return {
+          nom: f.name,
+          categorie: destination.categorie,
+          checklistCle:
+            !destination.dossierPerso &&
+            destination.categorie === "PIECES_CLIENT"
+              ? (checklistCles[i] ?? "")
+              : "",
+          dossierPerso: destination.dossierPerso ?? "",
+        };
+      });
+      if (plan.some((p) => p !== null)) {
+        fd.set("rangement", JSON.stringify(plan));
+      }
+    }
 
     startTransition(async () => {
       try {
@@ -364,28 +478,14 @@ export function ChantierComposer({
         } else {
           toast.success(`${meta.label} envoyé`);
         }
-        // Fil d'AFFAIRE : chaque pièce jointe envoyée peut être rangée
-        // dans le dossier client. Feuille non bloquante, après l'envoi.
-        if (affaireId && "pieces" in res && res.pieces) {
-          const nomsRefuses = new Set(res.echecs.map((e) => e.nom));
-          const imagesEnvoyees = fichiersEnvoyes.filter(
-            (f) => f.type.startsWith("image/") && !nomsRefuses.has(f.name)
+        if ("rangementErreur" in res && res.rangementErreur) {
+          toast.error(res.rangementErreur);
+        } else if ("rangees" in res && res.rangees > 0) {
+          toast.success(
+            res.rangees > 1
+              ? `${res.rangees} pièces rangées dans le dossier client`
+              : "Pièce rangée dans le dossier client"
           );
-          const piecesARanger: PieceEnvoyee[] = [
-            ...res.pieces.photos.map((url, i) => ({
-              url,
-              nom: imagesEnvoyees[i]?.name ?? nomDepuisUrl(url),
-              mimeType: mimeDepuisUrl(url),
-            })),
-            ...res.pieces.documents.map((d) => ({
-              url: d.url,
-              nom: d.nom,
-              mimeType: d.mimeType,
-            })),
-          ];
-          if (piecesARanger.length > 0) {
-            setRangement({ messageId: res.messageId, pieces: piecesARanger });
-          }
         }
         reset();
         setCategory("NOTE");
@@ -398,20 +498,17 @@ export function ChantierComposer({
 
   const materielsDispo = materiels.filter((m) => m.statut === "DISPO");
   const isTyped = category !== "NOTE";
+  // Morphing WhatsApp du bouton de droite : micro quand il n'y a encore
+  // rien à envoyer, avion dès qu'un texte ou une pièce est présent. Une
+  // catégorie typée garde toujours l'avion : une SORTIE ou un RETOUR
+  // s'envoient légitimement sans texte ni pièce (note optionnelle).
+  const estVide = texte.trim() === "" && files.length === 0 && !isTyped;
+
+  const optionCls =
+    "flex min-h-11 w-full items-center gap-2.5 rounded px-2 py-2 text-left text-xs font-medium text-slate-800 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800";
 
   return (
     <>
-    {/* Feuille de rangement (contexte affaire) : proposée après l'envoi,
-        non bloquante ; « Ignorer » laisse les pièces dans le fil. */}
-    {affaireId && rangement && (
-      <RangerDossierClient
-        affaireId={affaireId}
-        messageId={rangement.messageId}
-        pieces={rangement.pieces}
-        checklist={checklistDossier}
-        onClose={() => setRangement(null)}
-      />
-    )}
     <form
       onSubmit={submit}
       className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm"
@@ -578,23 +675,17 @@ export function ChantierComposer({
         </div>
       )}
 
-      {/* Aperçu médias sélectionnés */}
-      {files.length > 0 && (
+      {/* Aperçu des pièces sélectionnées. Fil de CHANTIER : puces
+          compactes. Fil d'AFFAIRE : une ligne par pièce avec son
+          classement (façon Trello) décidé AVANT l'envoi. */}
+      {files.length > 0 && !affaireId && (
         <div className="px-3 pt-2 flex flex-wrap gap-1.5">
           {files.map((f, i) => (
             <div
               key={i}
               className="relative inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300"
             >
-              {f.type.startsWith("video/") ? (
-                <Video size={12} className="text-slate-500" />
-              ) : f.type.startsWith("audio/") ? (
-                <Mic size={12} className="text-slate-500" />
-              ) : f.type.startsWith("image/") ? (
-                <ImageIcon size={12} className="text-slate-500" />
-              ) : (
-                <FileText size={12} className="text-slate-500" />
-              )}
+              <IconePiece type={f.type} />
               <span className="truncate max-w-[150px]">{f.name}</span>
               {f.size > 0 && (
                 <span className="text-[10px] text-slate-400">
@@ -613,8 +704,72 @@ export function ChantierComposer({
           ))}
         </div>
       )}
+      {files.length > 0 && affaireId && (
+        <ul className="px-3 pt-2 space-y-1.5">
+          {files.map((f, i) => (
+            <li
+              key={i}
+              className="rounded-lg border border-slate-200 p-2 dark:border-slate-800"
+            >
+              <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300">
+                <IconePiece type={f.type} />
+                <span className="min-w-0 flex-1 truncate font-medium">
+                  {f.name}
+                </span>
+                {f.size > 0 && (
+                  <span className="shrink-0 text-[10px] text-slate-400">
+                    {formatTailleFichier(f.size)}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeFile(i)}
+                  aria-label={`Retirer ${f.name}`}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-slate-400 hover:text-red-600"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              {estClassable(f) && (
+                <div className="mt-1 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  <ChoixClassement
+                    valeur={choixPieces[i] ?? "aucun"}
+                    onChange={(v) => changerChoixPiece(i, v)}
+                    dossiers={dossiersAffiches}
+                    onNouveauDossier={() => setNouveauPourIndex(i)}
+                    avecAucun
+                    ariaLabel={`Classer ${f.name}`}
+                    className={selectPieceCls}
+                  />
+                  {choixPieces[i] === "cat:PIECES_CLIENT" &&
+                    checklistDossier.length > 0 && (
+                      <select
+                        aria-label={`Pièce du dossier validée par ${f.name}`}
+                        value={checklistCles[i] ?? ""}
+                        onChange={(e) =>
+                          setChecklistCles((prev) =>
+                            prev.map((v, j) => (j === i ? e.target.value : v))
+                          )
+                        }
+                        className={selectPieceCls}
+                      >
+                        <option value="">Aucune pièce précise</option>
+                        {checklistDossier.map((c) => (
+                          <option key={c.cle} value={c.cle}>
+                            {c.libelle}
+                            {c.fait ? " (déjà reçue)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
 
-      {/* Ligne principale : [+] [champ] [envoyer] */}
+      {/* Ligne principale : [+] [champ] [micro | envoyer] */}
       <div className="flex items-end gap-1.5 p-1.5">
         <div ref={menuRef} className="relative shrink-0">
           <button
@@ -622,15 +777,15 @@ export function ChantierComposer({
             onClick={() => setMenuOpen((v) => !v)}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            aria-label="Plus d'options (catégories, photos, visibilité)"
-            className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+            aria-label="Plus d'options"
+            className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors ${
               menuOpen
                 ? "bg-brand-100 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300"
                 : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
             }`}
           >
             <Plus
-              size={20}
+              size={22}
               className={`transition-transform ${menuOpen ? "rotate-45" : ""}`}
             />
           </button>
@@ -668,7 +823,7 @@ export function ChantierComposer({
                           type="button"
                           role="menuitem"
                           onClick={() => choisirCategorie(cat)}
-                          className="flex w-full items-start gap-2.5 rounded px-2 py-2 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 sm:py-1.5"
+                          className="flex min-h-11 w-full items-start gap-2.5 rounded px-2 py-2 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 sm:py-1.5"
                         >
                           <m.Icon size={15} className={`mt-0.5 shrink-0 ${m.color}`} />
                           <span className="min-w-0">
@@ -692,11 +847,100 @@ export function ChantierComposer({
                     setMenuOpen(false);
                     fileRef.current?.click();
                   }}
-                  className="flex w-full items-center gap-2.5 rounded px-2 py-2 text-left text-xs font-medium text-slate-800 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 sm:py-1.5"
+                  className={optionCls}
+                >
+                  <ImageIcon size={15} className="shrink-0 text-slate-500" />
+                  Photos et vidéos
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    docRef.current?.click();
+                  }}
+                  className={optionCls}
                 >
                   <Paperclip size={15} className="shrink-0 text-slate-500" />
-                  Photos / vidéos
+                  Document
                 </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    audioRef.current?.demarrer();
+                  }}
+                  className={optionCls}
+                >
+                  <Mic size={15} className="shrink-0 text-slate-500" />
+                  Mémo vocal
+                </button>
+                {/* Pilotage de l'AFFAIRE : la checklist du dossier et les
+                    gestes de la fiche, sans quitter le fil. */}
+                {affaireId &&
+                  (checklistDossier.length > 0 || pilotage) && (
+                    <>
+                      <div className="my-1 h-px bg-slate-100 dark:bg-slate-800" />
+                      <div className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                        Affaire
+                      </div>
+                      {checklistDossier.length > 0 && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            setChecklistOuverte(true);
+                          }}
+                          className={optionCls}
+                        >
+                          <ClipboardCheck
+                            size={15}
+                            className="shrink-0 text-slate-500"
+                          />
+                          Pièces du dossier
+                          <span className="tabular-nums text-slate-500">
+                            {piecesCochees}/{checklistDossier.length}
+                          </span>
+                        </button>
+                      )}
+                      {pilotage?.active && (
+                        <>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setMenuOpen(false);
+                              setConfierOuvert(true);
+                            }}
+                            className={optionCls}
+                          >
+                            <UserPlus
+                              size={15}
+                              className="shrink-0 text-slate-500"
+                            />
+                            Confier une action
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setMenuOpen(false);
+                              setProchaineOuverte(true);
+                            }}
+                            className={optionCls}
+                          >
+                            <CalendarClock
+                              size={15}
+                              className="shrink-0 text-slate-500"
+                            />
+                            Modifier la prochaine action
+                          </button>
+                        </>
+                      )}
+                    </>
+                  )}
                 {canHideFromClient && category !== "RAPPORT" && (
                   <button
                     type="button"
@@ -706,21 +950,17 @@ export function ChantierComposer({
                       setHiddenFromClient((v) => !v);
                       setMenuOpen(false);
                     }}
-                    className="flex w-full items-center gap-2.5 rounded px-2 py-2 text-left text-xs font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 sm:py-1.5"
+                    className={optionCls}
                   >
                     {hiddenFromClient ? (
                       <>
                         <Eye size={15} className="shrink-0 text-slate-500" />
-                        <span className="text-slate-800 dark:text-slate-200">
-                          Rendre visible au client
-                        </span>
+                        <span>Rendre visible au client</span>
                       </>
                     ) : (
                       <>
                         <EyeOff size={15} className="shrink-0 text-amber-600" />
-                        <span className="text-slate-800 dark:text-slate-200">
-                          Cacher du client
-                        </span>
+                        <span>Cacher du client</span>
                       </>
                     )}
                   </button>
@@ -738,7 +978,7 @@ export function ChantierComposer({
           onChange={handleFiles}
           className="hidden"
         />
-        {/* Documents (trombone) : mêmes extensions que la GED chantier */}
+        {/* Documents : mêmes extensions que la GED chantier */}
         <input
           ref={docRef}
           type="file"
@@ -747,24 +987,6 @@ export function ChantierComposer({
           onChange={handleFiles}
           className="hidden"
         />
-
-        {/* Mémo vocal : bouton micro 44 px, panneau au-dessus de la barre */}
-        <EnregistreurAudio
-          onEnvoyer={envoyerAudio}
-          disabled={pending}
-          envoiEnCours={pending}
-        />
-
-        {/* Pièce jointe document */}
-        <button
-          type="button"
-          onClick={() => docRef.current?.click()}
-          aria-label="Joindre un document"
-          title="Joindre un document (PDF, Office, DWG...)"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-        >
-          <Paperclip size={18} />
-        </button>
 
         <textarea
           ref={textareaRef}
@@ -783,26 +1005,90 @@ export function ChantierComposer({
           }
           rows={1}
           title="Ctrl+Entrée pour envoyer"
-          className="min-w-0 flex-1 resize-none self-center rounded-2xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-brand-400"
+          className="min-w-0 flex-1 resize-none self-center rounded-2xl bg-slate-100 dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-brand-400"
         />
 
-        <button
-          type="submit"
+        {/* UN bouton à droite, façon WhatsApp : micro quand le message est
+            vide, envoyer sinon. L'enregistreur reste monté (son panneau
+            d'état recouvre la barre), seul son bouton se masque. */}
+        <EnregistreurAudio
+          ref={audioRef}
+          onEnvoyer={envoyerAudio}
           disabled={pending}
-          aria-label="Envoyer"
-          title="Envoyer (Ctrl+Entrée)"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
-        >
-          {pending ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : (
-            <Send size={16} />
-          )}
-        </button>
+          envoiEnCours={pending}
+          masquerBouton={!estVide}
+        />
+        {!estVide && (
+          <button
+            type="submit"
+            disabled={pending}
+            aria-label="Envoyer"
+            title="Envoyer (Ctrl+Entrée)"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
+          >
+            {pending ? (
+              <Loader2 size={17} className="animate-spin" />
+            ) : (
+              <Send size={17} />
+            )}
+          </button>
+        )}
       </div>
     </form>
+
+    {/* Feuilles du contexte affaire, ouvertes depuis la feuille « + ». */}
+    {affaireId && checklistOuverte && (
+      <ChecklistFil
+        affaireId={affaireId}
+        items={checklistDossier}
+        docs={docsChecklist}
+        canEdit
+        onClose={() => setChecklistOuverte(false)}
+      />
+    )}
+    {affaireId && pilotage && confierOuvert && (
+      <FeuilleConfier
+        affaireId={affaireId}
+        cibles={pilotage.cibles}
+        onClose={() => setConfierOuvert(false)}
+      />
+    )}
+    {affaireId && pilotage && prochaineOuverte && (
+      <FeuilleProchaineAction
+        affaireId={affaireId}
+        prochaineAction={pilotage.prochaineAction}
+        prochaineActionLe={pilotage.prochaineActionLe}
+        onClose={() => setProchaineOuverte(false)}
+      />
+    )}
+    {affaireId && nouveauPourIndex !== null && (
+      <FeuilleNouveauDossier
+        affaireId={affaireId}
+        onCree={(d) => {
+          setDossiersCrees((prev) =>
+            prev.some((x) => x.cle === d.cle) ? prev : [...prev, d]
+          );
+          changerChoixPiece(nouveauPourIndex, `perso:${d.cle}`);
+        }}
+        onClose={() => setNouveauPourIndex(null)}
+      />
+    )}
     </>
   );
+}
+
+/** Icône monochrome selon le type MIME d'une pièce du composer. */
+function IconePiece({ type }: { type: string }) {
+  if (type.startsWith("video/")) {
+    return <Video size={12} className="shrink-0 text-slate-500" />;
+  }
+  if (type.startsWith("audio/")) {
+    return <Mic size={12} className="shrink-0 text-slate-500" />;
+  }
+  if (type.startsWith("image/")) {
+    return <ImageIcon size={12} className="shrink-0 text-slate-500" />;
+  }
+  return <FileText size={12} className="shrink-0 text-slate-500" />;
 }
 
 /* ----- Petits champs utilitaires pour la compose form ----- */

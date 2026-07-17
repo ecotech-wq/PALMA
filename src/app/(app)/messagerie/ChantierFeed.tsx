@@ -12,6 +12,25 @@ import { TAILLE_PAGE_MESSAGES } from "@/features/messaging/core/pagination";
 import { PhotoVignette } from "@/components/PhotoVignette";
 import { AudiosMessage, DocumentsMessage } from "@/components/MediasMessage";
 import type { DocumentMessage } from "@/lib/pieces-jointes";
+import type { ChecklistItem } from "@/lib/affaires";
+import {
+  mimeDepuisUrl,
+  nomDepuisUrl,
+  type DossierPerso,
+} from "@/lib/ged-affaire";
+import {
+  FeuilleClassement,
+  type PieceAClasser,
+} from "./FeuilleClassement";
+
+/** Contexte GED du fil d'affaire : de quoi ranger une pièce jointe
+ *  APRÈS l'envoi (bouton dossier sur chaque pièce non rangée). */
+export type AffaireGed = {
+  checklist: ChecklistItem[];
+  dossiersPerso: DossierPerso[];
+  /** messageId -> fichiers déjà rangés dans le dossier client. */
+  rangees: Record<string, string[]>;
+};
 
 /* -----------------------------------------------------------------------
  *  Hook de polling live sur un fil (chantier ou affaire). Toutes les
@@ -83,6 +102,7 @@ import {
   Truck,
   Flag,
   Image as ImageIcon,
+  FolderInput,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
@@ -351,6 +371,7 @@ export function ChantierFeed({
   canPilotDemandes = false,
   demandeInfo = {},
   photoMeta = {},
+  affaireGed = null,
 }: {
   chantierId: string;
   /** Contexte AFFAIRE (CRM) : le fil est celui du canal d'une affaire
@@ -368,6 +389,8 @@ export function ChantierFeed({
   canPilotDemandes?: boolean;
   demandeInfo?: Record<string, DemandeInfo>;
   photoMeta?: Record<string, PhotoMeta>;
+  /** Contexte affaire : rangement après coup des pièces du fil. */
+  affaireGed?: AffaireGed | null;
 }) {
   // Base des routes API du fil : chantier ou affaire (mêmes formes de
   // réponse, gardes propres à chaque contexte côté serveur).
@@ -728,7 +751,8 @@ export function ChantierFeed({
               <MessageBubble
                 key={`ext-${m.id}`}
                 chantierId={chantierId}
-                enAffaire={!!affaireId}
+                affaireId={affaireId}
+                ged={affaireGed}
                 msg={m}
                 isOwn={m.authorId === currentUserId}
                 canEdit={canEdit}
@@ -756,7 +780,8 @@ export function ChantierFeed({
               <MessageBubble
                 key={m.id}
                 chantierId={chantierId}
-                enAffaire={!!affaireId}
+                affaireId={affaireId}
+                ged={affaireGed}
                 msg={m}
                 isOwn={m.authorId === currentUserId}
                 canEdit={canEdit}
@@ -778,7 +803,8 @@ export function ChantierFeed({
 
 function MessageBubble({
   chantierId,
-  enAffaire,
+  affaireId,
+  ged,
   msg,
   isOwn,
   canEdit,
@@ -791,7 +817,9 @@ function MessageBubble({
   chantierId: string;
   /** Fil d'affaire (CRM) : pas de réactions, de tags ni de visibilité
    *  client, ces gestes appartiennent aux fils de chantier. */
-  enAffaire: boolean;
+  affaireId: string | null;
+  /** Contexte GED du fil d'affaire (rangement après coup des pièces). */
+  ged: AffaireGed | null;
   msg: ChatMessage;
   isOwn: boolean;
   canEdit: boolean;
@@ -801,6 +829,7 @@ function MessageBubble({
   viewerRole: TagRole;
   photoMeta: Record<string, PhotoMeta>;
 }) {
+  const enAffaire = !!affaireId;
   // Groupage des réactions par emoji
   const reactions = msg.reactions ?? [];
   const grouped = new Map<string, { count: number; mine: boolean }>();
@@ -816,7 +845,15 @@ function MessageBubble({
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  // Fil d'affaire : pièce en cours de rangement (feuille de classement).
+  const [pieceAClasser, setPieceAClasser] = useState<PieceAClasser | null>(
+    null
+  );
   const tags = msg.tags ?? [];
+  // Pièces de CE message déjà rangées dans le dossier client : les autres
+  // portent un bouton dossier (tap 44 px, jamais au survol seul).
+  const gedActif = enAffaire && !!ged && canEdit;
+  const dejaRangees = new Set(ged?.rangees[msg.id] ?? []);
 
   function handleApplyTag(code: TagCode) {
     startTransition(async () => {
@@ -988,25 +1025,53 @@ function MessageBubble({
                   m?.gpsLat !== undefined &&
                   m?.gpsLng !== null &&
                   m?.gpsLng !== undefined;
+                const rangeable = gedActif && !dejaRangees.has(url);
                 return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setLightboxIndex(i)}
-                    className="relative w-20 h-20 rounded overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 group/photo"
-                    title={geo ? "Photo géolocalisée — clic pour voir + carte" : "Voir en plus grand"}
-                  >
-                    <PhotoVignette
-                      url={url}
-                      alt={`Photo ${i + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                    {geo && (
-                      <span className="absolute top-0.5 right-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500/90 text-white">
-                        <MapPin size={9} />
-                      </span>
+                  // Marges réservées au débordement de la pastille de
+                  // rangement : la zone de tap 44 px vit HORS de la
+                  // vignette sans recouvrir les photos voisines.
+                  <div key={i} className={rangeable ? "relative mb-4 mr-4" : "relative"}>
+                    <button
+                      type="button"
+                      onClick={() => setLightboxIndex(i)}
+                      className="relative w-20 h-20 rounded overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 group/photo"
+                      title={geo ? "Photo géolocalisée : clic pour voir + carte" : "Voir en plus grand"}
+                    >
+                      <PhotoVignette
+                        url={url}
+                        alt={`Photo ${i + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                      {geo && (
+                        <span className="absolute top-0.5 right-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500/90 text-white">
+                          <MapPin size={9} />
+                        </span>
+                      )}
+                    </button>
+                    {/* Rangement après coup : pastille à cheval sur le
+                        coin, zone de tap 44 px décalée hors de la vignette
+                        (dans la marge réservée) pour que taper la photo
+                        ouvre bien la visionneuse, pas la feuille. */}
+                    {rangeable && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPieceAClasser({
+                            url,
+                            nom: nomDepuisUrl(url),
+                            mimeType: mimeDepuisUrl(url),
+                          })
+                        }
+                        aria-label="Ranger cette photo dans le dossier client"
+                        title="Ranger dans le dossier client"
+                        className="absolute -bottom-4 -right-4 flex h-11 w-11 items-center justify-center"
+                      >
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/85 text-white shadow dark:bg-slate-100/90 dark:text-slate-900">
+                          <FolderInput size={13} />
+                        </span>
+                      </button>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -1030,8 +1095,33 @@ function MessageBubble({
           {/* Mémos vocaux */}
           <AudiosMessage audios={msg.audios ?? []} />
 
-          {/* Pièces jointes documentaires */}
-          <DocumentsMessage documents={msg.documents ?? []} />
+          {/* Pièces jointes documentaires (bouton de rangement 44 px sur
+              chaque pièce encore libre dans un fil d'affaire) */}
+          <DocumentsMessage
+            documents={msg.documents ?? []}
+            actionPour={
+              gedActif
+                ? (doc) =>
+                    dejaRangees.has(doc.url) ? null : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPieceAClasser({
+                            url: doc.url,
+                            nom: doc.nom,
+                            mimeType: doc.mimeType,
+                          })
+                        }
+                        aria-label={`Ranger ${doc.nom} dans le dossier client`}
+                        title="Ranger dans le dossier client"
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-200 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                      >
+                        <FolderInput size={15} />
+                      </button>
+                    )
+                : undefined
+            }
+          />
 
           {/* Réactions existantes + bouton ajout */}
           {(grouped.size > 0 || pickerOpen) && (
@@ -1199,6 +1289,18 @@ function MessageBubble({
           startIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
           metadata={photoMeta}
+        />
+      )}
+
+      {/* Feuille de classement d'une pièce du fil (rangement après coup) */}
+      {affaireId && ged && pieceAClasser && (
+        <FeuilleClassement
+          affaireId={affaireId}
+          messageId={msg.id}
+          piece={pieceAClasser}
+          checklist={ged.checklist}
+          dossiers={ged.dossiersPerso}
+          onClose={() => setPieceAClasser(null)}
         />
       )}
     </>

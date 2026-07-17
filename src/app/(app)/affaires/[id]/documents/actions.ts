@@ -12,6 +12,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { requireAuth, requireAffaireAccess } from "@/lib/auth-helpers";
 import { saveUploadedDocument, deleteUploadedPhoto } from "@/lib/upload";
@@ -22,6 +23,9 @@ import {
   CATEGORIES_DOC_AFFAIRE,
   mimeDepuisUrl,
   nomDepuisUrl,
+  parseDossiersPerso,
+  preparerNouveauDossier,
+  type DossierPerso,
 } from "@/lib/ged-affaire";
 import { cocherChecklist } from "../../actions";
 
@@ -39,7 +43,7 @@ async function chargerAffaireGardee(affaireId: string) {
   await requireAffaireAccess(me, affaireId);
   const affaire = await db.affaire.findUnique({
     where: { id: affaireId },
-    select: { id: true, checklist: true },
+    select: { id: true, checklist: true, dossiersPerso: true },
   });
   if (!affaire) throw new Error("Affaire introuvable");
   return { me, affaire };
@@ -65,6 +69,26 @@ function validerChecklistCle(
   return cle;
 }
 
+/** Une clé de dossier personnalisé n'est acceptée que si elle existe dans
+ *  le catalogue de l'affaire, et une pièce rangée dans un dossier perso ne
+ *  valide pas la checklist (réservée aux « Pièces client »). */
+function validerDossierPerso(
+  dossiersPerso: unknown,
+  cle: string | undefined | null,
+  checklistCle: string | null
+): string | null {
+  if (!cle) return null;
+  if (checklistCle) {
+    throw new Error(
+      "Une pièce rangée dans un dossier personnalisé ne valide pas la checklist"
+    );
+  }
+  if (!parseDossiersPerso(dossiersPerso).some((d) => d.cle === cle)) {
+    throw new Error("Dossier personnalisé inconnu pour cette affaire");
+  }
+  return cle;
+}
+
 /* -------------------------------------------------------------------------
  *  Dépôt direct dans une catégorie
  * ----------------------------------------------------------------------- */
@@ -73,6 +97,7 @@ const ajoutSchema = z.object({
   nom: z.string().trim().max(200).optional().or(z.literal("")),
   categorie: z.enum(CATEGORIES_DOC_AFFAIRE),
   checklistCle: z.string().trim().max(60).optional().or(z.literal("")),
+  dossierPerso: z.string().trim().max(60).optional().or(z.literal("")),
   note: z.string().trim().max(500).optional().or(z.literal("")),
 });
 
@@ -89,12 +114,18 @@ export async function ajouterDocumentAffaire(
     nom: formData.get("nom") || "",
     categorie: formData.get("categorie") || "AUTRE",
     checklistCle: formData.get("checklistCle") || "",
+    dossierPerso: formData.get("dossierPerso") || "",
     note: formData.get("note") || "",
   });
   const checklistCle = validerChecklistCle(
     affaire.checklist,
     parsed.categorie,
     parsed.checklistCle
+  );
+  const dossierPerso = validerDossierPerso(
+    affaire.dossiersPerso,
+    parsed.dossierPerso,
+    checklistCle
   );
 
   const saved = await saveUploadedDocument(file, "docs-affaires");
@@ -103,6 +134,7 @@ export async function ajouterDocumentAffaire(
       affaireId,
       categorie: parsed.categorie,
       checklistCle,
+      dossierPerso,
       nom: parsed.nom || saved.originalName,
       fichier: saved.url,
       mimeType: saved.mimeType,
@@ -138,6 +170,9 @@ const rangerSchema = z.object({
         nom: z.string().trim().max(200).optional().or(z.literal("")),
         categorie: z.enum(CATEGORIES_DOC_AFFAIRE),
         checklistCle: z.string().trim().max(60).optional().or(z.literal("")),
+        /** Clé d'un dossier personnalisé de l'affaire (exclusif de
+         *  checklistCle) ; vide = rangement dans la catégorie. */
+        dossierPerso: z.string().trim().max(60).optional().or(z.literal("")),
       })
     )
     .min(1)
@@ -199,9 +234,11 @@ export async function rangerPiecesJointes(input: unknown) {
     ).map((d) => d.fichier)
   );
 
-  const clesACocher: string[] = [];
-  let rangees = 0;
-  for (const piece of data.pieces) {
+  // Validation de TOUTES les pièces AVANT la première création : un plan
+  // mi-valide ne doit pas produire un rangement partiel silencieux (pièce
+  // 1 créée puis exception sur la pièce 2, avec un toast « non rangées »
+  // et la coche de checklist de la pièce 1 jamais posée).
+  const preparees = data.pieces.map((piece) => {
     const meta = admissibles.get(piece.url);
     if (!meta) {
       throw new Error("Pièce inconnue sur ce message");
@@ -211,6 +248,17 @@ export async function rangerPiecesJointes(input: unknown) {
       piece.categorie,
       piece.checklistCle
     );
+    const dossierPerso = validerDossierPerso(
+      affaire.dossiersPerso,
+      piece.dossierPerso,
+      checklistCle
+    );
+    return { piece, meta, checklistCle, dossierPerso };
+  });
+
+  const clesACocher: string[] = [];
+  let rangees = 0;
+  for (const { piece, meta, checklistCle, dossierPerso } of preparees) {
     if (dejaRangees.has(piece.url)) continue;
     try {
       await db.affaireDocument.create({
@@ -218,6 +266,7 @@ export async function rangerPiecesJointes(input: unknown) {
           affaireId: data.affaireId,
           categorie: piece.categorie,
           checklistCle,
+          dossierPerso,
           nom: piece.nom || meta.nom,
           fichier: piece.url,
           mimeType: meta.mimeType,
@@ -248,6 +297,115 @@ export async function rangerPiecesJointes(input: unknown) {
 
   revaliderDossier(data.affaireId);
   return { rangees, cochees: clesACocher.length };
+}
+
+/* -------------------------------------------------------------------------
+ *  Dossiers personnalisés
+ * ----------------------------------------------------------------------- */
+
+/**
+ * Crée un dossier personnalisé dans le dossier client de l'affaire.
+ * Le catalogue (Affaire.dossiersPerso) est un Json entier relu puis
+ * réécrit : même écriture conditionnelle optimiste que cocherChecklist
+ * (le where exige l'instantané lu, sinon relecture et rejeu) pour que
+ * deux créations simultanées ne s'écrasent pas. Idempotent : recréer un
+ * dossier au même nom renvoie le dossier existant.
+ */
+export async function creerDossierPerso(
+  affaireId: string,
+  libelle: string
+): Promise<DossierPerso> {
+  const { affaire } = await chargerAffaireGardee(affaireId);
+
+  let snapshot: Prisma.InputJsonValue =
+    affaire.dossiersPerso as Prisma.InputJsonValue;
+  for (let tentative = 0; ; tentative++) {
+    const existants = parseDossiersPerso(snapshot);
+    const res = preparerNouveauDossier(libelle, existants);
+    if (!res.ok) {
+      if (res.existant) return res.existant;
+      throw new Error(res.erreur);
+    }
+    const ecrit = await db.affaire.updateMany({
+      where: { id: affaireId, dossiersPerso: { equals: snapshot } },
+      data: {
+        dossiersPerso: [...existants, res.dossier].map((d) => ({ ...d })),
+      },
+    });
+    if (ecrit.count === 1) {
+      revaliderDossier(affaireId);
+      return res.dossier;
+    }
+    if (tentative >= 4) {
+      throw new Error("Le dossier client vient d'être modifié, réessayez");
+    }
+    const frais = await db.affaire.findUnique({
+      where: { id: affaireId },
+      select: { dossiersPerso: true },
+    });
+    if (!frais) throw new Error("Affaire introuvable");
+    snapshot = frais.dossiersPerso as Prisma.InputJsonValue;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ *  Déplacement (façon Trello : changer de catégorie ou de dossier)
+ * ----------------------------------------------------------------------- */
+
+const deplacerSchema = z.object({
+  documentId: z.string().min(1),
+  categorie: z.enum(CATEGORIES_DOC_AFFAIRE),
+  dossierPerso: z.string().trim().max(60).optional().or(z.literal("")),
+  checklistCle: z.string().trim().max(60).optional().or(z.literal("")),
+});
+
+/**
+ * Déplace un document du dossier client vers une autre catégorie ou un
+ * dossier personnalisé. La clé de checklist suit la même règle qu'au
+ * rangement : uniquement avec « Pièces client », jamais dans un dossier
+ * perso ; en quittant « Pièces client », elle est effacée (le document
+ * ne valide plus la pièce, la case cochée reste cochée).
+ */
+export async function deplacerDocumentAffaire(input: unknown) {
+  const data = deplacerSchema.parse(input);
+  const doc = await db.affaireDocument.findUnique({
+    where: { id: data.documentId },
+    select: { id: true, affaireId: true, checklistCle: true },
+  });
+  if (!doc) throw new Error("Document introuvable");
+  const { affaire } = await chargerAffaireGardee(doc.affaireId);
+
+  const checklistCle = validerChecklistCle(
+    affaire.checklist,
+    data.categorie,
+    data.checklistCle
+  );
+  const dossierPerso = validerDossierPerso(
+    affaire.dossiersPerso,
+    data.dossierPerso,
+    checklistCle
+  );
+
+  await db.affaireDocument.update({
+    where: { id: doc.id },
+    data: {
+      categorie: data.categorie,
+      dossierPerso,
+      // Hors « Pièces client » (ou dans un dossier perso), le lien de
+      // validation checklist n'a plus de sens : on l'efface. Dans
+      // « Pièces client », la valeur soumise fait foi (la feuille envoie
+      // la clé actuelle par défaut ; la vider est un choix explicite).
+      checklistCle:
+        data.categorie === "PIECES_CLIENT" && !dossierPerso
+          ? checklistCle
+          : null,
+    },
+  });
+
+  if (checklistCle) {
+    await cocherChecklist(doc.affaireId, checklistCle, true);
+  }
+  revaliderDossier(doc.affaireId);
 }
 
 /* -------------------------------------------------------------------------

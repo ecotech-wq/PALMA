@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/auth-helpers";
 import { Card, CardBody } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { parseChecklist } from "@/lib/affaires";
+import { parseDossiersPerso } from "@/lib/ged-affaire";
 import { DocumentsAffaire } from "./DocumentsAffaire";
 
 // ─── Dossier client d'une affaire (GED d'affaire) ────────────────────────────
@@ -25,7 +26,13 @@ export default async function DossierClientPage({
 
   const affaire = await db.affaire.findUnique({
     where: { id },
-    select: { id: true, espaceId: true, titre: true, checklist: true },
+    select: {
+      id: true,
+      espaceId: true,
+      titre: true,
+      checklist: true,
+      dossiersPerso: true,
+    },
   });
   if (!affaire) notFound();
   // Frontière d'espace : un id forgé d'un autre espace tombe sur un 404.
@@ -49,6 +56,7 @@ export default async function DossierClientPage({
             affaireId={id}
             docs={docs}
             checklist={parseChecklist(affaire.checklist)}
+            dossiersPerso={parseDossiersPerso(affaire.dossiersPerso)}
           />
         </CardBody>
       </Card>

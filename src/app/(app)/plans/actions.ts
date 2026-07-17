@@ -11,7 +11,15 @@ const baseSchema = z.object({
   chantierId: z.string().min(1),
   nom: z.string().min(1, "Nom requis"),
   description: z.string().optional().or(z.literal("")),
+  type: z.string().max(40, "Type trop long (40 caractères max)").optional().or(z.literal("")),
 });
+
+/** Normalise un type de plan saisi librement : espaces réduits, vide -> null
+ *  (la liste de suggestions reste propre, sans doublons de frappe). */
+function normaliserTypePlan(brut: string | undefined | null): string | null {
+  const t = (brut ?? "").replace(/\s+/g, " ").trim();
+  return t === "" ? null : t;
+}
 
 /**
  * Upload d'un plan / fichier d'aide pour les équipes terrain.
@@ -26,6 +34,7 @@ export async function uploadPlan(formData: FormData) {
     chantierId: formData.get("chantierId"),
     nom: formData.get("nom"),
     description: formData.get("description") || "",
+    type: formData.get("type") || "",
   });
 
   await requireChantierAccess(me, data.chantierId);
@@ -41,6 +50,7 @@ export async function uploadPlan(formData: FormData) {
       uploaderId: me.id,
       nom: data.nom,
       description: data.description || null,
+      type: normaliserTypePlan(data.type),
       fileUrl: saved.url,
       mimeType: saved.mimeType,
       fileSize: saved.size,
@@ -66,11 +76,43 @@ export async function uploadPlan(formData: FormData) {
   revalidatePath(`/chantiers/${data.chantierId}`);
 }
 
+/**
+ * Modification du type d'un plan existant : simple reclassement, ouvert à
+ * quiconque peut déposer un plan sur ce chantier (mêmes gardes que
+ * uploadPlan : non-client + accès chantier). Type vide = retiré.
+ */
+export async function modifierTypePlan(id: string, type: string) {
+  const me = await requireAuth();
+  if (me.isClient) throw new Error("Réservé aux admins et chefs");
+
+  const existing = await db.planChantier.findUnique({
+    where: { id },
+    select: { id: true, chantierId: true },
+  });
+  if (!existing) throw new Error("Plan introuvable");
+  await requireChantierAccess(me, existing.chantierId);
+
+  const normalise = normaliserTypePlan(
+    z.string().max(40, "Type trop long (40 caractères max)").parse(type)
+  );
+  await db.planChantier.update({
+    where: { id },
+    data: { type: normalise },
+  });
+
+  revalidatePath(`/chantiers/${existing.chantierId}/plans`);
+  revalidatePath(`/chantiers/${existing.chantierId}`);
+}
+
 /** Suppression d'un plan — uploader ou admin uniquement. */
 export async function deletePlan(id: string) {
   const me = await requireAuth();
   const existing = await db.planChantier.findUnique({ where: { id } });
   if (!existing) return;
+  // Frontière d'espace et d'adhésion AVANT le droit de suppression (même
+  // garde que modifierTypePlan) : sans elle, un admin d'un autre espace
+  // pouvait supprimer n'importe quel plan par id forgé.
+  await requireChantierAccess(me, existing.chantierId);
   if (!me.isAdmin && existing.uploaderId !== me.id) {
     throw new Error("Réservé à l'auteur ou aux admins");
   }

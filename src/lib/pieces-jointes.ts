@@ -94,6 +94,91 @@ export function formatDureeAudio(secondes: number): string {
   return `${min}:${String(rest).padStart(2, "0")}`;
 }
 
+/**
+ * Plafond CLIENT d'un envoi de la messagerie : 45 Mo par fichier ET par
+ * envoi complet. La requête server action est plafonnée à 50 Mo côté
+ * serveur (next.config.ts) ; sans ce contrôle, un envoi multiple dont
+ * chaque pièce passe séparément échouerait en bloc avec une erreur
+ * illisible une fois la limite de la requête dépassée.
+ */
+export const TAILLE_MAX_ENVOI_OCTETS = 45 * 1024 * 1024;
+
+/** Nombre maximal de pièces jointes d'un même message. Miroir CLIENT du
+ *  plafond serveur des plans de rangement (planRangementSchema et
+ *  rangerSchema, .max(30)) : au-delà, le plan entier serait rejeté par
+ *  zod après l'envoi et aucune pièce ne serait rangée. */
+export const MAX_PIECES_PAR_ENVOI = 30;
+
+/** Plafonds CLIENT par type, miroirs des limites serveur de lib/upload.ts
+ *  pour le pipeline de la messagerie (uploadMedia) : refuser à la
+ *  sélection ce que le serveur refusera de toute façon après un upload
+ *  complet. */
+export const TAILLE_MAX_IMAGE_OCTETS = 10 * 1024 * 1024; // saveUploadedPhoto
+export const TAILLE_MAX_AUDIO_OCTETS = 25 * 1024 * 1024; // saveUploadedAudio
+export const TAILLE_MAX_DOCUMENT_OCTETS = 25 * 1024 * 1024; // saveUploadedDocument
+
+/**
+ * Plafond par fichier selon son type MIME, aligné sur l'aiguillage
+ * serveur d'uploadMedia : image -> photo (10 Mo), audio -> mémo (25 Mo),
+ * vidéo -> seule l'enveloppe de la requête la borne (45 Mo, le serveur
+ * accepte jusqu'à 100 Mo), tout le reste -> document (25 Mo).
+ */
+export function plafondEnvoiPourType(mimeType: string): number {
+  if (mimeType.startsWith("video/")) return TAILLE_MAX_ENVOI_OCTETS;
+  if (mimeType.startsWith("image/")) return TAILLE_MAX_IMAGE_OCTETS;
+  if (mimeType.startsWith("audio/")) return TAILLE_MAX_AUDIO_OCTETS;
+  return TAILLE_MAX_DOCUMENT_OCTETS;
+}
+
+/**
+ * Contrôle des tailles AVANT envoi : renvoie les indices des nouveaux
+ * fichiers acceptés et un message en français par refus (fichier trop
+ * lourd pour son type ou pour l'enveloppe, plus de 30 pièces, ou total
+ * de l'envoi qui dépasserait le plafond en le comptant avec les pièces
+ * déjà jointes et les nouveaux déjà acceptés). Le `type` MIME est
+ * optionnel : sans lui, seule l'enveloppe globale s'applique.
+ */
+export function controlerTaillesEnvoi(
+  taillesDejaJointes: number[],
+  nouveaux: { nom: string; taille: number; type?: string }[],
+  maxOctets: number = TAILLE_MAX_ENVOI_OCTETS
+): { indicesAcceptes: number[]; refus: string[] } {
+  const maxMo = Math.round(maxOctets / (1024 * 1024));
+  let total = taillesDejaJointes.reduce((s, t) => s + t, 0);
+  let nombre = taillesDejaJointes.length;
+  const indicesAcceptes: number[] = [];
+  const refus: string[] = [];
+  nouveaux.forEach((f, i) => {
+    const plafondFichier =
+      f.type === undefined
+        ? maxOctets
+        : Math.min(maxOctets, plafondEnvoiPourType(f.type));
+    if (f.taille > plafondFichier) {
+      const plafondMo = Math.round(plafondFichier / (1024 * 1024));
+      refus.push(
+        `Ce fichier dépasse ${plafondMo} Mo : ${f.nom} (${formatTailleFichier(f.taille)}). Réduisez-le ou envoyez-le autrement.`
+      );
+      return;
+    }
+    if (nombre >= MAX_PIECES_PAR_ENVOI) {
+      refus.push(
+        `Un message est limité à ${MAX_PIECES_PAR_ENVOI} pièces jointes : ${f.nom} n'a pas été ajouté. Envoyez-le dans un second message.`
+      );
+      return;
+    }
+    if (total + f.taille > maxOctets) {
+      refus.push(
+        `L'envoi dépasserait ${maxMo} Mo au total : ${f.nom} n'a pas été ajouté. Envoyez-le dans un second message.`
+      );
+      return;
+    }
+    total += f.taille;
+    nombre += 1;
+    indicesAcceptes.push(i);
+  });
+  return { indicesAcceptes, refus };
+}
+
 /** Une pièce jointe refusée par le serveur à l'upload (taille, extension...). */
 export type EchecUpload = { nom: string; raison: string };
 

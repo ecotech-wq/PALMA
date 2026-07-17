@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ChevronLeft, FolderOpen, Handshake } from "lucide-react";
+import { ChevronLeft, Handshake } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-helpers";
 import { Card, CardBody } from "@/components/ui/Card";
@@ -14,15 +14,14 @@ import {
   LIBELLES_TYPOLOGIE,
   estDormante,
   etapesDe,
-  joursDansEtape,
-  libelleEtape,
   parseChecklist,
   type TypologieAffaire,
 } from "@/lib/affaires";
+import { parseDossiersPerso } from "@/lib/ged-affaire";
 import { ChantierFeed } from "../../ChantierFeed";
 import { ChantierComposer } from "../../ChantierComposer";
 import { ActionsRapidesAffaire } from "./ActionsRapidesAffaire";
-import { ChecklistFil, type DocPiece } from "./ChecklistFil";
+import type { DocPiece } from "./ChecklistFil";
 import { ProchaineActionFil } from "./ProchaineActionFil";
 
 // ─── Fil d'une AFFAIRE (CRM) dans la messagerie ──────────────────────────────
@@ -33,6 +32,9 @@ import { ProchaineActionFil } from "./ProchaineActionFil";
 // avec un simple contexte d'affaire (prop affaireId) : mêmes bulles, mêmes
 // médias (photos, vidéos, mémos vocaux, documents), même pagination et même
 // polling, via les routes /api/messagerie/affaire/[affaireId]/*.
+// Le bandeau tient sur UNE ligne (étape + prochaine action + menu « ... ») :
+// le fil de messages garde le maximum de hauteur ; la checklist et les
+// gestes de pilotage vivent dans la feuille « + » du composer.
 // Gardes : INTERNE uniquement (jamais de client) et frontière d'espace,
 // comme tout le module affaires (pilotes : ADMIN + CONDUCTEUR).
 
@@ -60,6 +62,7 @@ export default async function MessagerieAffairePage({
       prochaineActionLe: true,
       contactNom: true,
       checklist: true,
+      dossiersPerso: true,
     },
   });
   if (!affaire) notFound();
@@ -94,8 +97,8 @@ export default async function MessagerieAffairePage({
   const dormance = estDormante(affaire, maintenant);
   const enRetard = dormance?.motif === "ACTION_EN_RETARD";
 
-  // Dossier client (GED d'affaire) : le compteur du bandeau dit d'un coup
-  // d'œil combien de pièces sont déjà rangées.
+  // Dossier client (GED d'affaire) : le compteur du menu « ... » dit d'un
+  // coup d'œil combien de pièces sont déjà rangées.
   const nbDocsDossier = await db.affaireDocument.count({
     where: { affaireId: affaire.id },
   });
@@ -104,6 +107,7 @@ export default async function MessagerieAffairePage({
   // pièce (AffaireDocument.checklistCle) : le plus récent par clé gagne
   // (tri croissant, la dernière écriture écrase les précédentes).
   const checklist = parseChecklist(affaire.checklist);
+  const dossiersPerso = parseDossiersPerso(affaire.dossiersPerso);
   const docParPiece: Record<string, DocPiece> = {};
   if (checklist.length > 0) {
     const docsChecklist = await db.affaireDocument.findMany({
@@ -116,6 +120,19 @@ export default async function MessagerieAffairePage({
         docParPiece[d.checklistCle] = { url: d.fichier, nom: d.nom };
       }
     }
+  }
+
+  // Pièces du fil déjà rangées dans le dossier client : messageId ->
+  // fichiers. Les pièces encore libres portent un bouton dossier dans le
+  // fil (rangement après coup, idempotent).
+  const rangees: Record<string, string[]> = {};
+  const docsRanges = await db.affaireDocument.findMany({
+    where: { affaireId: affaire.id, messageId: { not: null } },
+    select: { messageId: true, fichier: true },
+  });
+  for (const d of docsRanges) {
+    if (!d.messageId) continue;
+    (rangees[d.messageId] ??= []).push(d.fichier);
   }
 
   // Destinataires possibles d'une action confiée : pilotes de l'espace,
@@ -158,67 +175,33 @@ export default async function MessagerieAffairePage({
             interne aux pilotes
           </p>
         </div>
+        {affaire.statut === "GAGNEE" && <Badge color="green">Gagnée</Badge>}
+        {affaire.statut === "PERDUE" && <Badge color="red">Perdue</Badge>}
       </div>
 
-      {/* Bandeau de pilotage : étape courante, prochaine action, gestes
-          rapides. C'est ce qui fait du fil un poste de travail. */}
-      <div className="mb-2 shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900 md:mb-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <div className="flex min-w-0 basis-full flex-wrap items-center gap-x-2 gap-y-1 text-xs md:flex-1 md:basis-0">
-            <span className="font-semibold text-slate-900 dark:text-slate-100">
-              {libelleEtape(typologie, affaire.etapeCle)}
-            </span>
-            <span className="text-slate-500">
-              depuis {joursDansEtape(affaire.etapeDepuis, maintenant)} j
-            </span>
-            {affaire.statut === "GAGNEE" && <Badge color="green">Gagnée</Badge>}
-            {affaire.statut === "PERDUE" && <Badge color="red">Perdue</Badge>}
-            {affaire.statut === "EN_COURS" && dormance && (
-              <Badge color="yellow">
-                {dormance.motif === "ACTION_EN_RETARD"
-                  ? `Action en retard de ${dormance.jours} j`
-                  : `Sans action depuis ${dormance.jours} j`}
-              </Badge>
-            )}
-            <ProchaineActionFil
-              affaireId={affaire.id}
-              prochaineAction={affaire.prochaineAction}
-              prochaineActionLe={
-                affaire.prochaineActionLe
-                  ? affaire.prochaineActionLe.toISOString().slice(0, 10)
-                  : null
-              }
-              enRetard={enRetard}
-              canEdit={affaire.statut === "EN_COURS"}
-            />
-          </div>
-          <ActionsRapidesAffaire
-            affaireId={affaire.id}
-            etapeCle={affaire.etapeCle}
-            etapes={etapesDe(typologie)}
-            cibles={cibles}
-            statut={affaire.statut}
-          />
-          {/* Dossier client : les pièces du fil rangées par catégorie. */}
-          <Link
-            href={`/affaires/${affaire.id}/documents`}
-            className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 px-2.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            <FolderOpen size={13} />
-            Dossier client
-            <span className="tabular-nums text-slate-500">
-              ({nbDocsDossier})
-            </span>
-          </Link>
-        </div>
-        {/* Pièces du dossier : dépliables et cochables sans quitter le fil
-            (même droit d'édition que la fiche : tous les pilotes). */}
-        <ChecklistFil
+      {/* Bandeau de pilotage sur UNE ligne : étape, prochaine action
+          tappable, menu « ... » (Fiche, Dossier client, Confier). */}
+      <div className="mb-2 shrink-0 rounded-xl border border-slate-200 bg-white px-2 py-1 dark:border-slate-800 dark:bg-slate-900 md:mb-3">
+        <ActionsRapidesAffaire
           affaireId={affaire.id}
-          items={checklist}
-          docs={docParPiece}
-          canEdit
-        />
+          etapeCle={affaire.etapeCle}
+          etapes={etapesDe(typologie)}
+          cibles={cibles}
+          statut={affaire.statut}
+          nbDocsDossier={nbDocsDossier}
+        >
+          <ProchaineActionFil
+            affaireId={affaire.id}
+            prochaineAction={affaire.prochaineAction}
+            prochaineActionLe={
+              affaire.prochaineActionLe
+                ? affaire.prochaineActionLe.toISOString().slice(0, 10)
+                : null
+            }
+            enRetard={enRetard}
+            canEdit={affaire.statut === "EN_COURS"}
+          />
+        </ActionsRapidesAffaire>
       </div>
 
       {/* Fil : la brique du chantier, en contexte affaire. Les messages
@@ -264,18 +247,34 @@ export default async function MessagerieAffairePage({
               canEdit={me.isAdmin || me.isConducteur}
               canPilotDemandes={false}
               photoMeta={photoMeta}
+              affaireGed={{
+                checklist,
+                dossiersPerso,
+                rangees,
+              }}
             />
           </CardBody>
         </Card>
       </div>
 
-      {/* Composer : mêmes médias que les chantiers, cible = l'affaire. */}
+      {/* Composer : mêmes médias que les chantiers, cible = l'affaire,
+          classement des pièces AVANT envoi et pilotage dans la feuille +. */}
       <div className="shrink-0">
         <ChantierComposer
           affaireId={affaire.id}
           canalId={canal.id}
           canHideFromClient={false}
           checklistDossier={checklist}
+          docsChecklist={docParPiece}
+          dossiersPerso={dossiersPerso}
+          pilotage={{
+            cibles,
+            prochaineAction: affaire.prochaineAction,
+            prochaineActionLe: affaire.prochaineActionLe
+              ? affaire.prochaineActionLe.toISOString().slice(0, 10)
+              : null,
+            active: affaire.statut === "EN_COURS",
+          }}
         />
       </div>
     </div>

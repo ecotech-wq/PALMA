@@ -57,11 +57,12 @@ const SECTIONS: Section[] = [
     titre: "Quotidien",
     tiles: [
       { href: "/messagerie", label: "Messagerie", icon: MessageSquare, clientHidden: true },
+      // Affaires (CRM) : juste après Messagerie, comme dans la sidebar.
+      // Réservé aux pilotes comme le suivi financier ; pas de garde de
+      // module : une affaire précède le projet.
+      { href: "/affaires", label: "Affaires", icon: Handshake, pilotOnly: true },
       { href: "/planning", label: "Planning", icon: Calendar, module: "chantier", pilotOnly: true },
       { href: "/pointage", label: "Pointage", icon: CheckSquare, module: "chantier", clientHidden: true },
-      // Affaires (CRM) : pipeline commercial, réservé aux pilotes comme le
-      // suivi financier. Pas de garde de module : une affaire précède le projet.
-      { href: "/affaires", label: "Affaires", icon: Handshake, pilotOnly: true },
       // Bureau d'études : la saisie des temps est un geste quotidien.
       { href: "/be/temps", label: "Mes temps", icon: Timer, module: "be", clientHidden: true },
       // Volet contractuel du client (devis, situations, factures à signer).
