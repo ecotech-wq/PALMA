@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { CalendarClock, ChevronLeft, Handshake } from "lucide-react";
+import { ChevronLeft, FolderOpen, Handshake } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-helpers";
 import { Card, CardBody } from "@/components/ui/Card";
@@ -16,11 +16,14 @@ import {
   etapesDe,
   joursDansEtape,
   libelleEtape,
+  parseChecklist,
   type TypologieAffaire,
 } from "@/lib/affaires";
 import { ChantierFeed } from "../../ChantierFeed";
 import { ChantierComposer } from "../../ChantierComposer";
 import { ActionsRapidesAffaire } from "./ActionsRapidesAffaire";
+import { ChecklistFil, type DocPiece } from "./ChecklistFil";
+import { ProchaineActionFil } from "./ProchaineActionFil";
 
 // ─── Fil d'une AFFAIRE (CRM) dans la messagerie ──────────────────────────────
 // Choix d'architecture (le plus économe) : plutôt que de généraliser la page
@@ -32,11 +35,6 @@ import { ActionsRapidesAffaire } from "./ActionsRapidesAffaire";
 // polling, via les routes /api/messagerie/affaire/[affaireId]/*.
 // Gardes : INTERNE uniquement (jamais de client) et frontière d'espace,
 // comme tout le module affaires (pilotes : ADMIN + CONDUCTEUR).
-
-const dateCourteFmt = new Intl.DateTimeFormat("fr-FR", {
-  day: "2-digit",
-  month: "short",
-});
 
 export default async function MessagerieAffairePage({
   params,
@@ -61,6 +59,7 @@ export default async function MessagerieAffairePage({
       prochaineAction: true,
       prochaineActionLe: true,
       contactNom: true,
+      checklist: true,
     },
   });
   if (!affaire) notFound();
@@ -94,6 +93,30 @@ export default async function MessagerieAffairePage({
   const maintenant = new Date();
   const dormance = estDormante(affaire, maintenant);
   const enRetard = dormance?.motif === "ACTION_EN_RETARD";
+
+  // Dossier client (GED d'affaire) : le compteur du bandeau dit d'un coup
+  // d'œil combien de pièces sont déjà rangées.
+  const nbDocsDossier = await db.affaireDocument.count({
+    where: { affaireId: affaire.id },
+  });
+
+  // Checklist du dossier + documents de la GED d'affaire qui valident une
+  // pièce (AffaireDocument.checklistCle) : le plus récent par clé gagne
+  // (tri croissant, la dernière écriture écrase les précédentes).
+  const checklist = parseChecklist(affaire.checklist);
+  const docParPiece: Record<string, DocPiece> = {};
+  if (checklist.length > 0) {
+    const docsChecklist = await db.affaireDocument.findMany({
+      where: { affaireId: affaire.id, checklistCle: { not: null } },
+      orderBy: { createdAt: "asc" },
+      select: { checklistCle: true, fichier: true, nom: true },
+    });
+    for (const d of docsChecklist) {
+      if (d.checklistCle) {
+        docParPiece[d.checklistCle] = { url: d.fichier, nom: d.nom };
+      }
+    }
+  }
 
   // Destinataires possibles d'une action confiée : pilotes de l'espace,
   // même liste que la fiche affaire (le module Affaires est canPilot-only,
@@ -141,7 +164,7 @@ export default async function MessagerieAffairePage({
           rapides. C'est ce qui fait du fil un poste de travail. */}
       <div className="mb-2 shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900 md:mb-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+          <div className="flex min-w-0 basis-full flex-wrap items-center gap-x-2 gap-y-1 text-xs md:flex-1 md:basis-0">
             <span className="font-semibold text-slate-900 dark:text-slate-100">
               {libelleEtape(typologie, affaire.etapeCle)}
             </span>
@@ -157,34 +180,17 @@ export default async function MessagerieAffairePage({
                   : `Sans action depuis ${dormance.jours} j`}
               </Badge>
             )}
-            <span className="flex w-full items-center gap-1.5 text-slate-600 dark:text-slate-400 sm:w-auto">
-              <CalendarClock
-                size={13}
-                className={
-                  enRetard ? "shrink-0 text-brand-600" : "shrink-0 text-slate-400"
-                }
-              />
-              {affaire.prochaineAction ? (
-                <span className="min-w-0 truncate">
-                  {affaire.prochaineAction}
-                  {affaire.prochaineActionLe && (
-                    <span
-                      className={
-                        enRetard
-                          ? "ml-1 font-medium text-brand-700 dark:text-brand-400"
-                          : "ml-1 text-slate-500"
-                      }
-                    >
-                      ({dateCourteFmt.format(affaire.prochaineActionLe)})
-                    </span>
-                  )}
-                </span>
-              ) : (
-                <span className="italic text-slate-400">
-                  Aucune prochaine action planifiée
-                </span>
-              )}
-            </span>
+            <ProchaineActionFil
+              affaireId={affaire.id}
+              prochaineAction={affaire.prochaineAction}
+              prochaineActionLe={
+                affaire.prochaineActionLe
+                  ? affaire.prochaineActionLe.toISOString().slice(0, 10)
+                  : null
+              }
+              enRetard={enRetard}
+              canEdit={affaire.statut === "EN_COURS"}
+            />
           </div>
           <ActionsRapidesAffaire
             affaireId={affaire.id}
@@ -193,7 +199,26 @@ export default async function MessagerieAffairePage({
             cibles={cibles}
             statut={affaire.statut}
           />
+          {/* Dossier client : les pièces du fil rangées par catégorie. */}
+          <Link
+            href={`/affaires/${affaire.id}/documents`}
+            className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 px-2.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            <FolderOpen size={13} />
+            Dossier client
+            <span className="tabular-nums text-slate-500">
+              ({nbDocsDossier})
+            </span>
+          </Link>
         </div>
+        {/* Pièces du dossier : dépliables et cochables sans quitter le fil
+            (même droit d'édition que la fiche : tous les pilotes). */}
+        <ChecklistFil
+          affaireId={affaire.id}
+          items={checklist}
+          docs={docParPiece}
+          canEdit
+        />
       </div>
 
       {/* Fil : la brique du chantier, en contexte affaire. Les messages
@@ -250,6 +275,7 @@ export default async function MessagerieAffairePage({
           affaireId={affaire.id}
           canalId={canal.id}
           canHideFromClient={false}
+          checklistDossier={checklist}
         />
       </div>
     </div>

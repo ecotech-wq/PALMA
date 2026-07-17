@@ -8,6 +8,10 @@ import {
   joursDansEtape,
   libelleEtape,
   parseChecklist,
+  texteTraceActionConfiee,
+  texteTracePiece,
+  texteTraceProchaineAction,
+  texteTraceResponsable,
   valeurPipeline,
   SEUIL_DORMANCE_JOURS,
 } from "./affaires";
@@ -243,5 +247,60 @@ describe("valeurPipeline", () => {
 
   it("renvoie un objet vide sans affaires", () => {
     expect(valeurPipeline([])).toEqual({});
+  });
+});
+
+describe("traces système du fil d'affaire", () => {
+  it("formate la prochaine action complète en JJ/MM (fuseau UTC)", () => {
+    expect(
+      texteTraceProchaineAction(
+        "Relancer la mairie",
+        jourUtc("2026-07-21"),
+        "Youssoufou"
+      )
+    ).toBe("Prochaine action : Relancer la mairie pour le 21/07 (Youssoufou).");
+  });
+
+  it("reste une phrase complète sans date, sans libellé, ou effacée", () => {
+    expect(
+      texteTraceProchaineAction("Appeler le client", null, "Awa")
+    ).toBe("Prochaine action : Appeler le client (Awa).");
+    expect(
+      texteTraceProchaineAction(null, jourUtc("2026-08-03"), "Awa")
+    ).toBe("Prochaine action pour le 03/08 (Awa).");
+    expect(texteTraceProchaineAction(null, null, "Awa")).toBe(
+      "Prochaine action effacée (Awa)."
+    );
+  });
+
+  it("trace le responsable désigné ou retiré", () => {
+    expect(texteTraceResponsable("Idriss", "Youssoufou")).toBe(
+      "Responsable : Idriss (Youssoufou)."
+    );
+    expect(texteTraceResponsable(null, "Youssoufou")).toBe(
+      "Responsable retiré (Youssoufou)."
+    );
+  });
+
+  it("trace la pièce cochée et décochée", () => {
+    expect(texteTracePiece("Plan cadastral", true, "Awa")).toBe(
+      "Pièce reçue : Plan cadastral (Awa)."
+    );
+    expect(texteTracePiece("Plan cadastral", false, "Awa")).toBe(
+      "Pièce décochée : Plan cadastral (Awa)."
+    );
+  });
+
+  it("trace l'action confiée avec cible, libellé et échéance", () => {
+    expect(
+      texteTraceActionConfiee(
+        "Idriss",
+        "Préparer le devis",
+        jourUtc("2026-07-24"),
+        "Youssoufou"
+      )
+    ).toBe(
+      "Action confiée à Idriss : Préparer le devis pour le 24/07 (Youssoufou)."
+    );
   });
 });

@@ -39,6 +39,42 @@ export function NouvelleAffaire({
   versCanal?: boolean;
 }) {
   const [ouvert, setOuvert] = useState(false);
+
+  return (
+    <>
+      <Button size="sm" onClick={() => setOuvert(true)}>
+        <Plus size={15} />
+        Nouvelle affaire
+      </Button>
+      {ouvert && (
+        <NouvelleAffaireFeuille
+          typologieInitiale={typologieInitiale}
+          responsables={responsables}
+          compact={compact}
+          versCanal={versCanal}
+          onClose={() => setOuvert(false)}
+        />
+      )}
+    </>
+  );
+}
+
+/** La feuille de création seule, pilotée de l'extérieur : utilisée par le
+ *  bouton « + Nouveau » du hub messagerie (choix affaire / chantier) en
+ *  plus du bouton dédié ci-dessus. */
+export function NouvelleAffaireFeuille({
+  typologieInitiale,
+  responsables,
+  compact = false,
+  versCanal = false,
+  onClose,
+}: {
+  typologieInitiale: string;
+  responsables: { id: string; name: string }[];
+  compact?: boolean;
+  versCanal?: boolean;
+  onClose: () => void;
+}) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const toast = useToast();
@@ -61,7 +97,7 @@ export function NouvelleAffaire({
           responsableId: String(fd.get("responsableId") ?? ""),
         });
         toast.success("Affaire créée");
-        setOuvert(false);
+        onClose();
         router.push(versCanal ? `/messagerie/affaire/${id}` : `/affaires/${id}`);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Erreur");
@@ -70,19 +106,12 @@ export function NouvelleAffaire({
   }
 
   return (
-    <>
-      <Button size="sm" onClick={() => setOuvert(true)}>
-        <Plus size={15} />
-        Nouvelle affaire
-      </Button>
-
-      {ouvert && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 sm:items-center"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setOuvert(false);
-          }}
-        >
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 sm:items-center"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
           <div
             style={fondOpaque}
             className="max-h-[88dvh] w-full overflow-y-auto rounded-t-2xl border border-slate-200 p-4 shadow-xl dark:border-slate-700 sm:max-w-md sm:rounded-2xl"
@@ -93,7 +122,7 @@ export function NouvelleAffaire({
               </h2>
               <button
                 type="button"
-                onClick={() => setOuvert(false)}
+                onClick={onClose}
                 aria-label="Fermer"
                 className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
@@ -210,8 +239,6 @@ export function NouvelleAffaire({
               </Button>
             </form>
           </div>
-        </div>
-      )}
-    </>
+    </div>
   );
 }

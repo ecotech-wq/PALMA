@@ -321,7 +321,7 @@ const DOC_EXTS = EXTENSIONS_DOCUMENTS;
 
 export async function saveUploadedDocument(
   file: File,
-  folder: "docs-ouvriers" | "docs-chantiers"
+  folder: "docs-ouvriers" | "docs-chantiers" | "docs-affaires"
 ): Promise<{ url: string; mimeType: string; size: number; originalName: string }> {
   if (!file || file.size === 0) throw new Error("Aucun fichier reçu");
   if (file.size > 25 * 1024 * 1024) {

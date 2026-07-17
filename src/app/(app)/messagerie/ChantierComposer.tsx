@@ -28,7 +28,13 @@ import {
   formatEchecsUpload,
   formatTailleFichier,
 } from "@/lib/pieces-jointes";
+import { mimeDepuisUrl, nomDepuisUrl } from "@/lib/ged-affaire";
+import type { ChecklistItem } from "@/lib/affaires";
 import { postChantierMessage } from "./actions";
+import {
+  RangerDossierClient,
+  type PieceEnvoyee,
+} from "./RangerDossierClient";
 
 type Materiel = { id: string; nomCommun: string; statut: string };
 type Equipe = { id: string; nom: string };
@@ -144,6 +150,7 @@ export function ChantierComposer({
   equipes = [],
   sortiesOuvertes = [],
   canHideFromClient = false,
+  checklistDossier = [],
 }: {
   chantierId?: string;
   /** Contexte AFFAIRE (CRM) : le composer poste dans le canal de
@@ -158,6 +165,10 @@ export function ChantierComposer({
   sortiesOuvertes?: SortieOuverte[];
   /** Affiche le toggle « cacher du client » (admin / conducteur uniquement) */
   canHideFromClient?: boolean;
+  /** Contexte affaire : checklist du dossier (pièces du permis), proposée
+   *  par la feuille de rangement pour les pièces de catégorie
+   *  « Pièces client ». Vide hors permis de construire. */
+  checklistDossier?: ChecklistItem[];
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -187,6 +198,12 @@ export function ChantierComposer({
   const [etatRetour, setEtatRetour] = useState<
     "BON" | "USE" | "CASSE" | "MANQUANT"
   >("BON");
+  // Contexte affaire : après un envoi avec pièces jointes, la feuille
+  // « Ranger dans le dossier client » se propose (non bloquante).
+  const [rangement, setRangement] = useState<{
+    messageId: string;
+    pieces: PieceEnvoyee[];
+  } | null>(null);
 
   const meta = CATEGORY_META[category];
 
@@ -332,6 +349,10 @@ export function ChantierComposer({
     }
     // Médias
     for (const f of files) fd.append("medias", f);
+    // Photos envoyées, dans l'ordre d'upload : sert à retrouver le nom
+    // d'origine de chaque photo stockée (perdu au stockage, converti en
+    // webp) quand la feuille de rangement se propose.
+    const fichiersEnvoyes = files;
 
     startTransition(async () => {
       try {
@@ -342,6 +363,29 @@ export function ChantierComposer({
           toast.error(`${meta.label} envoyé, mais ${formatEchecsUpload(res.echecs)}`);
         } else {
           toast.success(`${meta.label} envoyé`);
+        }
+        // Fil d'AFFAIRE : chaque pièce jointe envoyée peut être rangée
+        // dans le dossier client. Feuille non bloquante, après l'envoi.
+        if (affaireId && "pieces" in res && res.pieces) {
+          const nomsRefuses = new Set(res.echecs.map((e) => e.nom));
+          const imagesEnvoyees = fichiersEnvoyes.filter(
+            (f) => f.type.startsWith("image/") && !nomsRefuses.has(f.name)
+          );
+          const piecesARanger: PieceEnvoyee[] = [
+            ...res.pieces.photos.map((url, i) => ({
+              url,
+              nom: imagesEnvoyees[i]?.name ?? nomDepuisUrl(url),
+              mimeType: mimeDepuisUrl(url),
+            })),
+            ...res.pieces.documents.map((d) => ({
+              url: d.url,
+              nom: d.nom,
+              mimeType: d.mimeType,
+            })),
+          ];
+          if (piecesARanger.length > 0) {
+            setRangement({ messageId: res.messageId, pieces: piecesARanger });
+          }
         }
         reset();
         setCategory("NOTE");
@@ -356,6 +400,18 @@ export function ChantierComposer({
   const isTyped = category !== "NOTE";
 
   return (
+    <>
+    {/* Feuille de rangement (contexte affaire) : proposée après l'envoi,
+        non bloquante ; « Ignorer » laisse les pièces dans le fil. */}
+    {affaireId && rangement && (
+      <RangerDossierClient
+        affaireId={affaireId}
+        messageId={rangement.messageId}
+        pieces={rangement.pieces}
+        checklist={checklistDossier}
+        onClose={() => setRangement(null)}
+      />
+    )}
     <form
       onSubmit={submit}
       className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm"
@@ -745,6 +801,7 @@ export function ChantierComposer({
         </button>
       </div>
     </form>
+    </>
   );
 }
 

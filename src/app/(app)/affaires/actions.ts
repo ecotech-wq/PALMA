@@ -8,6 +8,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import {
   requireAdminOrConducteur,
@@ -21,6 +22,10 @@ import {
   etapesDe,
   libelleEtape,
   parseChecklist,
+  texteTraceActionConfiee,
+  texteTracePiece,
+  texteTraceProchaineAction,
+  texteTraceResponsable,
   type TypologieAffaire,
 } from "@/lib/affaires";
 import {
@@ -218,7 +223,9 @@ export async function creerAffaire(input: unknown): Promise<{ id: string }> {
   await tracerDansCanal(
     affaire.id,
     `Affaire créée par ${me.name} : ${data.titre} ` +
-      `(${libelleEtape(typologie, premiereEtape.cle)}).`
+      `(${libelleEtape(typologie, premiereEtape.cle)}). ` +
+      "Le dossier client est prêt : chaque pièce jointe du fil " +
+      "pourra y être rangée par catégorie."
   );
 
   if (responsableId && responsableId !== me.id) {
@@ -299,12 +306,16 @@ export async function majAffaire(affaireId: string, input: unknown) {
     data.responsableId !== affaire.responsableId
       ? data.responsableId
       : undefined;
+  // Nom du nouveau responsable : sert à la notification ET à la trace du
+  // fil (le canal de l'affaire journalise chaque geste de pilotage).
+  let nomNouveauResponsable: string | null = null;
   if (nouveauResponsable) {
-    await verifierPersonneInterne(
+    const resp = await verifierPersonneInterne(
       affaire.espaceId,
       nouveauResponsable,
       "Responsable"
     );
+    nomNouveauResponsable = resp.name;
   }
 
   // Nouvelle échéance d'action : calculée UNE fois, pour l'écriture et
@@ -320,6 +331,16 @@ export async function majAffaire(affaireId: string, input: unknown) {
     nouvelleEcheance !== undefined &&
     (nouvelleEcheance?.getTime() ?? null) !==
       (affaire.prochaineActionLe?.getTime() ?? null);
+
+  // Libellé de la prochaine action : même logique undefined / null / texte
+  // que l'échéance ("" envoyé par le formulaire vaut effacement).
+  const nouveauLibelleAction =
+    data.prochaineAction !== undefined
+      ? data.prochaineAction || null
+      : undefined;
+  const libelleActionChange =
+    nouveauLibelleAction !== undefined &&
+    nouveauLibelleAction !== affaire.prochaineAction;
 
   await db.affaire.update({
     where: { id: affaireId },
@@ -357,6 +378,29 @@ export async function majAffaire(affaireId: string, input: unknown) {
     await rearmerRelanceDormance(affaireId);
   }
 
+  // Journal vivant : la replanification et le changement de responsable
+  // laissent leur trace dans le fil, comme un changement d'étape.
+  if (libelleActionChange || echeanceChangee) {
+    const libelle =
+      nouveauLibelleAction !== undefined
+        ? nouveauLibelleAction
+        : affaire.prochaineAction;
+    const echeance =
+      nouvelleEcheance !== undefined
+        ? nouvelleEcheance
+        : affaire.prochaineActionLe;
+    await tracerDansCanal(
+      affaireId,
+      texteTraceProchaineAction(libelle, echeance, me.name)
+    );
+  }
+  if (nouveauResponsable !== undefined) {
+    await tracerDansCanal(
+      affaireId,
+      texteTraceResponsable(nomNouveauResponsable, me.name)
+    );
+  }
+
   // Nouvelle assignation : la personne désignée est prévenue (motif
   // planning : on notifie qui reçoit du travail, jamais qui en perd).
   if (nouveauResponsable && nouveauResponsable !== me.id) {
@@ -378,14 +422,43 @@ export async function cocherChecklist(
 ) {
   const me = await requireAdminOrConducteur();
   const affaire = await chargerAffaire(me, affaireId);
-  const items = parseChecklist(affaire.checklist);
-  const item = items.find((i) => i.cle === cle);
-  if (!item) throw new Error("Élément de checklist inconnu");
-  item.fait = fait;
-  await db.affaire.update({
-    where: { id: affaireId },
-    data: { checklist: items.map((c) => ({ ...c })) },
-  });
+
+  // La checklist est un JSON entier relu puis réécrit : deux écrivains
+  // simultanés (fil, fiche, rangement GED) partiraient du même instantané
+  // et la dernière écriture écraserait la première (une case cochée
+  // disparaîtrait). Écriture conditionnelle optimiste : le where exige
+  // que la base porte encore EXACTEMENT l'instantané lu (égalité
+  // structurelle jsonb) ; sinon on relit et on rejoue.
+  let snapshot: Prisma.InputJsonValue =
+    affaire.checklist as Prisma.InputJsonValue;
+  let libelle: string;
+  for (let tentative = 0; ; tentative++) {
+    const items = parseChecklist(snapshot);
+    const item = items.find((i) => i.cle === cle);
+    if (!item) throw new Error("Élément de checklist inconnu");
+    // Idempotence : re-cocher une pièce déjà cochée (double tap, deux
+    // onglets) ne réécrit rien et surtout ne duplique pas la trace du fil.
+    if (item.fait === fait) return;
+    item.fait = fait;
+    const ecrit = await db.affaire.updateMany({
+      where: { id: affaireId, checklist: { equals: snapshot } },
+      data: { checklist: items.map((c) => ({ ...c })) },
+    });
+    if (ecrit.count === 1) {
+      libelle = item.libelle;
+      break;
+    }
+    if (tentative >= 4) {
+      throw new Error("La checklist vient d'être modifiée, réessayez");
+    }
+    const frais = await db.affaire.findUnique({
+      where: { id: affaireId },
+      select: { checklist: true },
+    });
+    if (!frais) throw new Error("Affaire introuvable");
+    snapshot = frais.checklist as Prisma.InputJsonValue;
+  }
+  await tracerDansCanal(affaireId, texteTracePiece(libelle, fait, me.name));
   revaliderAffaires(affaireId);
 }
 
@@ -450,6 +523,18 @@ export async function assignerAction(affaireId: string, input: unknown) {
       `/affaires/${affaireId}`
     );
   }
+  // Trace du fil : l'échéance affichée vient de l'entrée BRUTE
+  // ("AAAA-MM-JJ" coercée à minuit UTC), pas de `fin` normalisée à minuit
+  // LOCAL, pour que le JJ/MM reste juste quel que soit le fuseau du serveur.
+  await tracerDansCanal(
+    affaireId,
+    texteTraceActionConfiee(
+      cible.name,
+      data.nom.trim(),
+      new Date(data.dateFin),
+      me.name
+    )
+  );
   revalidatePath("/planning");
   revaliderAffaires(affaireId);
   return { id: t.id };

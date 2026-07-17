@@ -2002,11 +2002,51 @@ model Affaire {
   updatedAt         DateTime         @updatedAt
   creePar           String?
 
-  canaux Canal[]
-  taches Tache[]
+  canaux    Canal[]
+  taches    Tache[]
+  documents AffaireDocument[]
 
   @@index([espaceId, statut])
   @@index([typologie, etapeCle])
   @@index([responsableId])
   @@index([prochaineActionLe])
+}
+
+/// GED d'affaire (2026-07-17) : l'arborescence du dossier client, alimentee
+/// automatiquement par les pieces jointes du canal de messagerie. Chaque
+/// document vit dans un sous-dossier (categorie) et peut valider une piece
+/// de la checklist (checklistCle).
+enum CategorieDocAffaire {
+  PHOTOS
+  PIECES_CLIENT
+  CONCEPTION
+  DEVIS
+  LIVRABLES
+  AUTRE
+}
+
+model AffaireDocument {
+  id           String              @id @default(cuid())
+  affaireId    String
+  affaire      Affaire             @relation(fields: [affaireId], references: [id], onDelete: Cascade)
+  categorie    CategorieDocAffaire @default(AUTRE)
+  /// Cle de la piece de checklist validee par ce document (ex. cadastre).
+  checklistCle String?
+  nom          String
+  fichier      String
+  mimeType     String?
+  taille       Int?
+  note         String?
+  /// Message du fil d'ou vient la piece (traçabilite du rangement).
+  messageId    String?
+  createdAt    DateTime            @default(now())
+  creePar      String?
+
+  // Idempotence du rangement tenue en BASE : une même pièce d'un même
+  // message ne peut être rangée qu'une fois, même si deux soumissions se
+  // chevauchent (deux onglets, retry). NULLs distincts en Postgres : les
+  // dépôts directs (messageId null) ne sont pas contraints.
+  @@unique([affaireId, messageId, fichier])
+  @@index([affaireId, categorie])
+  @@index([affaireId, checklistCle])
 }

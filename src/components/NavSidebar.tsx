@@ -174,6 +174,19 @@ const groups: NavGroup[] = [
       { href: "/demandes", label: "Demandes matériel", icon: Package },
     ],
   },
+  // Commercial : le pipeline d'affaires (CRM), en AMONT des finances. Une
+  // affaire n'est pas encore de l'argent : elle mérite son propre groupe,
+  // placé avant Finances. Pas de garde de module : une affaire précède le
+  // projet (chantier comme étude).
+  {
+    key: "commercial",
+    label: "Commercial",
+    icon: Handshake,
+    pilotOnly: true,
+    items: [
+      { href: "/affaires", label: "Affaires", icon: Handshake },
+    ],
+  },
   {
     key: "finance",
     label: "Finances",
@@ -182,8 +195,6 @@ const groups: NavGroup[] = [
     // ET le bureau d'études : pas de garde de module au niveau du groupe.
     pilotOnly: true,
     items: [
-      // Affaires (CRM) : le pipeline commercial en amont des projets.
-      { href: "/affaires", label: "Affaires", icon: Handshake },
       // Suivi commercial et financier : devis, situations, factures, encaissements.
       { href: "/finance", label: "Suivi financier", icon: Wallet },
       // Paie : ADMIN seul, et seulement dans un espace « chantier ».

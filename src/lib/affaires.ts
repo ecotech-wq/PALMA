@@ -142,6 +142,73 @@ export function parseChecklist(raw: unknown): ChecklistItem[] {
   return items;
 }
 
+/* -------------------------------------------------------------------------
+ *  Traces système du fil d'affaire (canal = journal vivant)
+ *
+ *  Chaque geste de pilotage (replanifier la prochaine action, changer le
+ *  responsable, cocher une pièce, confier une action) laisse une phrase
+ *  dans le canal de l'affaire, comme changerEtape le fait déjà. Textes
+ *  construits ici (logique pure, testée) ; l'écriture reste dans les
+ *  server actions (tracerDansCanal).
+ * ----------------------------------------------------------------------- */
+
+/** "JJ/MM" pour les échéances @db.Date (minuit UTC) : le fuseau UTC évite
+ *  le décalage d'un jour sur un serveur à l'ouest ou à l'est de Greenwich. */
+const traceDateFmt = new Intl.DateTimeFormat("fr-FR", {
+  day: "2-digit",
+  month: "2-digit",
+  timeZone: "UTC",
+});
+
+/** « Prochaine action : LIBELLÉ pour le JJ/MM (Auteur). » Les variantes
+ *  sans date, sans libellé ou effacée restent des phrases complètes. */
+export function texteTraceProchaineAction(
+  libelle: string | null,
+  echeance: Date | null,
+  auteur: string
+): string {
+  if (!libelle && !echeance) return `Prochaine action effacée (${auteur}).`;
+  const corps = libelle
+    ? `Prochaine action : ${libelle}`
+    : "Prochaine action";
+  const quand = echeance ? ` pour le ${traceDateFmt.format(echeance)}` : "";
+  return `${corps}${quand} (${auteur}).`;
+}
+
+/** « Responsable : NOM (Auteur). » ; null = responsable retiré. */
+export function texteTraceResponsable(
+  nom: string | null,
+  auteur: string
+): string {
+  return nom
+    ? `Responsable : ${nom} (${auteur}).`
+    : `Responsable retiré (${auteur}).`;
+}
+
+/** « Pièce reçue : Plan cadastral (Auteur). » / « Pièce décochée : ... ». */
+export function texteTracePiece(
+  libelle: string,
+  fait: boolean,
+  auteur: string
+): string {
+  return fait
+    ? `Pièce reçue : ${libelle} (${auteur}).`
+    : `Pièce décochée : ${libelle} (${auteur}).`;
+}
+
+/** « Action confiée à PRÉNOM : LIBELLÉ pour le JJ/MM (Auteur). » */
+export function texteTraceActionConfiee(
+  cible: string,
+  nom: string,
+  echeance: Date,
+  auteur: string
+): string {
+  return (
+    `Action confiée à ${cible} : ${nom}` +
+    ` pour le ${traceDateFmt.format(echeance)} (${auteur}).`
+  );
+}
+
 /** Ce que la dormance a besoin de connaître d'une affaire. */
 export interface AffaireDormance {
   statut: string;

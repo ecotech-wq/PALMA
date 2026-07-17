@@ -620,7 +620,14 @@ async function posterDansFilAffaire(
   revalidatePath(`/messagerie/affaire/${affaireId}`);
   revalidatePath(`/affaires/${affaireId}/canal`);
   revalidatePath("/messagerie");
-  return { messageId: msg.id, echecs };
+  // Les pièces stockées (URLs réelles) remontent au composer : il propose
+  // alors de les ranger dans le dossier client (GED d'affaire), avec la
+  // catégorie pré-suggérée et, pour les pièces client, la checklist.
+  return {
+    messageId: msg.id,
+    echecs,
+    pieces: { photos, documents },
+  };
 }
 
 const EMOJI_WHITELIST = ["👍", "❤️", "🎉", "👏", "🔥", "😂", "😮", "😢", "🙏"];
@@ -944,11 +951,29 @@ export async function deleteChantierMessage(messageId: string) {
     }
   }
 
-  for (const url of existing.photos) await deleteUploadedPhoto(url);
+  // Pièces rangées dans le dossier client (GED d'affaire) : le document
+  // partage son fichier avec le message. Supprimer le message ne doit ni
+  // effacer ces fichiers ni casser le dossier : on les préserve sur disque
+  // et on détache simplement le lien d'origine (messageId -> null).
+  const piecesRangees = await db.affaireDocument.findMany({
+    where: { messageId },
+    select: { fichier: true },
+  });
+  const fichiersPreserves = new Set(piecesRangees.map((p) => p.fichier));
+
+  for (const url of existing.photos) {
+    if (!fichiersPreserves.has(url)) await deleteUploadedPhoto(url);
+  }
   for (const url of existing.videos) await deleteUploadedPhoto(url);
   for (const url of existing.audios) await deleteUploadedPhoto(url);
   for (const doc of parseDocumentsMessage(existing.documents)) {
-    await deleteUploadedPhoto(doc.url);
+    if (!fichiersPreserves.has(doc.url)) await deleteUploadedPhoto(doc.url);
+  }
+  if (piecesRangees.length > 0) {
+    await db.affaireDocument.updateMany({
+      where: { messageId },
+      data: { messageId: null },
+    });
   }
 
   await db.journalMessage.delete({ where: { id: messageId } });

@@ -18,7 +18,7 @@ import {
   libelleEtape,
   type TypologieAffaire,
 } from "@/lib/affaires";
-import { NouvelleAffaire } from "../affaires/NouvelleAffaire";
+import { NouveauBouton } from "./NouveauBouton";
 import { PinChantierButton } from "./PinChantierButton";
 
 const timeFmt = new Intl.DateTimeFormat("fr-FR", {
@@ -197,23 +197,25 @@ export default async function MessagerieHubPage() {
       <PageHeader
         title="Messagerie"
         description="Le centre de travail : fils des affaires et des chantiers, actions et médias au même endroit."
+        action={
+          // « + Nouveau » : affaire (pilotes) ou chantier (admin global,
+          // même gating que la page /chantiers). Feuille à deux choix.
+          <NouveauBouton
+            peutCreerAffaire={me.canPilot}
+            peutCreerChantier={me.isGlobalAdmin && !!me.espaceCourant}
+          />
+        }
       />
 
       {/* ── Affaires (CRM) : au-dessus des chantiers, car c'est là que se
           joue la journée commerciale. Réservé aux pilotes. */}
       {me.canPilot && (
         <section className="mb-5">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Affaires ({affairesTriees.length})
-            </h2>
-            <NouvelleAffaire
-              typologieInitiale="PERMIS_CONSTRUIRE"
-              responsables={[]}
-              compact
-              versCanal
-            />
-          </div>
+          {/* La création vit dans le bouton « + Nouveau » de l'en-tête
+              (affaire OU chantier) : plus de bouton par section. */}
+          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Affaires ({affairesTriees.length})
+          </h2>
           {affairesTriees.length === 0 ? (
             <p className="rounded-xl border border-dashed border-slate-300 px-4 py-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
               Aucune affaire en cours. Chaque appel entrant mérite une

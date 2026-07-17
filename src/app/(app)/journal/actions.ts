@@ -180,6 +180,15 @@ export async function updateJournalMessage(id: string, formData: FormData) {
   const existing = await db.journalMessage.findUnique({ where: { id } });
   if (!existing) throw new Error("Message introuvable");
 
+  // Ce chemin est celui du journal de chantier : un message de fil
+  // d'affaire (chantierId null) ne se modifie que via la messagerie,
+  // qui applique requireMessageAccess. Et frontière d'espace comme
+  // partout : un admin d'un autre espace est refusé ici.
+  if (!existing.chantierId) {
+    throw new Error("Message d'un fil d'affaire : passer par la messagerie");
+  }
+  await requireChantierAccess(me, existing.chantierId);
+
   if (!me.isAdmin) {
     if (existing.authorId !== me.id) {
       throw new Error("Tu ne peux modifier que tes propres messages");
@@ -211,6 +220,17 @@ export async function deleteJournalMessage(id: string) {
   const me = await requireAuth();
   const existing = await db.journalMessage.findUnique({ where: { id } });
   if (!existing) return;
+
+  // Chemin réservé au journal de chantier. Un message de fil d'affaire
+  // (chantierId null) peut porter des pièces rangées dans le dossier
+  // client (AffaireDocument.messageId) : le supprimer ici effacerait du
+  // disque des fichiers encore référencés par le dossier. La messagerie
+  // (deleteChantierMessage) préserve ces fichiers et détache messageId ;
+  // ce chemin-ci est donc refusé. Et frontière d'espace comme partout.
+  if (!existing.chantierId) {
+    throw new Error("Message d'un fil d'affaire : passer par la messagerie");
+  }
+  await requireChantierAccess(me, existing.chantierId);
 
   if (!me.isAdmin) {
     if (existing.authorId !== me.id) {

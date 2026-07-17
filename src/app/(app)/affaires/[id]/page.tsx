@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import {
   CheckSquare,
+  FolderOpen,
   Mail,
   MapPin,
   MessageSquare,
@@ -57,6 +58,7 @@ export default async function FicheAffairePage({
     include: {
       responsable: { select: { id: true, name: true } },
       chantier: { select: { id: true, nom: true } },
+      _count: { select: { documents: true } },
       taches: {
         where: { deletedAt: null },
         orderBy: { dateFin: "asc" },
@@ -243,6 +245,29 @@ export default async function FicheAffairePage({
               </span>
               <span className="block text-xs text-slate-500">
                 Discussion et journal des étapes, dans le canal dédié
+              </span>
+            </span>
+          </Link>
+
+          {/* Dossier client : la GED de l'affaire, alimentée par le fil. */}
+          <Link
+            href={`/affaires/${affaire.id}/documents`}
+            className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/60"
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-slate-50 dark:bg-slate-100 dark:text-slate-950">
+              <FolderOpen size={18} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Dossier client
+                <span className="ml-2 text-xs font-normal tabular-nums text-slate-500">
+                  {affaire._count.documents} pièce
+                  {affaire._count.documents > 1 ? "s" : ""}
+                </span>
+              </span>
+              <span className="block text-xs text-slate-500">
+                Photos, pièces client, conception, devis et livrables, rangés
+                par catégorie
               </span>
             </span>
           </Link>
