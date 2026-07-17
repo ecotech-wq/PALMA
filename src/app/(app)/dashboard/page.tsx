@@ -141,6 +141,9 @@ export default async function DashboardPage() {
     duJour.length > 0 ? "Le terrain, aujourd'hui" : "Le terrain, ces derniers jours";
   const photos: PhotoTerrain[] = [];
   for (const m of sourcePhotos) {
+    // Les messages d'un canal d'affaire (CRM) n'ont pas de chantier : le mur
+    // du terrain ne montre que les photos des chantiers.
+    if (!m.chantier || !m.chantierId) continue;
     for (const url of m.photos) {
       if (photos.length >= 12) break;
       photos.push({

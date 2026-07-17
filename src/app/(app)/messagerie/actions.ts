@@ -16,10 +16,18 @@ import {
   type DocumentMessage,
   type EchecUpload,
 } from "@/lib/pieces-jointes";
-import { requireAuth, requireChantierAccess } from "@/lib/auth-helpers";
+import {
+  requireAuth,
+  requireChantierAccess,
+  requireAffaireAccess,
+  type CurrentUser,
+} from "@/lib/auth-helpers";
 import { notifyAdmins, notify } from "@/lib/notifications";
 import { audit } from "@/lib/audit";
-import { getOrCreateGeneral } from "@/features/messaging";
+import {
+  getOrCreateGeneral,
+  getOrCreateCanalAffaire,
+} from "@/features/messaging";
 
 /* -------------------------------------------------------------------------
  *  Composer chat-first : un seul point d'entrée pour TOUTES les actions
@@ -48,7 +56,10 @@ const CATEGORIES = [
 type Categorie = (typeof CATEGORIES)[number];
 
 const baseSchema = z.object({
-  chantierId: z.string().min(1, "Chantier requis"),
+  // Fil cible : un chantier OU une affaire (CRM). Exactement l'un des deux,
+  // vérifié dans l'action (zod ne porte pas cet invariant croisé).
+  chantierId: z.string().optional().or(z.literal("")),
+  affaireId: z.string().optional().or(z.literal("")),
   category: z.enum(CATEGORIES),
   // Canal du fil où poster (v4.2) ; vide = Général
   canalId: z.string().optional().or(z.literal("")),
@@ -157,7 +168,8 @@ export async function postChantierMessage(formData: FormData) {
   if (me.isClient) throw new Error("Lecture seule");
 
   const data = baseSchema.parse({
-    chantierId: formData.get("chantierId"),
+    chantierId: formData.get("chantierId") || "",
+    affaireId: formData.get("affaireId") || "",
     category: formData.get("category") || "NOTE",
     canalId: formData.get("canalId") || "",
     texte: formData.get("texte") || "",
@@ -175,6 +187,24 @@ export async function postChantierMessage(formData: FormData) {
     etatRetour: formData.get("etatRetour") || undefined,
   });
 
+  // ---------- Fil d'AFFAIRE (CRM) : chantierId null, ancrage canalId ----
+  // Le composer du fil d'affaire poste par la même action que les fils de
+  // chantier (mêmes médias : photos, vidéos, mémos vocaux, documents),
+  // mais la garde devient l'accès affaire (pilotes + frontière espace) et
+  // seule la catégorie NOTE a un sens (incidents, demandes, rapports,
+  // sorties sont des objets de chantier).
+  if (data.affaireId) {
+    if (data.chantierId) {
+      throw new Error("Cible ambiguë : un message vise un chantier OU une affaire");
+    }
+    if (data.category !== "NOTE") {
+      throw new Error("Seuls les messages simples sont possibles dans un fil d'affaire");
+    }
+    await requireAffaireAccess(me, data.affaireId);
+    return posterDansFilAffaire(me, data.affaireId, data.canalId || "", formData, data.texte || "");
+  }
+
+  if (!data.chantierId) throw new Error("Chantier requis");
   await requireChantierAccess(me, data.chantierId);
 
   // Seul un admin ou conducteur peut cacher au client
@@ -507,6 +537,92 @@ async function notifyChat(
   }
 }
 
+/**
+ * Poste une NOTE dans le canal d'une affaire (CRM). Même pipeline de
+ * médias que les fils de chantier ; le message est ancré par son canalId
+ * seul (chantierId null). Appelée par postChantierMessage après la garde
+ * requireAffaireAccess (pilotes + frontière espace).
+ */
+async function posterDansFilAffaire(
+  me: CurrentUser,
+  affaireId: string,
+  canalIdVoulu: string,
+  formData: FormData,
+  texte: string
+) {
+  const affaire = await db.affaire.findUnique({
+    where: { id: affaireId },
+    select: { titre: true, responsableId: true },
+  });
+  if (!affaire) throw new Error("Affaire introuvable");
+
+  // Canal cible : celui du composer s'il appartient bien à CETTE affaire
+  // (un canalId forgé vers un autre fil est ignoré), sinon le canal
+  // Général de l'affaire, recréé au besoin.
+  let canalId = "";
+  if (canalIdVoulu) {
+    const canal = await db.canal.findFirst({
+      where: { id: canalIdVoulu, affaireId },
+      select: { id: true },
+    });
+    canalId = canal?.id ?? "";
+  }
+  if (!canalId) canalId = (await getOrCreateCanalAffaire(affaireId)).id;
+
+  const { photos, videos, audios, documents, echecs } =
+    await uploadMedia(formData);
+  if (
+    !texte &&
+    photos.length === 0 &&
+    videos.length === 0 &&
+    audios.length === 0 &&
+    documents.length === 0
+  ) {
+    if (echecs.length > 0) {
+      throw new Error(formatEchecsUpload(echecs));
+    }
+    throw new Error("Le message doit contenir du texte ou un média");
+  }
+
+  // Même convention de jour que les traces du pipeline (tracerDansCanal
+  // des actions d'affaires) : minuit UTC.
+  const now = new Date();
+  const msg = await db.journalMessage.create({
+    data: {
+      chantierId: null,
+      canalId,
+      authorId: me.id,
+      date: new Date(
+        Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+      ),
+      type: "NOTE",
+      texte: texte || null,
+      photos,
+      videos,
+      audios,
+      documents,
+    },
+  });
+
+  // On prévient le responsable de l'affaire (celui qui pilote le dossier),
+  // pas les admins en masse : le fil d'affaire est un flux de pilotage.
+  const apercu = (texte || apercuMedia({ audios, documents })).slice(0, 80);
+  if (affaire.responsableId && affaire.responsableId !== me.id) {
+    await notify(
+      affaire.responsableId,
+      "AUTRE",
+      `Affaire : ${affaire.titre}`,
+      `${me.name} : ${apercu}`,
+      `/messagerie/affaire/${affaireId}`
+    );
+  }
+
+  revalidatePath(`/messagerie/affaire/${affaireId}`);
+  revalidatePath(`/affaires/${affaireId}/canal`);
+  revalidatePath("/messagerie");
+  return { messageId: msg.id, echecs };
+}
+
 const EMOJI_WHITELIST = ["👍", "❤️", "🎉", "👏", "🔥", "😂", "😮", "😢", "🙏"];
 
 /**
@@ -528,6 +644,11 @@ export async function toggleMessageReaction(
     select: { chantierId: true },
   });
   if (!msg) throw new Error("Message introuvable");
+  // Les réactions vivent dans les fils de chantier ; un message de canal
+  // d'affaire (chantierId null) n'en propose pas à ce stade.
+  if (!msg.chantierId) {
+    throw new Error("Réactions réservées aux fils de chantier");
+  }
   await requireChantierAccess(me, msg.chantierId);
 
   const existing = await db.messageReaction.findUnique({
@@ -738,6 +859,40 @@ export async function quickRefuseDemande(demandeId: string, motif: string) {
 }
 
 /**
+ * Frontière d'accès sur UN message : selon son rattachement, mêmes gardes
+ * que la lecture du fil. Message de chantier : requireChantierAccess
+ * (espace + adhésion). Message d'affaire (chantierId null, canal porté par
+ * une affaire) : requireAffaireAccess (pilotes + espace). Sans cette garde,
+ * tout ADMIN/CONDUCTEUR de n'importe quel espace pouvait supprimer ou
+ * basculer n'importe quel message par id forgé, fils d'autres entreprises
+ * compris.
+ */
+async function requireMessageAccess(
+  me: CurrentUser,
+  message: { chantierId: string | null; canalId: string | null }
+): Promise<void> {
+  if (message.chantierId) {
+    await requireChantierAccess(me, message.chantierId);
+    return;
+  }
+  if (message.canalId) {
+    const canal = await db.canal.findUnique({
+      where: { id: message.canalId },
+      select: { chantierId: true, affaireId: true },
+    });
+    if (canal?.chantierId) {
+      await requireChantierAccess(me, canal.chantierId);
+      return;
+    }
+    if (canal?.affaireId) {
+      await requireAffaireAccess(me, canal.affaireId);
+      return;
+    }
+  }
+  throw new Error("Message sans rattachement identifiable");
+}
+
+/**
  * Bascule rapide « visible / caché du client » sur un message — admin
  * ou conducteur uniquement. Utile pour curer le rapport client en un
  * clic depuis le fil.
@@ -751,6 +906,7 @@ export async function toggleMessageClientVisibility(messageId: string) {
     where: { id: messageId },
   });
   if (!existing) throw new Error("Message introuvable");
+  await requireMessageAccess(me, existing);
   const updated = await db.journalMessage.update({
     where: { id: messageId },
     data: { hiddenFromClient: !existing.hiddenFromClient },
@@ -774,6 +930,10 @@ export async function deleteChantierMessage(messageId: string) {
   });
   if (!existing) return;
 
+  // Frontière AVANT le droit de suppression : le message doit appartenir
+  // à un fil auquel l'appelant a réellement accès (chantier ou affaire).
+  await requireMessageAccess(me, existing);
+
   if (!me.isAdmin && !me.isConducteur) {
     if (existing.authorId !== me.id) {
       throw new Error("Réservé à l'auteur ou aux pilotes");
@@ -792,6 +952,19 @@ export async function deleteChantierMessage(messageId: string) {
   }
 
   await db.journalMessage.delete({ where: { id: messageId } });
-  revalidatePath(`/chantiers/${existing.chantierId}/journal`);
-  revalidatePath(`/messagerie/${existing.chantierId}`);
+  if (existing.chantierId) {
+    revalidatePath(`/chantiers/${existing.chantierId}/journal`);
+    revalidatePath(`/messagerie/${existing.chantierId}`);
+  } else if (existing.canalId) {
+    // Message d'un fil d'affaire (chantierId null) : on rafraîchit le fil
+    // de l'affaire portée par le canal.
+    const canal = await db.canal.findUnique({
+      where: { id: existing.canalId },
+      select: { affaireId: true },
+    });
+    if (canal?.affaireId) {
+      revalidatePath(`/messagerie/affaire/${canal.affaireId}`);
+      revalidatePath(`/affaires/${canal.affaireId}/canal`);
+    }
+  }
 }

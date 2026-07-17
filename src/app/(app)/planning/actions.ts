@@ -169,7 +169,7 @@ export async function setAvancement(id: string, avancement: number) {
   const me = await requireEditionPlanning();
   const existing = await db.tache.findUnique({
     where: { id },
-    select: { chantierId: true, proprietaireId: true },
+    select: { chantierId: true, proprietaireId: true, affaireId: true },
   });
   if (!existing) throw new Error("Tâche introuvable");
   await verifierAccesTache(me, existing);
@@ -294,7 +294,7 @@ export async function setPriorite(id: string, priorite: 1 | 2 | 3 | 4) {
   const me = await requireEditionPlanning();
   const existing = await db.tache.findUnique({
     where: { id },
-    select: { chantierId: true, proprietaireId: true },
+    select: { chantierId: true, proprietaireId: true, affaireId: true },
   });
   if (!existing) throw new Error("Tâche introuvable");
   await verifierAccesTache(me, existing);
@@ -388,7 +388,7 @@ export async function deplacerTache(
   // propriétaire pour une tâche perso.
   const existante = await db.tache.findUnique({
     where: { id },
-    select: { chantierId: true, proprietaireId: true },
+    select: { chantierId: true, proprietaireId: true, affaireId: true },
   });
   if (!existante) throw new Error("Tâche introuvable");
   await verifierAccesTache(me, existante);
@@ -913,22 +913,40 @@ async function requireEditionPlanning() {
  * jamais les deux ni aucun des deux.
  * - Tâche de chantier : frontière d'espace du chantier
  *   (verifierEspaceDuChantier), comme partout ailleurs.
- * - Tâche PERSO : seul son propriétaire, ou un admin global, peut la
- *   modifier. Un admin d'espace n'y a aucun droit.
+ * - Tâche PERSO : son propriétaire, un admin global, ou (si la tâche est
+ *   reliée à une affaire par assignerAction) le responsable de l'affaire,
+ *   qui garde la main sur les actions qu'il délègue : l'accueil les liste
+ *   dans sa journée, il doit pouvoir les cocher. Un admin d'espace n'y a
+ *   aucun droit.
  */
 async function verifierAccesTache(
   me: CurrentUser,
-  tache: { chantierId: string | null; proprietaireId: string | null }
+  tache: {
+    chantierId: string | null;
+    proprietaireId: string | null;
+    affaireId?: string | null;
+  }
 ): Promise<void> {
   if (tache.chantierId) {
     await verifierEspaceDuChantier(me, tache.chantierId);
     return;
   }
   if (tache.proprietaireId) {
-    if (tache.proprietaireId !== me.id && !me.isGlobalAdmin) {
-      throw new Error("Cette tâche personnelle ne vous appartient pas");
+    if (tache.proprietaireId === me.id || me.isGlobalAdmin) return;
+    if (tache.affaireId) {
+      const affaire = await db.affaire.findUnique({
+        where: { id: tache.affaireId },
+        select: { responsableId: true, espaceId: true },
+      });
+      if (
+        affaire &&
+        affaire.responsableId === me.id &&
+        (!me.espaceIds || me.espaceIds.includes(affaire.espaceId))
+      ) {
+        return;
+      }
     }
-    return;
+    throw new Error("Cette tâche personnelle ne vous appartient pas");
   }
   // Ni chantier ni propriétaire : invariant brisé, on refuse d'y toucher.
   throw new Error("Tâche invalide : ni chantier ni propriétaire");

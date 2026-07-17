@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MessageSquare, Hammer, Pin } from "lucide-react";
+import { MessageSquare, Hammer, Handshake, Pin } from "lucide-react";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
@@ -9,8 +9,16 @@ import {
   requireAuth,
   getAccessibleChantierIds,
   chantierEspaceFilter,
+  espaceFilter,
 } from "@/lib/auth-helpers";
-import { unreadMessagerieFor } from "@/lib/read-state";
+import { unreadMessagerieFor, unreadAffairesFor } from "@/lib/read-state";
+import {
+  LIBELLES_TYPOLOGIE,
+  estDormante,
+  libelleEtape,
+  type TypologieAffaire,
+} from "@/lib/affaires";
+import { NouvelleAffaire } from "../affaires/NouvelleAffaire";
 import { PinChantierButton } from "./PinChantierButton";
 
 const timeFmt = new Intl.DateTimeFormat("fr-FR", {
@@ -101,6 +109,67 @@ export default async function MessagerieHubPage() {
     orderBy: { updatedAt: "desc" },
   });
 
+  // ── Affaires (CRM) : les fils du pipeline commercial, réservés aux
+  // pilotes. Même mécanique que les chantiers : dernier message, badge
+  // non-lus (clé « affaire:<id> »), pastille ambre quand l'affaire dort.
+  const maintenant = new Date();
+  const affaires = me.canPilot
+    ? await db.affaire.findMany({
+        where: { statut: "EN_COURS", ...espaceFilter(me) },
+        select: {
+          id: true,
+          titre: true,
+          typologie: true,
+          etapeCle: true,
+          etapeDepuis: true,
+          statut: true,
+          prochaineActionLe: true,
+          contactNom: true,
+          updatedAt: true,
+          canaux: {
+            orderBy: { createdAt: "asc" },
+            take: 1,
+            select: {
+              id: true,
+              messages: {
+                orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+                take: 1,
+                select: {
+                  texte: true,
+                  photos: true,
+                  audios: true,
+                  documents: true,
+                  createdAt: true,
+                  author: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
+      })
+    : [];
+  const unreadAffaires = me.canPilot
+    ? await unreadAffairesFor(
+        me.id,
+        affaires.map((a) => a.id)
+      )
+    : { total: 0, byAffaire: {} as Record<string, number> };
+
+  const affairesTriees = affaires
+    .map((a) => {
+      const dernier = a.canaux[0]?.messages[0] ?? null;
+      return {
+        ...a,
+        dernier,
+        dormante: estDormante(a, maintenant) !== null,
+        lastActivity: dernier?.createdAt ?? a.updatedAt,
+      };
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
+    );
+
   // Tri : épinglés (par pinnedAt desc) en tête, puis non-épinglés (par
   // dernière activité desc).
   const sorted = chantiers
@@ -127,8 +196,115 @@ export default async function MessagerieHubPage() {
     <div>
       <PageHeader
         title="Messagerie"
-        description="Le fil de chaque chantier — incidents, demandes, sorties, rapports en un seul endroit."
+        description="Le centre de travail : fils des affaires et des chantiers, actions et médias au même endroit."
       />
+
+      {/* ── Affaires (CRM) : au-dessus des chantiers, car c'est là que se
+          joue la journée commerciale. Réservé aux pilotes. */}
+      {me.canPilot && (
+        <section className="mb-5">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Affaires ({affairesTriees.length})
+            </h2>
+            <NouvelleAffaire
+              typologieInitiale="PERMIS_CONSTRUIRE"
+              responsables={[]}
+              compact
+              versCanal
+            />
+          </div>
+          {affairesTriees.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-slate-300 px-4 py-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+              Aucune affaire en cours. Chaque appel entrant mérite une
+              carte : créez la première.
+            </p>
+          ) : (
+            <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
+              {affairesTriees.map((a) => {
+                const typologie = a.typologie as TypologieAffaire;
+                const dernier = a.dernier;
+                const apercu = dernier
+                  ? (dernier.texte?.slice(0, 100) ?? "") ||
+                    (dernier.photos.length > 0
+                      ? `Photo${dernier.photos.length > 1 ? "s" : ""}`
+                      : dernier.audios.length > 0
+                        ? "Mémo vocal"
+                        : Array.isArray(dernier.documents) &&
+                            dernier.documents.length > 0
+                          ? "Pièce jointe"
+                          : "[média]")
+                  : null;
+                const nonLus = unreadAffaires.byAffaire[a.id] ?? 0;
+                return (
+                  <li key={a.id}>
+                    <Link
+                      href={`/messagerie/affaire/${a.id}`}
+                      className="flex items-start gap-3 p-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                    >
+                      {/* Avatar : encre (charte), l'ambre reste le signal */}
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-950 text-slate-50 dark:bg-slate-100 dark:text-slate-950">
+                        <Handshake size={18} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="flex min-w-0 items-center gap-1.5 truncate font-semibold text-slate-900 dark:text-slate-100">
+                            {a.dormante && (
+                              <span
+                                className="h-2 w-2 shrink-0 rounded-full bg-brand-500"
+                                title="Affaire dormante : action en retard ou aucune action planifiée"
+                                aria-label="Affaire dormante"
+                              />
+                            )}
+                            <span className="truncate">{a.titre}</span>
+                          </span>
+                          <span className="shrink-0 text-[11px] text-slate-500 dark:text-slate-400">
+                            {dernier ? smartTime(dernier.createdAt) : "Nouvelle"}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-slate-600 dark:text-slate-400">
+                          {dernier ? (
+                            <>
+                              {dernier.author?.name ? (
+                                <span className="font-medium">
+                                  {dernier.author.name}
+                                </span>
+                              ) : (
+                                <span className="italic">Système</span>
+                              )}
+                              {" : "}
+                              {apercu || <span className="italic">[média]</span>}
+                            </>
+                          ) : (
+                            <span className="italic">
+                              Aucun message : démarrez la discussion
+                            </span>
+                          )}
+                        </p>
+                        <p className="mt-0.5 truncate text-[11px] text-slate-400 dark:text-slate-500">
+                          {LIBELLES_TYPOLOGIE[typologie]} ·{" "}
+                          {libelleEtape(typologie, a.etapeCle)} · {a.contactNom}
+                        </p>
+                      </div>
+                      {nonLus > 0 && (
+                        <span className="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-brand-600 px-1.5 text-[10px] font-bold leading-none text-white">
+                          {nonLus}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {me.canPilot && (
+        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          Chantiers ({sorted.length})
+        </h2>
+      )}
 
       {sorted.length === 0 ? (
         <Card>

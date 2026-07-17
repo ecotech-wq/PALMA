@@ -125,6 +125,12 @@ export async function createJournalMessage(formData: FormData) {
     include: { chantier: { select: { nom: true, chefId: true } } },
   });
 
+  // Le message vient d'être créé avec un chantierId validé : son chantier
+  // existe toujours. La relation n'est nullable dans le schéma que pour les
+  // messages des canaux d'affaire (CRM).
+  const chantierDuMessage = created.chantier;
+  if (!chantierDuMessage) throw new Error("Chantier introuvable");
+
   // Aperçu pour la notification quand le message n'a pas de texte
   const apercu =
     (data.texte ?? "").slice(0, 80) ||
@@ -139,16 +145,16 @@ export async function createJournalMessage(formData: FormData) {
     // Si un chef poste, on notifie les admins
     await notifyAdmins(
       "RAPPORT_CREE",
-      `Journal — ${created.chantier.nom}`,
+      `Journal : ${chantierDuMessage.nom}`,
       `${me.name} : ${apercu}`,
       `/chantiers/${data.chantierId}/journal?date=${data.date}`
     );
-  } else if (me.isAdmin && created.chantier.chefId && created.chantier.chefId !== me.id) {
+  } else if (me.isAdmin && chantierDuMessage.chefId && chantierDuMessage.chefId !== me.id) {
     // Si l'admin poste, on notifie le chef du chantier
     await notify(
-      created.chantier.chefId,
+      chantierDuMessage.chefId,
       "RAPPORT_CREE",
-      `Journal — ${created.chantier.nom}`,
+      `Journal : ${chantierDuMessage.nom}`,
       `${me.name} : ${apercu}`,
       `/chantiers/${data.chantierId}/journal?date=${data.date}`
     );

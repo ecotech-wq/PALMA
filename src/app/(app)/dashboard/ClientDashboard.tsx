@@ -124,6 +124,13 @@ export async function ClientDashboard({
       : [],
   ]);
 
+  // La requête filtre sur chantierId in [...] : chaque journal a donc son
+  // chantier. La relation n'est nullable dans le schéma que pour les canaux
+  // d'affaire (CRM) ; on rétrécit ici le type pour le rendu.
+  const journaux = journauxRecents.flatMap((j) =>
+    j.chantier ? [{ ...j, chantier: j.chantier }] : []
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -311,7 +318,7 @@ export async function ClientDashboard({
           )}
 
           {/* Activité récente du journal */}
-          {journauxRecents.length > 0 && (
+          {journaux.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -321,7 +328,7 @@ export async function ClientDashboard({
               </CardHeader>
               <CardBody className="!p-0">
                 <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {journauxRecents.map((j) => (
+                  {journaux.map((j) => (
                     <li key={j.id}>
                       <Link
                         href={`/chantiers/${j.chantier.id}/journal?date=${j.date.toISOString().slice(0, 10)}`}

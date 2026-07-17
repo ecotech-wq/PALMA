@@ -51,7 +51,11 @@ export async function applyTagToMessage(messageId: string, tagCode: string) {
     include: { author: { select: { name: true } }, tags: true },
   });
   if (!message) throw new Error("Message introuvable.");
-  await requireChantierAccess(me, message.chantierId);
+  // Les tags créent des fiches de CHANTIER (tâche, incident, réserve) : un
+  // message de canal d'affaire (chantierId null) n'est pas taguable.
+  const chantierId = message.chantierId;
+  if (!chantierId) throw new Error("Tags réservés aux fils de chantier.");
+  await requireChantierAccess(me, chantierId);
 
   if (message.tags.some((t) => t.tagCode === def.code)) {
     throw new Error("Ce tag est déjà posé sur ce message.");
@@ -60,7 +64,7 @@ export async function applyTagToMessage(messageId: string, tagCode: string) {
   // 1. La fiche (l'adaptateur porte ses propres invariants et transactions)
   const adapter = getAdapter(def.code);
   const fiche = await adapter.createRecord({
-    chantierId: message.chantierId,
+    chantierId,
     messageId: message.id,
     texte: message.texte ?? "",
     photos: message.photos,
@@ -88,7 +92,7 @@ export async function applyTagToMessage(messageId: string, tagCode: string) {
 
   // 3. Trace dans le fil (même canal que le message d'origine) + notification
   await insertSystemMessage({
-    chantierId: message.chantierId,
+    chantierId,
     type: TYPE_SYSTEME[def.code],
     texte: fiche.resume,
     authorId: me.id,
@@ -113,11 +117,11 @@ export async function applyTagToMessage(messageId: string, tagCode: string) {
     metadata: { messageId: message.id, tagCode: def.code },
   });
 
-  revalidatePath(`/messagerie/${message.chantierId}`);
-  revalidatePath(`/chantiers/${message.chantierId}`);
+  revalidatePath(`/messagerie/${chantierId}`);
+  revalidatePath(`/chantiers/${chantierId}`);
   for (const r of ROUTES_MODULE[def.code] ?? []) revalidatePath(r);
   if (def.code === "reserve") {
-    revalidatePath(`/chantiers/${message.chantierId}/pv-reception`);
+    revalidatePath(`/chantiers/${chantierId}/pv-reception`);
   }
 
   return { url: fiche.url, resume: fiche.resume, entity: fiche.entity, entityId: fiche.entityId };

@@ -300,6 +300,28 @@ export async function requireChantierAccess(
 }
 
 /**
+ * Accès à UNE affaire (CRM) : réservé aux pilotes (ADMIN + CONDUCTEUR),
+ * borné à l'espace comme requireChantierAccess. Le fil d'une affaire est
+ * INTERNE : un client n'y accède jamais. Lève sinon.
+ */
+export async function requireAffaireAccess(
+  user: CurrentUser,
+  affaireId: string
+): Promise<void> {
+  if (!user.canPilot) {
+    throw new Error("Les affaires sont réservées aux pilotes");
+  }
+  const a = await db.affaire.findUnique({
+    where: { id: affaireId },
+    select: { espaceId: true },
+  });
+  if (!a) throw new Error("Affaire introuvable");
+  if (user.espaceIds && !user.espaceIds.includes(a.espaceId)) {
+    throw new Error("Cette affaire n'appartient pas à votre espace");
+  }
+}
+
+/**
  * Gestionnaire d'un chantier : ADMIN, ou CONDUCTEUR membre de CE
  * chantier. À utiliser pour les actions locales à un chantier (membres,
  * canaux, validations). Lève sinon.

@@ -73,6 +73,13 @@ export const PALIER_BADGE: Record<
     label: "Essai en retard",
     classe: "bg-red-100 text-red-700",
   },
+  // Palier du module affaires (CRM) : action en retard ou pipeline à
+  // l'arrêt. Ambre = signal d'action, comme les relances de devis. Le
+  // cockpit finance ne l'affiche pas ; le badge sert aux écrans affaires.
+  AFFAIRE_DORMANTE: {
+    label: "Affaire dormante",
+    classe: "bg-brand-100 text-brand-700",
+  },
 };
 
 /** Ordre de gravité décroissante pour trier les constats. */
@@ -86,6 +93,7 @@ export const RANG_PALIER: Record<PalierRelance, number> = {
   SITUATION_A_FACTURER: 6,
   RETENUE_LIBERABLE: 7,
   ESSAI_ECHU: 8,
+  AFFAIRE_DORMANTE: 9,
 };
 
 /** Groupes de rendu, dans l'ordre d'affichage. */

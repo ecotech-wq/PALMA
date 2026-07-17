@@ -14,11 +14,12 @@ import { AudiosMessage, DocumentsMessage } from "@/components/MediasMessage";
 import type { DocumentMessage } from "@/lib/pieces-jointes";
 
 /* -----------------------------------------------------------------------
- *  Hook de polling live sur un chantier. Toutes les `intervalMs`, on
- *  interroge l'API ; si elle renvoie de nouveaux messages, on déclenche
- *  router.refresh(). Pause automatique quand l'onglet n'est pas visible.
+ *  Hook de polling live sur un fil (chantier ou affaire). Toutes les
+ *  `intervalMs`, on interroge l'API du fil (`apiBase`/poll) ; si elle
+ *  renvoie de nouveaux messages, on déclenche router.refresh(). Pause
+ *  automatique quand l'onglet n'est pas visible.
  * --------------------------------------------------------------------- */
-function useMessagerieLivePoll(chantierId: string, intervalMs = 8000) {
+function useMessagerieLivePoll(apiBase: string, intervalMs = 8000) {
   const router = useRouter();
   const lastSeenRef = useRef<string>(new Date().toISOString());
 
@@ -35,7 +36,7 @@ function useMessagerieLivePoll(chantierId: string, intervalMs = 8000) {
       }
       try {
         const res = await fetch(
-          `/api/messagerie/${encodeURIComponent(chantierId)}/poll?since=${encodeURIComponent(lastSeenRef.current)}`,
+          `${apiBase}/poll?since=${encodeURIComponent(lastSeenRef.current)}`,
           { cache: "no-store" }
         );
         if (res.ok) {
@@ -61,7 +62,7 @@ function useMessagerieLivePoll(chantierId: string, intervalMs = 8000) {
       aborted = true;
       if (timer) clearTimeout(timer);
     };
-  }, [chantierId, intervalMs, router]);
+  }, [apiBase, intervalMs, router]);
 }
 import Link from "next/link";
 import {
@@ -339,6 +340,7 @@ function getScrollParent(el: HTMLElement | null): HTMLElement | null {
 
 export function ChantierFeed({
   chantierId,
+  affaireId = null,
   canalId,
   canalGeneral,
   hasOlder = false,
@@ -351,6 +353,11 @@ export function ChantierFeed({
   photoMeta = {},
 }: {
   chantierId: string;
+  /** Contexte AFFAIRE (CRM) : le fil est celui du canal d'une affaire
+   *  (chantierId vide). Les API passent par /api/messagerie/affaire/... et
+   *  les gestes propres aux chantiers (réactions, tags, visibilité client)
+   *  sont masqués : le fil d'affaire est interne aux pilotes. */
+  affaireId?: string | null;
   canalId: string;
   canalGeneral: boolean;
   hasOlder?: boolean;
@@ -362,8 +369,13 @@ export function ChantierFeed({
   demandeInfo?: Record<string, DemandeInfo>;
   photoMeta?: Record<string, PhotoMeta>;
 }) {
+  // Base des routes API du fil : chantier ou affaire (mêmes formes de
+  // réponse, gardes propres à chaque contexte côté serveur).
+  const apiBase = affaireId
+    ? `/api/messagerie/affaire/${encodeURIComponent(affaireId)}`
+    : `/api/messagerie/${encodeURIComponent(chantierId)}`;
   // Polling live : refresh auto quand un nouveau message arrive
-  useMessagerieLivePoll(chantierId);
+  useMessagerieLivePoll(apiBase);
   const bottomRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
@@ -446,7 +458,7 @@ export function ChantierFeed({
         ? { height: container.scrollHeight, top: container.scrollTop }
         : null;
       const res = await fetch(
-        `/api/messagerie/${encodeURIComponent(chantierId)}/history?before=${encodeURIComponent(
+        `${apiBase}/history?before=${encodeURIComponent(
           before
         )}${beforeId}&canal=${encodeURIComponent(canalId)}&general=${canalGeneral ? "1" : "0"}`,
         { cache: "no-store" }
@@ -512,7 +524,7 @@ export function ChantierFeed({
         ? new Date(oldest.createdAt).toISOString()
         : new Date().toISOString();
       const res = await fetch(
-        `/api/messagerie/${encodeURIComponent(chantierId)}/search?q=${encodeURIComponent(
+        `${apiBase}/search?q=${encodeURIComponent(
           query.trim()
         )}&before=${encodeURIComponent(before)}`,
         { cache: "no-store" }
@@ -716,6 +728,7 @@ export function ChantierFeed({
               <MessageBubble
                 key={`ext-${m.id}`}
                 chantierId={chantierId}
+                enAffaire={!!affaireId}
                 msg={m}
                 isOwn={m.authorId === currentUserId}
                 canEdit={canEdit}
@@ -743,6 +756,7 @@ export function ChantierFeed({
               <MessageBubble
                 key={m.id}
                 chantierId={chantierId}
+                enAffaire={!!affaireId}
                 msg={m}
                 isOwn={m.authorId === currentUserId}
                 canEdit={canEdit}
@@ -764,6 +778,7 @@ export function ChantierFeed({
 
 function MessageBubble({
   chantierId,
+  enAffaire,
   msg,
   isOwn,
   canEdit,
@@ -774,6 +789,9 @@ function MessageBubble({
   photoMeta,
 }: {
   chantierId: string;
+  /** Fil d'affaire (CRM) : pas de réactions, de tags ni de visibilité
+   *  client, ces gestes appartiennent aux fils de chantier. */
+  enAffaire: boolean;
   msg: ChatMessage;
   isOwn: boolean;
   canEdit: boolean;
@@ -814,9 +832,11 @@ function MessageBubble({
   const meta = TYPE_META[msg.type] ?? TYPE_META.NOTE;
   const linkedHref = meta.href?.(msg, chantierId) ?? null;
   const isTyped = msg.type !== "NOTE";
-  // Un tag se pose sur un vrai message (NOTE), pas sur une trace système,
-  // par un rôle qui en a le droit, et si le message n'a pas déjà ce tag.
+  // Un tag se pose sur un vrai message (NOTE) d'un fil de CHANTIER, pas
+  // sur une trace système ni dans un fil d'affaire, par un rôle qui en a
+  // le droit, et si le message n'a pas déjà ce tag.
   const canTagThis =
+    !enAffaire &&
     !isTyped &&
     listTagsForRole(viewerRole).some(
       (d) => !tags.includes(d.code) && canApplyTag(viewerRole, d.code)
@@ -1119,14 +1139,16 @@ function MessageBubble({
           {/* Footer : actions. Visible en permanence sur écran tactile ;
               sur un poste avec souris, n'apparaît qu'au survol. */}
           <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 transition [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:focus-within:opacity-100">
-            <button
-              type="button"
-              onClick={() => setPickerOpen((v) => !v)}
-              className="inline-flex items-center gap-0.5 hover:text-brand-600 dark:hover:text-brand-400"
-              title="Ajouter une réaction"
-            >
-              <SmilePlus size={11} /> Réagir
-            </button>
+            {!enAffaire && (
+              <button
+                type="button"
+                onClick={() => setPickerOpen((v) => !v)}
+                className="inline-flex items-center gap-0.5 hover:text-brand-600 dark:hover:text-brand-400"
+                title="Ajouter une réaction"
+              >
+                <SmilePlus size={11} /> Réagir
+              </button>
+            )}
             {linkedHref && (
               <Link
                 href={linkedHref}
@@ -1137,20 +1159,24 @@ function MessageBubble({
             )}
             {canEdit && (
               <>
-                <button
-                  type="button"
-                  onClick={handleToggleClient}
-                  disabled={pending}
-                  className="inline-flex items-center gap-0.5 hover:text-amber-700 dark:hover:text-amber-400"
-                  title={
-                    msg.hiddenFromClient
-                      ? "Re-rendre visible au client"
-                      : "Cacher du client"
-                  }
-                >
-                  {msg.hiddenFromClient ? <Eye size={10} /> : <EyeOff size={10} />}
-                  {msg.hiddenFromClient ? "Re-publier" : "Cacher client"}
-                </button>
+                {/* Visibilité client : sans objet dans un fil d'affaire
+                    (toujours interne aux pilotes). */}
+                {!enAffaire && (
+                  <button
+                    type="button"
+                    onClick={handleToggleClient}
+                    disabled={pending}
+                    className="inline-flex items-center gap-0.5 hover:text-amber-700 dark:hover:text-amber-400"
+                    title={
+                      msg.hiddenFromClient
+                        ? "Re-rendre visible au client"
+                        : "Cacher du client"
+                    }
+                  >
+                    {msg.hiddenFromClient ? <Eye size={10} /> : <EyeOff size={10} />}
+                    {msg.hiddenFromClient ? "Re-publier" : "Cacher client"}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleDelete}

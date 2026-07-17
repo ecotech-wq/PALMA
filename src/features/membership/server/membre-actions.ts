@@ -142,6 +142,11 @@ export async function addCanalMembre(canalId: string, userId: string) {
     select: { id: true, nom: true, visibility: true, chantierId: true },
   });
   if (!canal) throw new Error("Canal introuvable");
+  // Un canal d'affaire (CRM, chantierId null) n'a pas de gestion de membres :
+  // il est réservé aux pilotes, depuis la fiche affaire.
+  if (!canal.chantierId) {
+    throw new Error("Ce canal appartient à une affaire, pas à un chantier");
+  }
   const me = await requireGestionnaire(canal.chantierId);
 
   if (canal.nom === GENERAL_CHANNEL_NAME) {
@@ -195,6 +200,10 @@ export async function removeCanalMembre(canalId: string, userId: string) {
     select: { id: true, nom: true, chantierId: true },
   });
   if (!canal) throw new Error("Canal introuvable");
+  // Même règle qu'à l'ajout : les canaux d'affaire n'ont pas de membres.
+  if (!canal.chantierId) {
+    throw new Error("Ce canal appartient à une affaire, pas à un chantier");
+  }
   const me = await requireGestionnaire(canal.chantierId);
 
   if (canal.nom === GENERAL_CHANNEL_NAME) {

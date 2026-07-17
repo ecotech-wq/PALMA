@@ -33,6 +33,7 @@ export {
 
 // Requêtes serveur (lecture)
 export { getOrCreateGeneral, listChannelsFor } from "./server/channel-queries";
+export { getOrCreateCanalAffaire } from "./server/affaire-queries";
 
 // Composants UI
 export { ChannelBar } from "./components/ChannelBar";

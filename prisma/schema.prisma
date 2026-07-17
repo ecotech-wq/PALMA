@@ -99,6 +99,8 @@ model User {
   devisClient         Devis[]              @relation("DevisClient")
   facturesClient      Facture[]            @relation("FactureClient")
   tachesPerso         Tache[]              @relation("TachesPerso")
+  affairesResponsable Affaire[]            @relation("AffairesResponsable")
+  affairesClient      Affaire[]            @relation("AffairesClient")
 }
 
 /// v4.3 : une ligne = une personne sur un chantier, quel que soit son
@@ -223,6 +225,8 @@ model Chantier {
   // GED chantier (2026-07-11)
   documents        ChantierDocument[]
   prelevementLabos PrelevementLabo[]
+  // CRM (2026-07-17) : affaires converties vers ce chantier
+  affaires         Affaire[]
 
   @@index([type])
   @@index([espaceId])
@@ -650,6 +654,10 @@ model Tache {
   chantier       Chantier?      @relation(fields: [chantierId], references: [id], onDelete: Cascade)
   proprietaireId String?
   proprietaire   User?          @relation("TachesPerso", fields: [proprietaireId], references: [id], onDelete: Cascade)
+  /// Tache issue d'une AFFAIRE (CRM) : "qualifier ce client", "faire la
+  /// visite"... Portee par le proprietaire (tache perso) et reliee ici.
+  affaireId      String?
+  affaire        Affaire?       @relation(fields: [affaireId], references: [id], onDelete: SetNull)
   equipeId       String?
   equipe         Equipe?        @relation(fields: [equipeId], references: [id], onDelete: SetNull)
   nom            String
@@ -973,8 +981,12 @@ enum CanalVisibility {
 
 model Canal {
   id          String          @id @default(cuid())
-  chantierId  String
-  chantier    Chantier        @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  /// Nullable depuis 2026-07-17 : un canal appartient a un CHANTIER ou a
+  /// une AFFAIRE (CRM). Invariant applicatif : exactement l'un des deux.
+  chantierId  String?
+  chantier    Chantier?       @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  affaireId   String?
+  affaire     Affaire?        @relation(fields: [affaireId], references: [id], onDelete: Cascade)
   nom         String
   visibility  CanalVisibility @default(INTERNE)
   ordre       Int             @default(0)
@@ -1035,8 +1047,10 @@ model UserReadState {
 
 model JournalMessage {
   id               String             @id @default(cuid())
-  chantierId       String
-  chantier         Chantier           @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  /// Nullable depuis 2026-07-17 : un message d'un canal d'AFFAIRE n'a pas
+  /// de chantier ; son ancrage est le canal (canalId) et l'affaire du canal.
+  chantierId       String?
+  chantier         Chantier?          @relation(fields: [chantierId], references: [id], onDelete: Cascade)
   authorId         String?
   author           User?              @relation(fields: [authorId], references: [id], onDelete: SetNull)
   date             DateTime           @db.Date
@@ -1373,6 +1387,7 @@ model Espace {
   formulationLabos FormulationLabo[]
   prelevementLabos PrelevementLabo[]
   equipementLabos  EquipementLabo[]
+  affaires         Affaire[]
 }
 
 /// Adhésion d un utilisateur à un espace, avec un rôle PROPRE à cet espace
@@ -1794,6 +1809,7 @@ enum TypeObjetRelance {
   SITUATION
   RETENUE
   ESSAI
+  AFFAIRE
 }
 
 enum PalierRelance {
@@ -1806,6 +1822,7 @@ enum PalierRelance {
   SITUATION_A_FACTURER
   RETENUE_LIBERABLE
   ESSAI_ECHU
+  AFFAIRE_DORMANTE
 }
 
 model RelanceLog {
@@ -1936,4 +1953,60 @@ model EssaiLabo {
   @@index([prelevementId])
   @@index([echeance])
   @@index([statut])
+}
+
+/// CRM Affaires (2026-07-17). Le pipeline commercial de LYNX : une affaire
+/// suit un prospect de la prise de contact au marche gagne, par TYPOLOGIE
+/// (les etapes de chaque typologie vivent en constantes TS, peu d'etapes,
+/// discipline de la prochaine action datee). A la victoire : conversion en
+/// chantier. Chaque affaire a son CANAL de messagerie.
+enum TypologieAffaire {
+  PERMIS_CONSTRUIRE
+  ETUDE_STRUCTURE
+  TRAVAUX
+  LABO
+}
+
+enum StatutAffaire {
+  EN_COURS
+  GAGNEE
+  PERDUE
+}
+
+model Affaire {
+  id                String           @id @default(cuid())
+  espaceId          String
+  espace            Espace           @relation(fields: [espaceId], references: [id], onDelete: Cascade)
+  titre             String
+  typologie         TypologieAffaire
+  etapeCle          String
+  etapeDepuis       DateTime         @default(now())
+  statut            StatutAffaire    @default(EN_COURS)
+  motifPerte        String?
+  contactNom        String
+  contactTel        String?
+  contactEmail      String?
+  adresse           String?
+  description       String?
+  valeurEstimee     Decimal?         @db.Decimal(12, 2)
+  prochaineAction   String?
+  prochaineActionLe DateTime?        @db.Date
+  responsableId     String?
+  responsable       User?            @relation("AffairesResponsable", fields: [responsableId], references: [id], onDelete: SetNull)
+  checklist         Json             @default("[]")
+  clientUserId      String?
+  clientUser        User?            @relation("AffairesClient", fields: [clientUserId], references: [id], onDelete: SetNull)
+  chantierId        String?
+  chantier          Chantier?        @relation(fields: [chantierId], references: [id], onDelete: SetNull)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  creePar           String?
+
+  canaux Canal[]
+  taches Tache[]
+
+  @@index([espaceId, statut])
+  @@index([typologie, etapeCle])
+  @@index([responsableId])
+  @@index([prochaineActionLe])
 }

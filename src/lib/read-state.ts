@@ -68,7 +68,11 @@ export async function unreadMessagerieFor(
   const groups = await db.journalMessage.groupBy({
     by: ["chantierId"],
     where: {
-      ...(chantierIds !== null ? { chantierId: { in: chantierIds } } : {}),
+      // Les messages des canaux d'affaire (CRM) n'ont pas de chantier : ils
+      // ne comptent pas dans les non-lus de la messagerie chantier.
+      ...(chantierIds !== null
+        ? { chantierId: { in: chantierIds } }
+        : { chantierId: { not: null } }),
       // On exclut les messages dont l'utilisateur est l'auteur
       // (ses propres envois ne devraient pas s'incrémenter en non lu)
       NOT: { authorId: userId },
@@ -81,32 +85,87 @@ export async function unreadMessagerieFor(
   const byChantier: Record<string, number> = {};
 
   for (const g of groups) {
-    const lastRead = lastReadByChantier.get(g.chantierId);
+    // Le where ci-dessus exclut déjà chantierId null ; la garde ne sert
+    // qu'au typage (groupBy renvoie le champ nullable du schéma).
+    const cId = g.chantierId;
+    if (!cId) continue;
+    const lastRead = lastReadByChantier.get(cId);
     if (!lastRead) {
       // Jamais ouvert → tous les messages comptent comme non lus
       const c = await db.journalMessage.count({
-        where: { chantierId: g.chantierId, NOT: { authorId: userId } },
+        where: { chantierId: cId, NOT: { authorId: userId } },
       });
-      byChantier[g.chantierId] = c;
+      byChantier[cId] = c;
       total += c;
       continue;
     }
     if (g._max.createdAt && g._max.createdAt > lastRead) {
       const c = await db.journalMessage.count({
         where: {
-          chantierId: g.chantierId,
+          chantierId: cId,
           createdAt: { gt: lastRead },
           NOT: { authorId: userId },
         },
       });
-      byChantier[g.chantierId] = c;
+      byChantier[cId] = c;
       total += c;
     } else {
-      byChantier[g.chantierId] = 0;
+      byChantier[cId] = 0;
     }
   }
 
   return { total, byChantier };
+}
+
+/**
+ * Compte les messages non lus des fils d'AFFAIRE (CRM) d'un utilisateur.
+ * Même mécanique que les chantiers, avec la clé "affaire:<id>" : tout
+ * message d'un canal de l'affaire créé après lastReadAt (et dont il n'est
+ * pas l'auteur) compte comme non lu. Volumes modestes (pipeline
+ * commercial) : une requête de comptage par affaire suffit.
+ */
+export async function unreadAffairesFor(
+  userId: string,
+  affaireIds: string[]
+): Promise<{ total: number; byAffaire: Record<string, number> }> {
+  if (affaireIds.length === 0) return { total: 0, byAffaire: {} };
+
+  const reads = await db.userReadState.findMany({
+    where: { userId, resource: { startsWith: "affaire:" } },
+    select: { resource: true, lastReadAt: true },
+  });
+  const lastReadByAffaire = new Map<string, Date>();
+  for (const r of reads) {
+    lastReadByAffaire.set(r.resource.replace(/^affaire:/, ""), r.lastReadAt);
+  }
+
+  const canaux = await db.canal.findMany({
+    where: { affaireId: { in: affaireIds } },
+    select: { id: true, affaireId: true },
+  });
+
+  const byAffaire: Record<string, number> = {};
+  let total = 0;
+  for (const affaireId of affaireIds) {
+    const canalIds = canaux
+      .filter((c) => c.affaireId === affaireId)
+      .map((c) => c.id);
+    if (canalIds.length === 0) {
+      byAffaire[affaireId] = 0;
+      continue;
+    }
+    const lastRead = lastReadByAffaire.get(affaireId);
+    const count = await db.journalMessage.count({
+      where: {
+        canalId: { in: canalIds },
+        NOT: { authorId: userId },
+        ...(lastRead ? { createdAt: { gt: lastRead } } : {}),
+      },
+    });
+    byAffaire[affaireId] = count;
+    total += count;
+  }
+  return { total, byAffaire };
 }
 
 /**

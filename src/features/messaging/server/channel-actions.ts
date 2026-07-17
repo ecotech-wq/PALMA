@@ -136,6 +136,11 @@ export async function renameChannel(id: string, nom: string) {
     select: { id: true, chantierId: true, nom: true },
   });
   if (!canal) throw new Error("Canal introuvable");
+  // Le canal d'une affaire (CRM, chantierId null) se gère depuis la fiche
+  // affaire ; ces actions ne concernent que les canaux de chantier.
+  if (!canal.chantierId) {
+    throw new Error("Ce canal appartient à une affaire, pas à un chantier");
+  }
   await requireChantierAccess(me, canal.chantierId);
   if (canal.nom === GENERAL_CHANNEL_NAME) {
     throw new Error("Le canal Général ne peut pas être renommé");
@@ -184,6 +189,10 @@ export async function archiveChannel(id: string) {
     select: { id: true, chantierId: true, nom: true, archivedAt: true },
   });
   if (!canal) throw new Error("Canal introuvable");
+  // Même règle qu'au renommage : réservé aux canaux de chantier.
+  if (!canal.chantierId) {
+    throw new Error("Ce canal appartient à une affaire, pas à un chantier");
+  }
   await requireChantierAccess(me, canal.chantierId);
   if (canal.nom === GENERAL_CHANNEL_NAME) {
     throw new Error("Le canal Général ne peut pas être archivé");

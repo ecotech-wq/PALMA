@@ -13,6 +13,12 @@ import {
   type PalierRelance,
 } from "@/lib/relances-calc";
 import { classerEssai } from "@/lib/labo-calc";
+import {
+  SEUIL_DORMANCE_JOURS,
+  estDormante,
+  libelleEtape,
+  type TypologieAffaire,
+} from "@/lib/affaires";
 import type { Prisma } from "@/generated/prisma/client";
 
 // ─── Moteur de relances financières : balayage serveur ───────────────────────
@@ -40,13 +46,16 @@ export interface BilanRelances {
 interface Constat {
   espaceId: string;
   chantierId: string | null;
-  objetType: "FACTURE" | "DEVIS" | "SITUATION" | "RETENUE" | "ESSAI";
+  objetType: "FACTURE" | "DEVIS" | "SITUATION" | "RETENUE" | "ESSAI" | "AFFAIRE";
   objetId: string;
   palier: PalierRelance;
   titre: string;
   message: string;
   /** Lien de la notification ; à défaut, le module finance du chantier. */
   lien?: string;
+  /** Destinataires imposés (affaire : son responsable) ; à défaut, les
+   *  pilotes de l'espace. */
+  destinataires?: string[];
 }
 
 const JOUR_MS = 24 * 3600 * 1000;
@@ -93,7 +102,16 @@ export async function executerRelances(
     aujourdHui.getTime() + (PREAVIS_LIBERATION_RETENUE_JOURS + 1) * JOUR_MS
   );
 
-  const [factures, devis, situations, retenues, essais] = await Promise.all([
+  // Affaires (CRM) : borne SQL grossière de la dormance. Une affaire EN_COURS
+  // est candidate si sa prochaine action est échue, ou si elle n'a aucune
+  // prochaine action et stagne dans son étape depuis le seuil de 14 jours
+  // (marge d'un jour, la classification fine retranche).
+  const horizonEtapeDormante = new Date(
+    aujourdHui.getTime() - (SEUIL_DORMANCE_JOURS - 1) * JOUR_MS
+  );
+
+  const [factures, devis, situations, retenues, essais, affaires] =
+    await Promise.all([
     db.facture.findMany({
       where: {
         ...filtreEspace,
@@ -193,6 +211,29 @@ export async function executerRelances(
             datePrelevement: true,
           },
         },
+      },
+    }),
+    // Affaires EN_COURS candidates à la dormance (module affaires / CRM).
+    db.affaire.findMany({
+      where: {
+        ...filtreEspace,
+        statut: "EN_COURS",
+        OR: [
+          { prochaineActionLe: { not: null, lte: aujourdHui } },
+          { prochaineActionLe: null, etapeDepuis: { lte: horizonEtapeDormante } },
+        ],
+      },
+      select: {
+        id: true,
+        espaceId: true,
+        titre: true,
+        typologie: true,
+        etapeCle: true,
+        statut: true,
+        prochaineAction: true,
+        prochaineActionLe: true,
+        etapeDepuis: true,
+        responsableId: true,
       },
     }),
   ]);
@@ -340,6 +381,34 @@ export async function executerRelances(
     });
   }
 
+  // ── Affaires dormantes : action échue ou pipeline à l'arrêt ───────────────
+  for (const a of affaires) {
+    const c = estDormante(a, aujourdHui);
+    if (!c) continue;
+    const detail =
+      c.motif === "ACTION_EN_RETARD"
+        ? `action en retard de ${c.jours} j`
+        : "sans prochaine action";
+    const etape = libelleEtape(a.typologie as TypologieAffaire, a.etapeCle);
+    const consigne =
+      c.motif === "ACTION_EN_RETARD" && a.prochaineAction
+        ? `Action prévue : ${a.prochaineAction}. La faire (ou la replanifier) depuis la fiche.`
+        : `Planifier la prochaine action depuis la fiche, ou clore l'affaire si elle est morte.`;
+    constats.push({
+      espaceId: a.espaceId,
+      chantierId: null,
+      objetType: "AFFAIRE",
+      objetId: a.id,
+      palier: "AFFAIRE_DORMANTE",
+      titre: `Affaire dormante : ${a.titre} (${detail})`,
+      message: `Étape « ${etape} » depuis ${diffJours(a.etapeDepuis, aujourdHui)} j. ${consigne}`,
+      lien: `/affaires/${a.id}`,
+      // Le responsable de l'affaire est prévenu en premier ; sans
+      // responsable, les pilotes de l'espace (repli standard).
+      destinataires: a.responsableId ? [a.responsableId] : undefined,
+    });
+  }
+
   // ── Journal (idempotence) + notifications internes ─────────────────────────
   // Destinataires résolus une fois par espace : les pilotes (ADMIN +
   // CONDUCTEUR membres de l'espace), à défaut les admins globaux actifs.
@@ -372,7 +441,19 @@ export async function executerRelances(
   let dejaTraites = 0;
 
   for (const constat of constats) {
-    const cibles = await destinataires(constat.espaceId);
+    let cibles =
+      constat.destinataires ?? (await destinataires(constat.espaceId));
+    // Filet de sécurité : un destinataire imposé (responsable d'affaire)
+    // peut ne pas être pilote de l'espace (donnée héritée, CHEF désigné
+    // avant le verrouillage des listes). Il ne pourrait alors pas ouvrir
+    // le lien, et l'idempotence consommerait la relance en silence : les
+    // pilotes de l'espace sont mis en copie.
+    if (constat.destinataires && constat.destinataires.length > 0) {
+      const pilotes = await destinataires(constat.espaceId);
+      if (constat.destinataires.some((id) => !pilotes.includes(id))) {
+        cibles = [...new Set([...cibles, ...pilotes])];
+      }
+    }
     const lien = constat.lien ?? lienFinance(constat.chantierId);
     try {
       // Journal ET notifications internes dans la MÊME transaction : soit le
@@ -428,7 +509,8 @@ export async function executerRelances(
       devis.length +
       situations.length +
       retenues.length +
-      essais.length,
+      essais.length +
+      affaires.length,
     constats: constats.length,
     notifiesNouveaux,
     dejaTraites,

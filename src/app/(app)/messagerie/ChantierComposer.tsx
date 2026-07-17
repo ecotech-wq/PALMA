@@ -137,19 +137,25 @@ const METEO_OPTIONS = [
  * bandeau et ses champs propres, refermables d'un X.
  */
 export function ChantierComposer({
-  chantierId,
+  chantierId = "",
+  affaireId = null,
   canalId,
-  materiels,
-  equipes,
-  sortiesOuvertes,
+  materiels = [],
+  equipes = [],
+  sortiesOuvertes = [],
   canHideFromClient = false,
 }: {
-  chantierId: string;
+  chantierId?: string;
+  /** Contexte AFFAIRE (CRM) : le composer poste dans le canal de
+   *  l'affaire (chantierId vide). Les mêmes médias restent disponibles
+   *  (photos, vidéos, mémos vocaux, documents) mais les catégories typées
+   *  et la visibilité client, propres aux chantiers, sont masquées. */
+  affaireId?: string | null;
   /** Canal actif : les messages postés y sont rattachés (v4.2) */
   canalId?: string | null;
-  materiels: Materiel[];
-  equipes: Equipe[];
-  sortiesOuvertes: SortieOuverte[];
+  materiels?: Materiel[];
+  equipes?: Equipe[];
+  sortiesOuvertes?: SortieOuverte[];
   /** Affiche le toggle « cacher du client » (admin / conducteur uniquement) */
   canHideFromClient?: boolean;
 }) {
@@ -252,10 +258,16 @@ export function ChantierComposer({
     setFiles((prev) => prev.filter((_, i) => i !== idx));
   }
 
+  /** Cible du message : chantier OU affaire (exactement l'une des deux). */
+  function poserCible(fd: FormData) {
+    if (affaireId) fd.set("affaireId", affaireId);
+    else fd.set("chantierId", chantierId);
+  }
+
   /** Envoi immédiat d'un mémo vocal, comme un message à part entière. */
   function envoyerAudio(fichier: File) {
     const fd = new FormData();
-    fd.set("chantierId", chantierId);
+    poserCible(fd);
     if (canalId) fd.set("canalId", canalId);
     fd.set("category", "NOTE");
     fd.set("texte", "");
@@ -279,7 +291,7 @@ export function ChantierComposer({
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const fd = new FormData();
-    fd.set("chantierId", chantierId);
+    poserCible(fd);
     if (canalId) fd.set("canalId", canalId);
     fd.set("category", category);
     fd.set("texte", texte);
@@ -584,32 +596,39 @@ export function ChantierComposer({
                   paddingBottom: "max(0.375rem, env(safe-area-inset-bottom))",
                 }}
               >
-                <div className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                  Type de message
-                </div>
-                {TYPED_CATEGORIES.map((cat) => {
-                  const m = CATEGORY_META[cat];
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      role="menuitem"
-                      onClick={() => choisirCategorie(cat)}
-                      className="flex w-full items-start gap-2.5 rounded px-2 py-2 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 sm:py-1.5"
-                    >
-                      <m.Icon size={15} className={`mt-0.5 shrink-0 ${m.color}`} />
-                      <span className="min-w-0">
-                        <span className="block text-xs font-medium text-slate-800 dark:text-slate-200">
-                          {m.label}
-                        </span>
-                        <span className="block text-xs text-slate-500 dark:text-slate-400">
-                          {m.description}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-                <div className="my-1 h-px bg-slate-100 dark:bg-slate-800" />
+                {/* Catégories typées : objets de CHANTIER (incident,
+                    demande, rapport, sortie). Sans objet dans un fil
+                    d'affaire, où seul le message simple existe. */}
+                {!affaireId && (
+                  <>
+                    <div className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                      Type de message
+                    </div>
+                    {TYPED_CATEGORIES.map((cat) => {
+                      const m = CATEGORY_META[cat];
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => choisirCategorie(cat)}
+                          className="flex w-full items-start gap-2.5 rounded px-2 py-2 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 sm:py-1.5"
+                        >
+                          <m.Icon size={15} className={`mt-0.5 shrink-0 ${m.color}`} />
+                          <span className="min-w-0">
+                            <span className="block text-xs font-medium text-slate-800 dark:text-slate-200">
+                              {m.label}
+                            </span>
+                            <span className="block text-xs text-slate-500 dark:text-slate-400">
+                              {m.description}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                    <div className="my-1 h-px bg-slate-100 dark:bg-slate-800" />
+                  </>
+                )}
                 <button
                   type="button"
                   role="menuitem"
@@ -703,7 +722,9 @@ export function ChantierComposer({
               submit(e as unknown as React.FormEvent);
             }
           }}
-          placeholder={meta.placeholder}
+          placeholder={
+            affaireId ? "Écrire dans le fil de l'affaire..." : meta.placeholder
+          }
           rows={1}
           title="Ctrl+Entrée pour envoyer"
           className="min-w-0 flex-1 resize-none self-center rounded-2xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-brand-400"

@@ -38,6 +38,8 @@ import {
   FileSignature,
   FlaskConical,
   Building2,
+  Handshake,
+  ListTodo,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/theme";
@@ -169,6 +171,8 @@ const groups: NavGroup[] = [
     // ET le bureau d'études : pas de garde de module au niveau du groupe.
     pilotOnly: true,
     items: [
+      // Affaires (CRM) : le pipeline commercial en amont des projets.
+      { href: "/affaires", label: "Affaires", icon: Handshake },
       // Suivi commercial et financier : devis, situations, factures, encaissements.
       { href: "/finance", label: "Suivi financier", icon: Wallet },
       // Paie : ADMIN seul, et seulement dans un espace « chantier ».
@@ -190,16 +194,26 @@ const groups: NavGroup[] = [
 
 // Barre de tab mobile, variante par rôle. Messagerie est promue en
 // onglet primaire pour tous les rôles non-client (entrée chat-first).
+//
+// Arbitrage « Tâches » (2026-07-17) : pour les rôles de PILOTAGE, l'entrée
+// la moins quotidienne de la barre était Pointage : un pilote ne pointe
+// pas lui-même, il valide les heures via la paie et suit le terrain par la
+// messagerie ; sa boucle quotidienne, c'est la liste d'actions (relances
+// d'affaires, tâches confiées). On remplace donc Pointage par « Tâches »
+// (ancre #taches de l'accueil Ma journée) pour ADMIN et CONDUCTEUR, SANS
+// toucher à Messagerie ; Pointage reste à un tap dans le tiroir « Plus ».
+// Les rôles de TERRAIN (CHEF, OUVRIER) gardent Pointage : c'est leur geste
+// du matin et du soir.
 const mobilePrimaryAdmin: NavItem[] = [
   { href: "/accueil", label: "Accueil", icon: LayoutDashboard },
   { href: "/messagerie", label: "Messagerie", icon: MessageSquare },
-  { href: "/pointage", label: "Pointage", icon: CheckSquare },
+  { href: "/accueil#taches", label: "Tâches", icon: ListTodo },
   { href: "/paie", label: "Paie", icon: Banknote, adminOnly: true },
 ];
 const mobilePrimaryConducteur: NavItem[] = [
   { href: "/accueil", label: "Accueil", icon: LayoutDashboard },
   { href: "/messagerie", label: "Messagerie", icon: MessageSquare },
-  { href: "/pointage", label: "Pointage", icon: CheckSquare },
+  { href: "/accueil#taches", label: "Tâches", icon: ListTodo },
   { href: "/planning", label: "Planning", icon: Calendar },
 ];
 const mobilePrimaryChef: NavItem[] = [
@@ -218,6 +232,10 @@ const mobilePrimaryClient: NavItem[] = [
 // Tout le reste, accessible via le bouton "Plus"
 const mobileMore: NavItem[] = [
   { href: "/chantiers", label: "Chantiers", icon: Hammer },
+  // Pointage : sorti de la barre primaire des pilotes (remplacé par
+  // Tâches), il reste ici ; filtré automatiquement pour les rôles qui
+  // l'ont déjà en barre primaire (CHEF, OUVRIER).
+  { href: "/pointage", label: "Pointage", icon: CheckSquare, clientHidden: true, module: "chantier" },
   // Volet contractuel du client (devis/situations/factures à signer).
   { href: "/mes-documents", label: "Mes documents", icon: FileSignature, clientOnly: true },
   // Bureau d'études : saisie des temps au téléphone (stand-up du matin)
@@ -229,6 +247,8 @@ const mobileMore: NavItem[] = [
   // Prix sensibles : admin + conducteur uniquement
   { href: "/locations", label: "Locations / Prêts", icon: Truck, clientHidden: true, pilotOnly: true },
   { href: "/commandes", label: "Commandes", icon: ShoppingCart, clientHidden: true, pilotOnly: true },
+  // Affaires (CRM) : admin + conducteur (pipeline commercial)
+  { href: "/affaires", label: "Affaires", icon: Handshake, clientHidden: true, pilotOnly: true },
   // Suivi financier : admin + conducteur (devis, situations, factures)
   { href: "/finance", label: "Suivi financier", icon: Wallet, clientHidden: true, pilotOnly: true },
   // Laboratoire : admin + conducteur (essais, formulations, rapports)

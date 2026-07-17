@@ -233,14 +233,20 @@ export async function GET(req: Request) {
           href: `/commandes/${c.id}`,
         })
       ),
-      ...messages.map(
-        (m): SearchResult => ({
-          id: m.id,
-          group: "message",
-          title: (m.texte ?? "").slice(0, 80),
-          subtitle: `${m.chantier.nom} · ${m.author?.name ?? "Système"}`,
-          href: `/messagerie/${m.chantierId}`,
-        })
+      // Les messages des canaux d'affaire (chantierId null) ne sont pas
+      // adressables par /messagerie/[chantierId] : on les écarte du résultat.
+      ...messages.flatMap((m): SearchResult[] =>
+        m.chantier && m.chantierId
+          ? [
+              {
+                id: m.id,
+                group: "message",
+                title: (m.texte ?? "").slice(0, 80),
+                subtitle: `${m.chantier.nom} · ${m.author?.name ?? "Système"}`,
+                href: `/messagerie/${m.chantierId}`,
+              },
+            ]
+          : []
       ),
     ];
 
