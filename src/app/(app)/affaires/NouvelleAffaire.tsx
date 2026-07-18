@@ -11,27 +11,26 @@ import { creerAffaire } from "./actions";
 // ─── Création d'une affaire ──────────────────────────────────────────────────
 // Feuille bas d'écran au téléphone (l'app vit sur mobile), panneau centré au
 // desktop. Champs volontairement courts : une affaire naît d'un appel, le
-// reste se complète sur la fiche.
-
-const TYPOLOGIES: { value: string; label: string }[] = [
-  { value: "PERMIS_CONSTRUIRE", label: "Permis de construire" },
-  { value: "ETUDE_STRUCTURE", label: "Étude structure" },
-  { value: "TRAVAUX", label: "Travaux" },
-  { value: "LABO", label: "Labo" },
-];
+// reste se complète sur la fiche. La procédure (pipeline) se choisit parmi
+// les procédures ACTIVES de l'espace courant, éditables dans
+// /affaires/procedures : les 4 typologies historiques n'en sont plus que
+// les suggestions de départ.
 
 const inputCls =
   "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100";
 
 export function NouvelleAffaire({
-  typologieInitiale,
+  procedures,
+  procedureInitiale,
   responsables,
   compact = false,
   versCanal = false,
 }: {
-  typologieInitiale: string;
+  /** Procédures ACTIVES de l'espace courant (vide : pas d'espace choisi). */
+  procedures: { id: string; libelle: string }[];
+  procedureInitiale?: string;
   responsables: { id: string; name: string }[];
-  /** Feuille minimale (typologie + titre + contact) : utilisée par le hub
+  /** Feuille minimale (procédure + titre + contact) : utilisée par le hub
    *  messagerie, où une affaire naît d'un appel et se complète ensuite. */
   compact?: boolean;
   /** Après création, ouvrir le fil de l'affaire (messagerie) plutôt que
@@ -48,7 +47,8 @@ export function NouvelleAffaire({
       </Button>
       {ouvert && (
         <NouvelleAffaireFeuille
-          typologieInitiale={typologieInitiale}
+          procedures={procedures}
+          procedureInitiale={procedureInitiale}
           responsables={responsables}
           compact={compact}
           versCanal={versCanal}
@@ -63,13 +63,15 @@ export function NouvelleAffaire({
  *  bouton « + Nouveau » du hub messagerie (choix affaire / chantier) en
  *  plus du bouton dédié ci-dessus. */
 export function NouvelleAffaireFeuille({
-  typologieInitiale,
+  procedures,
+  procedureInitiale,
   responsables,
   compact = false,
   versCanal = false,
   onClose,
 }: {
-  typologieInitiale: string;
+  procedures: { id: string; libelle: string }[];
+  procedureInitiale?: string;
   responsables: { id: string; name: string }[];
   compact?: boolean;
   versCanal?: boolean;
@@ -79,6 +81,7 @@ export function NouvelleAffaireFeuille({
   const router = useRouter();
   const toast = useToast();
   const fondOpaque = usePanneauOpaque();
+  const aucuneProcedure = procedures.length === 0;
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -87,7 +90,7 @@ export function NouvelleAffaireFeuille({
     startTransition(async () => {
       try {
         const { id } = await creerAffaire({
-          typologie: String(fd.get("typologie")),
+          pipelineId: String(fd.get("pipelineId") ?? ""),
           titre: String(fd.get("titre") ?? ""),
           contactNom: String(fd.get("contactNom") ?? ""),
           contactTel: String(fd.get("contactTel") ?? ""),
@@ -131,18 +134,26 @@ export function NouvelleAffaireFeuille({
             </div>
 
             <form onSubmit={onSubmit} className="space-y-3">
+              {aucuneProcedure && (
+                <p className="rounded-md border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  Choisissez d&apos;abord une entreprise dans le sélecteur
+                  d&apos;espace : une affaire naît dans la procédure de son
+                  entreprise.
+                </p>
+              )}
               <label className="block text-sm">
                 <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
-                  Typologie
+                  Procédure
                 </span>
                 <select
-                  name="typologie"
-                  defaultValue={typologieInitiale}
+                  name="pipelineId"
+                  defaultValue={procedureInitiale ?? procedures[0]?.id ?? ""}
+                  disabled={aucuneProcedure}
                   className={inputCls}
                 >
-                  {TYPOLOGIES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
+                  {procedures.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.libelle}
                     </option>
                   ))}
                 </select>
@@ -234,7 +245,11 @@ export function NouvelleAffaireFeuille({
                   </div>
                 </>
               )}
-              <Button type="submit" disabled={pending} className="w-full">
+              <Button
+                type="submit"
+                disabled={pending || aucuneProcedure}
+                className="w-full"
+              >
                 {pending ? "Création..." : "Créer l'affaire"}
               </Button>
             </form>

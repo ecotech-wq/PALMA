@@ -10,13 +10,11 @@ import { getPhotoMetadata } from "@/lib/upload";
 import { parseDocumentsMessage } from "@/lib/pieces-jointes";
 import { getOrCreateCanalAffaire } from "@/features/messaging";
 import { TAILLE_PAGE_MESSAGES } from "@/features/messaging/core/pagination";
+import { estDormante, parseChecklist } from "@/lib/affaires";
 import {
-  LIBELLES_TYPOLOGIE,
-  estDormante,
-  etapesDe,
-  parseChecklist,
-  type TypologieAffaire,
-} from "@/lib/affaires";
+  etapesParDefautDeTypologie,
+  parseEtapes,
+} from "@/lib/pipelines";
 import { parseDossiersPerso } from "@/lib/ged-affaire";
 import { ChantierFeed } from "../../ChantierFeed";
 import { ChantierComposer } from "../../ChantierComposer";
@@ -55,6 +53,9 @@ export default async function MessagerieAffairePage({
       espaceId: true,
       titre: true,
       typologie: true,
+      // La procédure porte le libellé et les étapes du bandeau (les
+      // pipelines sont des données par entreprise depuis 2026-07-18).
+      pipeline: { select: { libelle: true, etapes: true } },
       etapeCle: true,
       etapeDepuis: true,
       statut: true,
@@ -69,7 +70,12 @@ export default async function MessagerieAffairePage({
   // Frontière d'espace : un id forgé d'un autre espace tombe sur un 404.
   if (me.espaceIds && !me.espaceIds.includes(affaire.espaceId)) notFound();
 
-  const typologie = affaire.typologie as TypologieAffaire;
+  // Repli sur le modèle par défaut de la typologie pour une affaire
+  // antérieure au backfill (jamais le cas en pratique).
+  const etapesAffaire = affaire.pipeline
+    ? parseEtapes(affaire.pipeline.etapes)
+    : etapesParDefautDeTypologie(affaire.typologie);
+  const nomProcedure = affaire.pipeline?.libelle ?? affaire.typologie;
   const canal = await getOrCreateCanalAffaire(affaire.id);
 
   // Marque le fil comme lu (badge non-lus du hub et de l'accueil).
@@ -171,8 +177,9 @@ export default async function MessagerieAffairePage({
             {affaire.titre}
           </h1>
           <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-            {LIBELLES_TYPOLOGIE[typologie]} · {affaire.contactNom} · fil
-            interne aux pilotes
+            {/* Repli quick-add : même libellé que le hub et la carte. */}
+            {nomProcedure} · {affaire.contactNom || "Contact à compléter"} ·
+            fil interne aux pilotes
           </p>
         </div>
         {affaire.statut === "GAGNEE" && <Badge color="green">Gagnée</Badge>}
@@ -185,7 +192,7 @@ export default async function MessagerieAffairePage({
         <ActionsRapidesAffaire
           affaireId={affaire.id}
           etapeCle={affaire.etapeCle}
-          etapes={etapesDe(typologie)}
+          etapes={etapesAffaire}
           cibles={cibles}
           statut={affaire.statut}
           nbDocsDossier={nbDocsDossier}

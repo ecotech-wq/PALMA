@@ -1392,6 +1392,7 @@ model Espace {
   prelevementLabos PrelevementLabo[]
   equipementLabos  EquipementLabo[]
   affaires         Affaire[]
+  pipelines        PipelineAffaire[]
 }
 
 /// Adhésion d un utilisateur à un espace, avec un rôle PROPRE à cet espace
@@ -1977,12 +1978,49 @@ enum StatutAffaire {
   PERDUE
 }
 
+/// Procédures (pipelines) ÉDITABLES par entreprise (2026-07-18). Les 4
+/// pipelines historiques (constantes TS) deviennent des LIGNES de cette
+/// table : la migration de backfill les copie pour chaque espace existant,
+/// et le seed paresseux (getPipelinesEspace) les pose pour les nouveaux.
+/// `etapes` et `checklistModele` sont des tableaux Json [{ cle, libelle }] ;
+/// les clés d'étape restent STABLES (stockées dans Affaire.etapeCle).
+/// `couleur` est une clé d'accent de la palette nommée de
+/// src/lib/pipelines.ts (jamais un hex en base : un seul endroit).
+model PipelineAffaire {
+  id              String   @id @default(cuid())
+  espaceId        String
+  espace          Espace   @relation(fields: [espaceId], references: [id], onDelete: Cascade)
+  /// Slug stable dans l'espace (les 4 défauts gardent les clés de l'enum
+  /// TypologieAffaire ; les procédures créées ensuite un slug du libellé).
+  cle             String
+  libelle         String
+  couleur         String
+  ordre           Int      @default(0)
+  etapes          Json     @default("[]")
+  checklistModele Json     @default("[]")
+  /// Inactive : masquée des onglets et de la création, historique préservé.
+  actif           Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  affaires Affaire[]
+
+  @@unique([espaceId, cle])
+  @@index([espaceId, ordre])
+}
+
 model Affaire {
   id                String           @id @default(cuid())
   espaceId          String
   espace            Espace           @relation(fields: [espaceId], references: [id], onDelete: Cascade)
   titre             String
+  /// Compat historique : conservée en base mais plus utilisée pour
+  /// l'affichage (le pipeline porte libellé, couleur et étapes).
   typologie         TypologieAffaire
+  /// Procédure de l'affaire. Restrict : une procédure ne se supprime que
+  /// si aucune affaire ne la référence (l'UI refuse avant la base).
+  pipelineId        String?
+  pipeline          PipelineAffaire? @relation(fields: [pipelineId], references: [id], onDelete: Restrict)
   etapeCle          String
   etapeDepuis       DateTime         @default(now())
   statut            StatutAffaire    @default(EN_COURS)
@@ -2015,6 +2053,7 @@ model Affaire {
 
   @@index([espaceId, statut])
   @@index([typologie, etapeCle])
+  @@index([pipelineId])
   @@index([responsableId])
   @@index([prochaineActionLe])
 }

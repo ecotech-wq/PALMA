@@ -12,12 +12,13 @@ import {
   espaceFilter,
 } from "@/lib/auth-helpers";
 import { unreadMessagerieFor, unreadAffairesFor } from "@/lib/read-state";
+import { estDormante } from "@/lib/affaires";
 import {
-  LIBELLES_TYPOLOGIE,
-  estDormante,
-  libelleEtape,
-  type TypologieAffaire,
-} from "@/lib/affaires";
+  etapesParDefautDeTypologie,
+  libelleEtapeDe,
+  parseEtapes,
+} from "@/lib/pipelines";
+import { getPipelinesEspace } from "@/lib/pipelines-server";
 import { NouveauBouton } from "./NouveauBouton";
 import { PinChantierButton } from "./PinChantierButton";
 
@@ -32,6 +33,24 @@ const todayFmt = new Intl.DateTimeFormat("fr-FR", {
   hour: "2-digit",
   minute: "2-digit",
 });
+
+/* ─── Accents de section du hub (tokens à UN seul endroit) ──────────────────
+ * L'ambre léger signe la section Affaires (le commercial), le gris-bleu la
+ * section Chantiers (le terrain) : pastille de titre, liseré gauche de la
+ * liste et teinte d'avatar, rien de plus. Changer un accent se fait ici. */
+const ACCENTS_HUB = {
+  affaires: {
+    pastille: "bg-brand-500 dark:bg-brand-400",
+    lisere: "border-l-2 border-l-brand-300 dark:border-l-brand-700",
+    avatar:
+      "bg-brand-100 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300",
+  },
+  chantiers: {
+    pastille: "bg-slate-400 dark:bg-slate-500",
+    lisere: "border-l-2 border-l-slate-300 dark:border-l-slate-600",
+    avatar: "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  },
+} as const;
 
 /** Met en forme un timestamp : aujourd'hui = juste l'heure, sinon date courte */
 function smartTime(d: Date | string): string {
@@ -120,6 +139,9 @@ export default async function MessagerieHubPage() {
           id: true,
           titre: true,
           typologie: true,
+          // La procédure porte le libellé et les étapes affichés (les
+          // pipelines sont des données par entreprise depuis 2026-07-18).
+          pipeline: { select: { libelle: true, etapes: true } },
           etapeCle: true,
           etapeDepuis: true,
           statut: true,
@@ -192,6 +214,15 @@ export default async function MessagerieHubPage() {
       );
     });
 
+  // Procédures actives de l'espace courant : la feuille de création
+  // d'affaire du bouton « + Nouveau » propose leur choix.
+  const proceduresCreation =
+    me.canPilot && me.espaceCourant
+      ? (await getPipelinesEspace(me.espaceCourant.id))
+          .filter((p) => p.actif)
+          .map((p) => ({ id: p.id, libelle: p.libelle }))
+      : [];
+
   return (
     <div>
       <PageHeader
@@ -203,6 +234,7 @@ export default async function MessagerieHubPage() {
           <NouveauBouton
             peutCreerAffaire={me.canPilot}
             peutCreerChantier={me.isGlobalAdmin && !!me.espaceCourant}
+            procedures={proceduresCreation}
           />
         }
       />
@@ -213,7 +245,11 @@ export default async function MessagerieHubPage() {
         <section className="mb-5">
           {/* La création vit dans le bouton « + Nouveau » de l'en-tête
               (affaire OU chantier) : plus de bouton par section. */}
-          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <h2 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <span
+              aria-hidden="true"
+              className={`h-1.5 w-1.5 rounded-full ${ACCENTS_HUB.affaires.pastille}`}
+            />
             Affaires ({affairesTriees.length})
           </h2>
           {affairesTriees.length === 0 ? (
@@ -222,9 +258,16 @@ export default async function MessagerieHubPage() {
               carte : créez la première.
             </p>
           ) : (
-            <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
+            <ul
+              className={`divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900 ${ACCENTS_HUB.affaires.lisere}`}
+            >
               {affairesTriees.map((a) => {
-                const typologie = a.typologie as TypologieAffaire;
+                // Libellés portés par la procédure de l'affaire ; repli sur
+                // le modèle par défaut de la typologie (donnée antérieure).
+                const etapesAffaire = a.pipeline
+                  ? parseEtapes(a.pipeline.etapes)
+                  : etapesParDefautDeTypologie(a.typologie);
+                const nomProcedure = a.pipeline?.libelle ?? a.typologie;
                 const dernier = a.dernier;
                 const apercu = dernier
                   ? (dernier.texte?.slice(0, 100) ?? "") ||
@@ -244,8 +287,12 @@ export default async function MessagerieHubPage() {
                       href={`/messagerie/affaire/${a.id}`}
                       className="flex items-start gap-3 p-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
                     >
-                      {/* Avatar : encre (charte), l'ambre reste le signal */}
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-950 text-slate-50 dark:bg-slate-100 dark:text-slate-950">
+                      {/* Avatar : ambre léger, l'accent de la section
+                          Affaires (la pastille bg-brand-500 pleine reste
+                          réservée au signal « dormante »). */}
+                      <div
+                        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${ACCENTS_HUB.affaires.avatar}`}
+                      >
                         <Handshake size={18} />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -284,8 +331,9 @@ export default async function MessagerieHubPage() {
                           )}
                         </p>
                         <p className="mt-0.5 truncate text-[11px] text-slate-400 dark:text-slate-500">
-                          {LIBELLES_TYPOLOGIE[typologie]} ·{" "}
-                          {libelleEtape(typologie, a.etapeCle)} · {a.contactNom}
+                          {nomProcedure} ·{" "}
+                          {libelleEtapeDe(etapesAffaire, a.etapeCle)} ·{" "}
+                          {a.contactNom || "Contact à compléter"}
                         </p>
                       </div>
                       {nonLus > 0 && (
@@ -303,7 +351,11 @@ export default async function MessagerieHubPage() {
       )}
 
       {me.canPilot && (
-        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <h2 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <span
+            aria-hidden="true"
+            className={`h-1.5 w-1.5 rounded-full ${ACCENTS_HUB.chantiers.pastille}`}
+          />
           Chantiers ({sorted.length})
         </h2>
       )}
@@ -326,7 +378,9 @@ export default async function MessagerieHubPage() {
           </CardBody>
         </Card>
       ) : (
-        <ul className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+        <ul
+          className={`bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden ${ACCENTS_HUB.chantiers.lisere}`}
+        >
           {sorted.map((c, idx) => {
             // Séparateur visuel entre épinglés et le reste
             const prevPinned = idx > 0 ? sorted[idx - 1].isPinned : false;
@@ -374,8 +428,11 @@ export default async function MessagerieHubPage() {
                   href={`/messagerie/${c.id}`}
                   className={`flex items-start gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition ${c.isPinned ? "bg-amber-50/30 dark:bg-amber-950/10" : ""}`}
                 >
-                  {/* Avatar simple : initiales chantier */}
-                  <div className="shrink-0 w-11 h-11 rounded-full bg-brand-100 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 flex items-center justify-center font-bold text-sm">
+                  {/* Avatar : gris-bleu, l'accent de la section Chantiers
+                      (l'ambre appartient à la section Affaires). */}
+                  <div
+                    className={`shrink-0 w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm ${ACCENTS_HUB.chantiers.avatar}`}
+                  >
                     <Hammer size={18} />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -394,7 +451,7 @@ export default async function MessagerieHubPage() {
                           ? smartTime(last.createdAt)
                           : c.statut === "PLANIFIE"
                             ? "À démarrer"
-                            : "—"}
+                            : "-"}
                       </span>
                     </div>
                     <p className="text-xs text-slate-600 dark:text-slate-400 truncate mt-0.5">
@@ -408,11 +465,11 @@ export default async function MessagerieHubPage() {
                           ) : (
                             <span className="italic">Système</span>
                           )}
-                          {" — "}
+                          {" : "}
                           {lastPreview || <span className="italic">[média]</span>}
                         </>
                       ) : (
-                        <span className="italic">Aucun message — démarre la conversation</span>
+                        <span className="italic">Aucun message : démarre la conversation</span>
                       )}
                     </p>
                     {c.adresse && (

@@ -13,12 +13,12 @@ import {
   type PalierRelance,
 } from "@/lib/relances-calc";
 import { classerEssai } from "@/lib/labo-calc";
+import { SEUIL_DORMANCE_JOURS, estDormante } from "@/lib/affaires";
 import {
-  SEUIL_DORMANCE_JOURS,
-  estDormante,
-  libelleEtape,
-  type TypologieAffaire,
-} from "@/lib/affaires";
+  etapesParDefautDeTypologie,
+  libelleEtapeDe,
+  parseEtapes,
+} from "@/lib/pipelines";
 import type { Prisma } from "@/generated/prisma/client";
 
 // ─── Moteur de relances financières : balayage serveur ───────────────────────
@@ -228,6 +228,9 @@ export async function executerRelances(
         espaceId: true,
         titre: true,
         typologie: true,
+        // Le libellé d'étape vient de la PROCÉDURE de l'affaire (pipelines
+        // éditables) ; repli sur le modèle par défaut de la typologie.
+        pipeline: { select: { etapes: true } },
         etapeCle: true,
         statut: true,
         prochaineAction: true,
@@ -389,7 +392,12 @@ export async function executerRelances(
       c.motif === "ACTION_EN_RETARD"
         ? `action en retard de ${c.jours} j`
         : "sans prochaine action";
-    const etape = libelleEtape(a.typologie as TypologieAffaire, a.etapeCle);
+    const etape = libelleEtapeDe(
+      a.pipeline
+        ? parseEtapes(a.pipeline.etapes)
+        : etapesParDefautDeTypologie(a.typologie),
+      a.etapeCle
+    );
     const consigne =
       c.motif === "ACTION_EN_RETARD" && a.prochaineAction
         ? `Action prévue : ${a.prochaineAction}. La faire (ou la replanifier) depuis la fiche.`

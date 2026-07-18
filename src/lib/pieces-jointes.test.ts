@@ -3,6 +3,7 @@ import {
   ACCEPT_DOCUMENTS,
   EXTENSIONS_AUDIO,
   EXTENSIONS_DOCUMENTS,
+  TAILLE_MAX_DOCUMENT_OCTETS,
   TAILLE_MAX_ENVOI_OCTETS,
   controlerTaillesEnvoi,
   formatDureeAudio,
@@ -204,6 +205,39 @@ describe("controlerTaillesEnvoi (plafond client avant envoi)", () => {
     const res = controlerTaillesEnvoi([], [{ nom: "gros.bin", taille: 30 * MO }]);
     expect(res.indicesAcceptes).toEqual([0]);
     expect(res.refus).toEqual([]);
+  });
+
+  it("borne à 25 Mo un dépôt direct au dossier client (FeuillePiece)", () => {
+    // Appel exact de la feuille « joindre le fichier » d'une pièce de
+    // checklist : plafond explicite de 25 Mo (saveUploadedDocument), sans
+    // type MIME car TOUT y passe par le pipeline document, images comprises.
+    const gros = controlerTaillesEnvoi(
+      [],
+      [{ nom: "cu.pdf", taille: 26 * MO }],
+      TAILLE_MAX_DOCUMENT_OCTETS
+    );
+    expect(gros.indicesAcceptes).toEqual([]);
+    expect(gros.refus).toHaveLength(1);
+    expect(gros.refus[0]).toContain("dépasse 25 Mo");
+    expect(gros.refus[0]).toContain("cu.pdf");
+    // 25 Mo pile passe.
+    const pile = controlerTaillesEnvoi(
+      [],
+      [{ nom: "pile.pdf", taille: TAILLE_MAX_DOCUMENT_OCTETS }],
+      TAILLE_MAX_DOCUMENT_OCTETS
+    );
+    expect(pile.indicesAcceptes).toEqual([0]);
+    expect(pile.refus).toEqual([]);
+    // Une photo de 12 Mo passe aussi : sur ce chemin le serveur l'accepte
+    // (pipeline document, pas les 10 Mo des photos du fil), d'où l'absence
+    // volontaire de type MIME dans l'appel.
+    const photo = controlerTaillesEnvoi(
+      [],
+      [{ nom: "photo.jpg", taille: 12 * MO }],
+      TAILLE_MAX_DOCUMENT_OCTETS
+    );
+    expect(photo.indicesAcceptes).toEqual([0]);
+    expect(photo.refus).toEqual([]);
   });
 
   it("refuse la 31e pièce (plafond du plan de rangement côté serveur)", () => {

@@ -14,14 +14,13 @@ import { requireAuth } from "@/lib/auth-helpers";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { estDormante, joursDansEtape, parseChecklist } from "@/lib/affaires";
 import {
-  LIBELLES_TYPOLOGIE,
-  estDormante,
-  joursDansEtape,
-  libelleEtape,
-  parseChecklist,
-  type TypologieAffaire,
-} from "@/lib/affaires";
+  etapesParDefautDeTypologie,
+  libelleEtapeDe,
+  parseEtapes,
+} from "@/lib/pipelines";
+import type { DocPiece } from "../FeuillePiece";
 import {
   AssignerActionForm,
   ChecklistAffaire,
@@ -58,6 +57,8 @@ export default async function FicheAffairePage({
     include: {
       responsable: { select: { id: true, name: true } },
       chantier: { select: { id: true, nom: true } },
+      // La procédure porte libellé et étapes (pipelines éditables).
+      pipeline: { select: { id: true, libelle: true, etapes: true } },
       _count: { select: { documents: true } },
       taches: {
         where: { deletedAt: null },
@@ -77,11 +78,36 @@ export default async function FicheAffairePage({
   // autre espace tombe sur un 404 (pas de fuite d'existence).
   if (me.espaceIds && !me.espaceIds.includes(affaire.espaceId)) notFound();
 
-  const typologie = affaire.typologie as TypologieAffaire;
+  // Étapes et libellé portés par la procédure de l'affaire ; repli sur le
+  // modèle par défaut de la typologie (donnée antérieure au backfill).
+  const etapesAffaire = affaire.pipeline
+    ? parseEtapes(affaire.pipeline.etapes)
+    : etapesParDefautDeTypologie(affaire.typologie);
+  const nomProcedure = affaire.pipeline?.libelle ?? affaire.typologie;
   const maintenant = new Date();
   const dormance = estDormante(affaire, maintenant);
   const checklist = parseChecklist(affaire.checklist);
   const faits = checklist.filter((c) => c.fait).length;
+
+  // Documents de la GED d'affaire qui valident une pièce de la checklist
+  // (AffaireDocument.checklistCle) : le plus récent par clé gagne (tri
+  // croissant, la dernière écriture écrase les précédentes). Même calcul
+  // que le fil (/messagerie/affaire/[affaireId]) : le trombone renvoie
+  // vers le fichier, et cocher une pièce SANS document ouvre la feuille
+  // « joindre le fichier ».
+  const docParPiece: Record<string, DocPiece> = {};
+  if (checklist.length > 0) {
+    const docsChecklist = await db.affaireDocument.findMany({
+      where: { affaireId: affaire.id, checklistCle: { not: null } },
+      orderBy: { createdAt: "asc" },
+      select: { checklistCle: true, fichier: true, nom: true },
+    });
+    for (const d of docsChecklist) {
+      if (d.checklistCle) {
+        docParPiece[d.checklistCle] = { url: d.fichier, nom: d.nom };
+      }
+    }
+  }
 
   // Pilotes uniquement : le module Affaires est réservé aux ADMIN et
   // CONDUCTEUR (requireAffaireAccess) ; un CHEF responsable ou cible
@@ -101,14 +127,18 @@ export default async function FicheAffairePage({
   return (
     <div>
       <PageHeader
-        backHref={`/affaires?typologie=${affaire.typologie}`}
+        backHref={
+          affaire.pipeline
+            ? `/affaires?procedure=${affaire.pipeline.id}`
+            : `/affaires?typologie=${affaire.typologie}`
+        }
         title={affaire.titre}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <span>{LIBELLES_TYPOLOGIE[typologie]}</span>
+            <span>{nomProcedure}</span>
             <span>·</span>
             <span className="font-medium text-slate-700 dark:text-slate-300">
-              {libelleEtape(typologie, affaire.etapeCle)}
+              {libelleEtapeDe(etapesAffaire, affaire.etapeCle)}
             </span>
             <span className="text-xs">
               (depuis {joursDansEtape(affaire.etapeDepuis, maintenant)} j)
@@ -161,7 +191,13 @@ export default async function FicheAffairePage({
             <CardBody className="space-y-2 text-sm">
               <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200">
                 <User size={14} className="shrink-0 text-slate-400" />
-                {affaire.contactNom}
+                {/* Une affaire née de la création rapide n'a pas encore de
+                    contact : même repli que la carte kanban et le hub. */}
+                {affaire.contactNom || (
+                  <span className="italic text-slate-400">
+                    Contact à compléter
+                  </span>
+                )}
               </div>
               {affaire.contactTel && (
                 <a
@@ -299,6 +335,7 @@ export default async function FicheAffairePage({
               <ChecklistAffaire
                 affaireId={affaire.id}
                 items={checklist}
+                docs={docParPiece}
                 canEdit={me.canPilot}
               />
             </CardBody>

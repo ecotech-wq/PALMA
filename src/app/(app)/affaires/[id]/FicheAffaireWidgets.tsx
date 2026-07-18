@@ -11,6 +11,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Hammer,
+  Paperclip,
   Pencil,
   Plus,
   ThumbsDown,
@@ -20,6 +21,7 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/Toast";
 import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
 import type { ChecklistItem } from "@/lib/affaires";
+import { FeuillePiece, type DocPiece } from "../FeuillePiece";
 import {
   assignerAction,
   cocherChecklist,
@@ -40,57 +42,127 @@ const inputCls =
 export function ChecklistAffaire({
   affaireId,
   items,
+  docs = {},
   canEdit,
 }: {
   affaireId: string;
   items: ChecklistItem[];
+  /** cle de checklist -> document validant (AffaireDocument.checklistCle). */
+  docs?: Record<string, DocPiece>;
   canEdit: boolean;
 }) {
-  const [pendingCle, setPendingCle] = useState<string | null>(null);
+  // Même mécanique que la checklist du fil (ChecklistFil) : surcouche
+  // OPTIMISTE (la case répond immédiatement), rollback + toast en échec,
+  // et feuille partagée « joindre le fichier » quand on coche une pièce
+  // qu'aucun document ne valide encore.
+  const [optimiste, setOptimiste] = useState<Record<string, boolean>>({});
+  const [feuillePiece, setFeuillePiece] = useState<ChecklistItem | null>(null);
+  const [, startTransition] = useTransition();
   const router = useRouter();
   const toast = useToast();
+
+  const affiches = items.map((it) => ({
+    ...it,
+    fait: optimiste[it.cle] ?? it.fait,
+  }));
+
+  function cocher(cle: string, fait: boolean) {
+    setOptimiste((prev) => ({ ...prev, [cle]: fait }));
+    startTransition(async () => {
+      try {
+        await cocherChecklist(affaireId, cle, fait);
+        router.refresh();
+      } catch (err) {
+        // Échec : la case revient à sa valeur serveur.
+        setOptimiste((prev) => {
+          const suivant = { ...prev };
+          delete suivant[cle];
+          return suivant;
+        });
+        toast.error(err instanceof Error ? err.message : "Erreur");
+      }
+    });
+  }
 
   if (items.length === 0) {
     return (
       <p className="text-xs italic text-slate-400">
-        Pas de checklist pour cette typologie.
+        Pas de checklist pour cette affaire.
       </p>
     );
   }
 
   return (
-    <ul className="space-y-1.5">
-      {items.map((it) => (
-        <li key={it.cle}>
-          <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-1 py-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/60">
-            <input
-              type="checkbox"
-              checked={it.fait}
-              disabled={!canEdit || pendingCle === it.cle}
-              onChange={(e) => {
-                setPendingCle(it.cle);
-                cocherChecklist(affaireId, it.cle, e.target.checked)
-                  .then(() => router.refresh())
-                  .catch((err: unknown) =>
-                    toast.error(err instanceof Error ? err.message : "Erreur")
-                  )
-                  .finally(() => setPendingCle(null));
-              }}
-              className="h-4 w-4 accent-slate-900 dark:accent-slate-200"
-            />
-            <span
-              className={
-                it.fait
-                  ? "text-slate-400 line-through"
-                  : "text-slate-800 dark:text-slate-200"
-              }
-            >
-              {it.libelle}
-            </span>
-          </label>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="space-y-1">
+        {affiches.map((it) => {
+          const doc = docs[it.cle];
+          return (
+            <li key={it.cle} className="flex items-center gap-1">
+              <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md px-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                <input
+                  type="checkbox"
+                  checked={it.fait}
+                  disabled={!canEdit}
+                  onChange={(e) => {
+                    // Cocher une pièce que rien ne valide encore :
+                    // proposer d'abord de joindre le fichier (feuille
+                    // partagée). Décocher, ou cocher une pièce déjà
+                    // validée par un document : geste direct.
+                    if (e.target.checked && !doc) {
+                      setFeuillePiece(it);
+                      return;
+                    }
+                    cocher(it.cle, e.target.checked);
+                  }}
+                  className="h-4 w-4 shrink-0 accent-slate-900 dark:accent-slate-200"
+                />
+                <span
+                  className={
+                    it.fait
+                      ? "min-w-0 truncate text-slate-400 line-through"
+                      : "min-w-0 truncate text-slate-800 dark:text-slate-200"
+                  }
+                >
+                  {it.libelle}
+                </span>
+              </label>
+              {/* Pièce validée par un document de la GED : le trombone
+                  ouvre le fichier (cible 44px, jamais au survol seul). */}
+              {doc && (
+                <a
+                  href={doc.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={`Voir le document : ${doc.nom}`}
+                  aria-label={`Voir le document : ${doc.nom}`}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                >
+                  <Paperclip size={15} />
+                </a>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      {feuillePiece && (
+        <FeuillePiece
+          affaireId={affaireId}
+          cle={feuillePiece.cle}
+          libelle={feuillePiece.libelle}
+          onMarquerSansFichier={() => cocher(feuillePiece.cle, true)}
+          onFichierJoint={() => {
+            // Le serveur a déjà coché la case et posé la trace : la
+            // surcouche optimiste la montre tout de suite, la
+            // revalidation confirme et fait apparaître le trombone.
+            setOptimiste((prev) => ({ ...prev, [feuillePiece.cle]: true }));
+            router.refresh();
+          }}
+          onClose={() => setFeuillePiece(null)}
+        />
+      )}
+    </>
   );
 }
 

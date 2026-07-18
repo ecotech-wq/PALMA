@@ -9,7 +9,10 @@
 // « Pièce reçue : ... » dans le fil), rollback + toast en échec, puis
 // revalidation (router.refresh). Une pièce peut aussi être validée par un
 // document de la GED d'affaire (AffaireDocument.checklistCle) : le
-// trombone renvoie alors vers le fichier.
+// trombone renvoie alors vers le fichier. Cocher une pièce qu'AUCUN
+// document ne valide encore ouvre la feuille partagée FeuillePiece
+// (joindre le fichier, ou marquer reçue sans fichier) ; décocher, ou
+// cocher une pièce déjà validée par un fichier, reste un geste direct.
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -18,9 +21,11 @@ import { useToast } from "@/components/Toast";
 import { usePanneauOpaque } from "@/lib/usePanneauOpaque";
 import type { ChecklistItem } from "@/lib/affaires";
 import { cocherChecklist } from "@/app/(app)/affaires/actions";
+import { FeuillePiece, type DocPiece } from "@/app/(app)/affaires/FeuillePiece";
 
-/** Document de GED qui valide une pièce (le plus récent par clé). */
-export type DocPiece = { url: string; nom: string };
+/** Réexport de compatibilité : le type vit désormais avec la feuille
+ *  partagée (utilisé aussi par la fiche affaire et le composer). */
+export type { DocPiece };
 
 export function ChecklistFil({
   affaireId,
@@ -39,6 +44,9 @@ export function ChecklistFil({
   // Surcouche optimiste : cle -> valeur affichée en attendant le serveur.
   // Conservée après succès (elle coïncide alors avec l'état revalidé).
   const [optimiste, setOptimiste] = useState<Record<string, boolean>>({});
+  // Pièce dont la coche est en attente dans la feuille « joindre le
+  // fichier » (null = feuille fermée).
+  const [feuillePiece, setFeuillePiece] = useState<ChecklistItem | null>(null);
   const [, startTransition] = useTransition();
   const router = useRouter();
   const toast = useToast();
@@ -69,6 +77,7 @@ export function ChecklistFil({
   }
 
   return (
+    <>
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 sm:items-center"
       onClick={(e) => {
@@ -113,7 +122,17 @@ export function ChecklistFil({
                     type="checkbox"
                     checked={it.fait}
                     disabled={!canEdit}
-                    onChange={(e) => cocher(it.cle, e.target.checked)}
+                    onChange={(e) => {
+                      // Cocher une pièce que rien ne valide encore :
+                      // proposer d'abord de joindre le fichier (feuille
+                      // partagée). Décocher, ou cocher une pièce déjà
+                      // validée par un document : geste direct.
+                      if (e.target.checked && !doc) {
+                        setFeuillePiece(it);
+                        return;
+                      }
+                      cocher(it.cle, e.target.checked);
+                    }}
                     className="h-4 w-4 shrink-0 accent-slate-900 dark:accent-slate-200"
                   />
                   <span
@@ -146,5 +165,24 @@ export function ChecklistFil({
         </ul>
       </div>
     </div>
+
+    {/* Feuille « joindre le fichier » : par-dessus la checklist (z-60). */}
+    {feuillePiece && (
+      <FeuillePiece
+        affaireId={affaireId}
+        cle={feuillePiece.cle}
+        libelle={feuillePiece.libelle}
+        onMarquerSansFichier={() => cocher(feuillePiece.cle, true)}
+        onFichierJoint={() => {
+          // Le serveur a déjà coché la case et posé la trace : la
+          // surcouche optimiste la montre tout de suite, la revalidation
+          // (router.refresh) confirme et fait apparaître le trombone.
+          setOptimiste((prev) => ({ ...prev, [feuillePiece.cle]: true }));
+          router.refresh();
+        }}
+        onClose={() => setFeuillePiece(null)}
+      />
+    )}
+    </>
   );
 }

@@ -17,10 +17,7 @@ import {
 } from "@/lib/auth-helpers";
 import { notify } from "@/lib/notifications";
 import {
-  checklistType,
   estDormante,
-  etapesDe,
-  libelleEtape,
   parseChecklist,
   texteTraceActionConfiee,
   texteTracePiece,
@@ -29,16 +26,48 @@ import {
   type TypologieAffaire,
 } from "@/lib/affaires";
 import {
+  checklistInitiale,
+  etapesParDefautDeTypologie,
+  libelleEtapeDe,
+  parseEtapes,
+  type EtapePipeline,
+} from "@/lib/pipelines";
+import {
   getOrCreateGeneral,
   getOrCreateCanalAffaire,
 } from "@/features/messaging";
 
+/** Valeurs de l'enum TypologieAffaire : la colonne reste en base (compat).
+ *  Une procédure personnalisée retombe sur TRAVAUX, valeur neutre jamais
+ *  affichée (le pipeline porte libellé et couleur). */
 const TYPOLOGIES = [
   "PERMIS_CONSTRUIRE",
   "ETUDE_STRUCTURE",
   "TRAVAUX",
   "LABO",
 ] as const;
+
+function typologieDepuisCle(cle: string): TypologieAffaire {
+  return (TYPOLOGIES as readonly string[]).includes(cle)
+    ? (cle as TypologieAffaire)
+    : "TRAVAUX";
+}
+
+/** Étapes de l'affaire : celles de SON pipeline ; repli sur le modèle par
+ *  défaut de sa typologie pour une donnée antérieure au backfill. */
+async function etapesDeLAffaire(affaire: {
+  pipelineId: string | null;
+  typologie: TypologieAffaire | string;
+}): Promise<EtapePipeline[]> {
+  if (affaire.pipelineId) {
+    const pipeline = await db.pipelineAffaire.findUnique({
+      where: { id: affaire.pipelineId },
+      select: { etapes: true },
+    });
+    if (pipeline) return parseEtapes(pipeline.etapes);
+  }
+  return etapesParDefautDeTypologie(String(affaire.typologie));
+}
 
 /* -------------------------------------------------------------------------
  *  Gardes et utilitaires
@@ -155,7 +184,7 @@ function revaliderAffaires(affaireId?: string) {
  * ----------------------------------------------------------------------- */
 
 const creerSchema = z.object({
-  typologie: z.enum(TYPOLOGIES),
+  pipelineId: z.string().min(1, "Choisissez une procédure"),
   titre: z.string().trim().min(1, "Titre requis").max(120),
   contactNom: z.string().trim().min(1, "Nom du contact requis").max(120),
   contactTel: z.string().trim().max(40).optional().or(z.literal("")),
@@ -178,8 +207,22 @@ export async function creerAffaire(input: unknown): Promise<{ id: string }> {
   const espace = requireEspaceCourant(me);
   const data = creerSchema.parse(input);
 
-  const typologie = data.typologie as TypologieAffaire;
-  const premiereEtape = etapesDe(typologie)[0];
+  // La procédure choisie doit être une procédure ACTIVE de l'espace
+  // courant : un id forgé (autre espace, procédure désactivée) est refusé.
+  const pipeline = await db.pipelineAffaire.findUnique({
+    where: { id: data.pipelineId },
+  });
+  if (!pipeline || pipeline.espaceId !== espace.id) {
+    throw new Error("Procédure inconnue dans cet espace");
+  }
+  if (!pipeline.actif) {
+    throw new Error("Cette procédure est désactivée");
+  }
+  const etapes = parseEtapes(pipeline.etapes);
+  const premiereEtape = etapes[0];
+  if (!premiereEtape) {
+    throw new Error("Cette procédure n'a aucune étape : complétez-la d'abord");
+  }
   const responsableId = data.responsableId || null;
   if (responsableId) {
     await verifierPersonneInterne(espace.id, responsableId, "Responsable");
@@ -189,7 +232,9 @@ export async function creerAffaire(input: unknown): Promise<{ id: string }> {
     data: {
       espaceId: espace.id,
       titre: data.titre,
-      typologie,
+      // Compat : la colonne typologie reste renseignée (jamais affichée).
+      typologie: typologieDepuisCle(pipeline.cle),
+      pipelineId: pipeline.id,
       etapeCle: premiereEtape.cle,
       etapeDepuis: new Date(),
       statut: "EN_COURS",
@@ -204,10 +249,24 @@ export async function creerAffaire(input: unknown): Promise<{ id: string }> {
         ? new Date(data.prochaineActionLe + "T00:00:00.000Z")
         : null,
       responsableId,
-      checklist: checklistType(typologie).map((c) => ({ ...c })),
+      // La checklist naît du MODÈLE du pipeline puis vit sa vie propre :
+      // modifier le modèle ensuite ne touche pas les affaires existantes.
+      checklist: checklistInitiale(pipeline),
       creePar: me.id,
     },
   });
+
+  // Anti-course avec basculerActifPipeline : même relecture compensatoire
+  // que creerAffaireRapide (une affaire EN COURS ne doit jamais naître sur
+  // une procédure devenue inactive, elle serait invisible au kanban).
+  const pipelineFrais = await db.pipelineAffaire.findUnique({
+    where: { id: pipeline.id },
+    select: { actif: true },
+  });
+  if (!pipelineFrais?.actif) {
+    await db.affaire.delete({ where: { id: affaire.id } });
+    throw new Error("Cette procédure vient d'être désactivée");
+  }
 
   // Le canal de l'affaire naît AVEC l'affaire (fil de discussion et
   // journal des mouvements), puis reçoit son message de bienvenue.
@@ -223,7 +282,7 @@ export async function creerAffaire(input: unknown): Promise<{ id: string }> {
   await tracerDansCanal(
     affaire.id,
     `Affaire créée par ${me.name} : ${data.titre} ` +
-      `(${libelleEtape(typologie, premiereEtape.cle)}). ` +
+      `(${pipeline.libelle} : ${premiereEtape.libelle}). ` +
       "Le dossier client est prêt : chaque pièce jointe du fil " +
       "pourra y être rangée par catégorie."
   );
@@ -243,6 +302,101 @@ export async function creerAffaire(input: unknown): Promise<{ id: string }> {
 }
 
 /* -------------------------------------------------------------------------
+ *  Création rapide (bas de colonne du kanban, façon Trello)
+ * ----------------------------------------------------------------------- */
+
+const creerRapideSchema = z.object({
+  pipelineId: z.string().min(1, "Procédure requise"),
+  etapeCle: z.string().min(1, "Étape requise"),
+  titre: z.string().trim().min(1, "Titre requis").max(120),
+});
+
+/**
+ * Crée une affaire depuis le pied d'une colonne du kanban : juste un titre,
+ * dans CETTE étape de CETTE procédure. Le contact reste vide (la fiche le
+ * réclame ensuite) : une affaire naît d'un appel, on ne perd pas la carte
+ * pour un champ. L'espace est celui DE LA PROCÉDURE (une procédure
+ * appartient à une seule entreprise), borné par la frontière espaceIds :
+ * pas besoin d'espace courant, la création marche aussi en mode « tous ».
+ */
+export async function creerAffaireRapide(
+  input: unknown
+): Promise<{ id: string }> {
+  const me = await requireAdminOrConducteur();
+  const data = creerRapideSchema.parse(input);
+
+  const pipeline = await db.pipelineAffaire.findUnique({
+    where: { id: data.pipelineId },
+  });
+  // Frontière d'espace : un id de procédure forgé (autre entreprise) est
+  // refusé, même message que pour une procédure inexistante (pas d'oracle).
+  if (
+    !pipeline ||
+    (me.espaceIds && !me.espaceIds.includes(pipeline.espaceId))
+  ) {
+    throw new Error("Procédure inconnue dans vos espaces");
+  }
+  if (!pipeline.actif) {
+    throw new Error("Cette procédure est désactivée");
+  }
+  const etapes = parseEtapes(pipeline.etapes);
+  const etape = etapes.find((e) => e.cle === data.etapeCle);
+  if (!etape) {
+    throw new Error("Étape inconnue pour cette procédure");
+  }
+
+  const affaire = await db.affaire.create({
+    data: {
+      espaceId: pipeline.espaceId,
+      titre: data.titre,
+      // Compat : la colonne typologie reste renseignée (jamais affichée).
+      typologie: typologieDepuisCle(pipeline.cle),
+      pipelineId: pipeline.id,
+      etapeCle: etape.cle,
+      etapeDepuis: new Date(),
+      statut: "EN_COURS",
+      // Création rapide : contact volontairement vide, la fiche le réclame.
+      contactNom: "",
+      checklist: checklistInitiale(pipeline),
+      creePar: me.id,
+    },
+  });
+
+  // Anti-course avec basculerActifPipeline : la procédure a pu être
+  // désactivée entre notre lecture de `actif` et le create (son re-comptage
+  // ne nous voyait pas encore). On relit : si elle est devenue inactive,
+  // l'affaire naîtrait invisible au kanban ; on la retire et on refuse.
+  const frais = await db.pipelineAffaire.findUnique({
+    where: { id: pipeline.id },
+    select: { actif: true },
+  });
+  if (!frais?.actif) {
+    await db.affaire.delete({ where: { id: affaire.id } });
+    throw new Error("Cette procédure vient d'être désactivée");
+  }
+
+  // Même naissance que creerAffaire : le canal du fil arrive AVEC l'affaire.
+  await db.canal.create({
+    data: {
+      affaireId: affaire.id,
+      nom: "Général",
+      visibility: "INTERNE",
+      ordre: 0,
+      createdById: me.id,
+    },
+  });
+  await tracerDansCanal(
+    affaire.id,
+    `Affaire créée par ${me.name} : ${data.titre} ` +
+      `(${pipeline.libelle} : ${etape.libelle}). ` +
+      "Complétez le contact sur la fiche."
+  );
+
+  revaliderAffaires();
+  return { id: affaire.id };
+}
+
+/* -------------------------------------------------------------------------
  *  Pipeline (drag du kanban)
  * ----------------------------------------------------------------------- */
 
@@ -252,9 +406,11 @@ export async function changerEtape(affaireId: string, etapeCle: string) {
   if (affaire.statut !== "EN_COURS") {
     throw new Error("Cette affaire est close : rouvrez-la avant de la déplacer");
   }
-  const typologie = affaire.typologie as TypologieAffaire;
-  if (!etapesDe(typologie).some((e) => e.cle === etapeCle)) {
-    throw new Error("Étape inconnue pour cette typologie");
+  // Validation contre les étapes DU pipeline de l'affaire (les procédures
+  // sont désormais des données propres à chaque entreprise).
+  const etapes = await etapesDeLAffaire(affaire);
+  if (!etapes.some((e) => e.cle === etapeCle)) {
+    throw new Error("Étape inconnue pour cette procédure");
   }
   if (affaire.etapeCle === etapeCle) return;
 
@@ -266,8 +422,8 @@ export async function changerEtape(affaireId: string, etapeCle: string) {
   await rearmerRelanceDormance(affaireId);
   await tracerDansCanal(
     affaireId,
-    `Étape : ${libelleEtape(typologie, affaire.etapeCle)} -> ` +
-      `${libelleEtape(typologie, etapeCle)} (${me.name}).`
+    `Étape : ${libelleEtapeDe(etapes, affaire.etapeCle)} -> ` +
+      `${libelleEtapeDe(etapes, etapeCle)} (${me.name}).`
   );
   revaliderAffaires(affaireId);
 }

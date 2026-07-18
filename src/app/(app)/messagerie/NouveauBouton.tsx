@@ -19,9 +19,13 @@ import { NouvelleAffaireFeuille } from "../affaires/NouvelleAffaire";
 export function NouveauBouton({
   peutCreerAffaire,
   peutCreerChantier,
+  procedures,
 }: {
   peutCreerAffaire: boolean;
   peutCreerChantier: boolean;
+  /** Procédures ACTIVES de l'espace courant, pour la feuille de création
+   *  d'affaire (vide : pas d'espace choisi, la feuille l'explique). */
+  procedures: { id: string; libelle: string }[];
 }) {
   const [feuille, setFeuille] = useState<"menu" | "affaire" | null>(null);
   const fondOpaque = usePanneauOpaque();
@@ -107,7 +111,7 @@ export function NouveauBouton({
 
       {feuille === "affaire" && (
         <NouvelleAffaireFeuille
-          typologieInitiale="PERMIS_CONSTRUIRE"
+          procedures={procedures}
           responsables={[]}
           compact
           versCanal

@@ -1,15 +1,23 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import Link from "next/link";
 import { Check, AlertCircle, X, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type ToastVariant = "success" | "error" | "info";
-type Toast = { id: number; message: string; variant: ToastVariant };
+/** Lien d'action optionnel sous le message (ex. « Ouvrir la fiche »). */
+type ToastAction = { label: string; href: string };
+type Toast = {
+  id: number;
+  message: string;
+  variant: ToastVariant;
+  action?: ToastAction;
+};
 
 interface ToastContextValue {
-  toast: (message: string, variant?: ToastVariant) => void;
-  success: (message: string) => void;
+  toast: (message: string, variant?: ToastVariant, action?: ToastAction) => void;
+  success: (message: string, action?: ToastAction) => void;
   error: (message: string) => void;
   info: (message: string) => void;
 }
@@ -23,15 +31,20 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setItems((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const toast = useCallback((message: string, variant: ToastVariant = "info") => {
-    const id = Date.now() + Math.random();
-    setItems((prev) => [...prev, { id, message, variant }]);
-    setTimeout(() => removeToast(id), 4000);
-  }, [removeToast]);
+  const toast = useCallback(
+    (message: string, variant: ToastVariant = "info", action?: ToastAction) => {
+      const id = Date.now() + Math.random();
+      setItems((prev) => [...prev, { id, message, variant, action }]);
+      // Un toast porteur d'un lien reste un peu plus longtemps : le temps
+      // de viser la cible au pouce.
+      setTimeout(() => removeToast(id), action ? 6000 : 4000);
+    },
+    [removeToast]
+  );
 
   const value: ToastContextValue = {
     toast,
-    success: (m) => toast(m, "success"),
+    success: (m, action) => toast(m, "success", action),
     error: (m) => toast(m, "error"),
     info: (m) => toast(m, "info"),
   };
@@ -74,7 +87,18 @@ function ToastView({ toast, onClose }: { toast: Toast; onClose: () => void }) {
       )}
     >
       <Icon size={18} className="shrink-0 mt-0.5" />
-      <div className="flex-1 text-sm">{toast.message}</div>
+      <div className="flex-1 text-sm">
+        {toast.message}
+        {toast.action && (
+          <Link
+            href={toast.action.href}
+            onClick={onClose}
+            className="mt-0.5 -mx-1.5 flex min-h-11 w-fit items-center px-1.5 text-sm font-semibold underline underline-offset-2"
+          >
+            {toast.action.label}
+          </Link>
+        )}
+      </div>
       <button
         onClick={onClose}
         className="shrink-0 -mr-1 -mt-1 p-1 rounded hover:bg-black/5 dark:hover:bg-white/5"
